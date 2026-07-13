@@ -8,17 +8,46 @@ erroring (DESIGN §11.1).
 
 from __future__ import annotations
 
+import asyncio
+import contextlib
 import json
+from collections.abc import AsyncIterator
 from typing import Any
 
 import httpx
 from fastapi import FastAPI
 
+from .bake.api import router as admin_router
+from .bake.runner import Runner
 from .config import Config, load_config
 
 _PROBE_TIMEOUT_S = 2.0
 
-app = FastAPI(title="scriptorium", version="0.1.0")
+
+@contextlib.asynccontextmanager
+async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+    """Start the single bake worker for the app's lifetime (DESIGN §11.2).
+
+    Exactly one :class:`Runner` task runs — this is what makes the single-worker /
+    GPU-exclusivity guarantee structural. The pipeline is P0-only today (no post-P0
+    phase is registered until S5), so a started job simply rests at ``ingested``.
+    Plain ``TestClient(app)`` (no context manager) does not trigger lifespan, so
+    endpoint tests never spin the worker.
+    """
+    runner = Runner(load_config(), pipeline=[])
+    app.state.runner = runner
+    task = asyncio.create_task(runner.run_forever())
+    try:
+        yield
+    finally:
+        runner.stop()
+        task.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await task
+
+
+app = FastAPI(title="scriptorium", version="0.1.0", lifespan=lifespan)
+app.include_router(admin_router)
 
 
 async def _probe(url: str | None) -> dict[str, bool]:

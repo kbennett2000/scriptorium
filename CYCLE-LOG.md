@@ -186,3 +186,81 @@ two runs byte-identical.
   (network). Fixture bundle regenerates byte-identically (double-build sha256 match;
   `git diff --exit-code` clean after commit).
 - reader/admin-ui untouched by S3 (remain green from S1).
+
+---
+
+## S4 — Job runner + state machine (fake phases) — shipped
+
+**What shipped**
+- `bake/job.py` — the `Job` model + the DESIGN §7.3 state machine as a **transition table**
+  (`LEGAL_TRANSITIONS`) with a single structural guard `Job.transition` (raises
+  `IllegalTransition`). Atomic persistence (`save` = tmp file + `os.replace`) so a kill
+  mid-write never corrupts the record. One job per book → `job.id == book_id`,
+  `jobs/{book_id}.json`.
+- `bake/phases/base.py` — the `Phase` protocol (`units` / `unit_done` via artifact
+  existence+parse / `run_unit`), `Unit`, and the three failure classes: `GpuUnavailable`
+  (→ `waiting_gpu`), `UnitFailed` (retriable → ladder → `failed_units`), bug-class (→ `failed`).
+- `bake/runner.py` — single asyncio worker (directory-scan queue, one job advanced per
+  tick), the 3× retry ladder (10/60/300s), the `waiting_gpu` park/resume with Wake-on-LAN
+  (`wakeonlan` subprocess, gated by `GPU_WOL_ENABLED`), **per-unit persistence**. `sleep`/
+  `wake`/`gpu_gate` are injectable for tests. Started as exactly one task in the app lifespan
+  (single-worker + GPU exclusivity are structural, not advisory).
+- `bake/api.py` (mounted in `app.py`) — `POST /api/admin/books` runs **P0 inline**
+  (`ingest.load → archive_source → paginate → persist work/{id}/pages + structure`, warnings
+  surfaced on the job); `GET books`/`{id}`; `PUT books/{id}/chapters` (409 once past
+  `ingested`); `POST jobs/{id}/start|pause|resume`.
+- Two fake phases + the test suite live under `tests/` (`fake_phases.py`,
+  `test_job_states.py`, `test_runner.py`, `test_admin_books.py`).
+
+**State-transition table (implemented)**
+```
+created          -> ingested | paused | failed
+ingested         -> mentions_running | paused | failed
+mentions_running -> mentions_done | waiting_gpu | paused | failed
+mentions_done    -> cast_done | paused | failed
+cast_done        -> ledger_running | paused | failed
+ledger_running   -> ledger_done | waiting_gpu | paused | failed
+ledger_done      -> selected | paused | failed
+selected         -> prompts_running | paused | failed
+prompts_running  -> prompts_draft | waiting_gpu | paused | failed
+prompts_draft    -> in_review | paused | failed
+in_review        -> approved | paused | failed
+approved         -> rendering | paused | failed
+rendering        -> published | waiting_gpu | paused | failed
+published        -> (terminal)
+waiting_gpu      -> {its prev GPU running state} | paused | failed   (resume-to-prev only)
+paused           -> {its prev active state} | failed                (resume-to-prev only)
+failed           -> (terminal)
+```
+Only the `*_running` + `rendering` states may fall back to `waiting_gpu` (they are the GPU
+phases, §7.4). `waiting_gpu`/`paused` store `prev_state` on entry and may resume **only** to
+it (or fail) — the resume-to-prev guard is tested as an illegal-transition case.
+
+**Kill-test evidence (load-bearing, `test_kill_mid_unit_resumes_losing_at_most_one_unit`)**
+- 5-unit fake phase, worker "killed" mid-`u3` via `CancelledError` (a `BaseException`, so it
+  bypasses the bug-class `except Exception` exactly like a real cancellation).
+- After the kill: `u0,u1,u2` have checkpoint artifacts + the job persisted at `ingested`
+  (phase never reached `to_state`); `u3`'s artifact never landed.
+- On restart (fresh phase + runner over the on-disk job): `unit_done` skips `u0,u1,u2`;
+  `run_unit` re-executes only `["u3","u4"]`. Work overlap across the kill = `{u3}` → **≤1
+  unit lost**.
+
+**Decisions / inferences**
+- **The job record is deliberately schema-free.** `jobs/` is gitignored runtime state, not a
+  distributed bundle format, so it has no JSON Schema (kept S4 inside the no-schema-edits
+  fence). Only P0's `work/{id}/pages/*` + `structure.json` are schema-validated — by the
+  paginator itself.
+- **P0 runs inline** in `POST /books` (per §11.1), leaving the job at `ingested`; post-P0
+  phases are the worker's job. The real pipeline is **P0-only** until S5 registers P1, so a
+  *started* job simply rests at `ingested` (honest — no fake phase ships in the package).
+- **The tick cadence is the `waiting_gpu` retry interval** — every tick re-gates parked jobs
+  with WoL; no separate per-job timer needed.
+- **`sleep`/`wake`/`gpu_gate` are constructor-injected** (default real impls) so tests use
+  no-op sleeps + fake gates without monkeypatching module globals.
+
+**Verification**
+- `uv run ruff check .` → clean. `uv run pytest` → **107 passed, 1 deselected** (network).
+  Transition table (legal + illegal) green; flaky recover + exhaust→`failed_units` green;
+  `waiting_gpu` via both the health gate and a mid-phase `GpuUnavailable` green; WoL guard
+  green; kill-test green; `POST /books` (frontmatter.md) → schema-valid `work/{id}` pages +
+  structure. reader/admin-ui untouched (green from S1).
