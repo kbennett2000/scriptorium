@@ -75,3 +75,57 @@ had to decide):
 - `uv run pytest` → 29 passed. `uv run ruff check .` → clean.
 - reader & admin-ui: `npm run lint`, `npm run typecheck`, `npm run build` all green.
 - TS gen determinism: two runs byte-identical (sha256 match).
+
+---
+
+## S2 — Ingestion adapters (2026-07-13)
+
+**Shipped**
+- `ingest/base.py`: `SourceSpec`, `Chapter`, `RawBook` (frozen/dataclass), the adapter
+  registry (`register`/`load`, lazy adapter import to avoid cycles), and the shared
+  utilities — `normalize_source_text` (`\r\n`/`\r`→`\n` + NFC), `user_book_id`
+  (`usr-`+sha256[:12]), `gutenberg_book_id` (`pg-{id}`), `split_paragraphs`,
+  `detect_chapters` (heuristics 1→2→3 in order, first ≥2 wins), `read_source`,
+  `archive_source` (→ `work/{id}/source/`).
+- `ingest/gutenberg.py`: `search` + `fetch_text` (Gutendex; prefer UTF-8 `text/plain`),
+  `strip_boilerplate` (START/END markers, THE/THIS + casing tolerant, missing →
+  `boilerplate_unstripped`), `load` (`source.kind: gutenberg`, `spec.text` short-circuits
+  the network for offline/sideload).
+- `ingest/textfile.py` (`source.kind: user`, no boilerplate strip — §5.1 scopes strip to
+  gutenberg) and `ingest/markdown.py` (minimal `---` front-matter parser for
+  title/author/language/era; chapter level = first heading level appearing ≥2×).
+- `ingest/__main__.py`: dev CLI (`--file/--kind`, `--gutenberg-id`, `--search`).
+- `config.py`: added `work_dir` property (`data_dir/work`).
+- Fixtures under `tests/fixtures/sources/`: `pg35.txt` (full Time Machine, PG #35),
+  `frontmatter.md`, `headerless.txt`, `allcaps.txt`, `pg_markers.txt`.
+- `tests/test_ingest.py` (20 tests); `pyproject.toml` gained
+  `addopts = "-m 'not gpu and not network'"` so the live `-m network` test is opt-in.
+
+**pg35 result (acceptance eyeball)** — `python -m scriptorium.ingest --file
+tests/fixtures/sources/pg35.txt --kind text` → **16 chapters** titled `I`…`XVI`
+(heuristic 2, standalone Roman-numeral lines after per-line strip; the Epilogue folds
+into `XVI`). Via `--kind gutenberg` the same book yields 16 chapters with the PG license
+stripped (`XVI` = 30 paras); via `--kind text` no strip runs, so the trailing license
+folds into `XVI` (81 paras) — the intended textfile-vs-gutenberg difference.
+
+**Schema-detail / behavioral inferences**
+- **Paragraphs keep internal `\n` verbatim.** Verse stanzas need it (DESIGN §5); prose
+  keeps its source hard-wrap, which is harmless because the reader renders prose with
+  `white-space: normal` (newlines collapse) and verse with `pre-line`. RawBook stays a
+  lossless capture; all reflow is deferred to display.
+- **Preamble before the first heading is dropped** when ≥1 heading is found (title page,
+  table of contents), so chapters begin at the first real heading.
+- **textfile does not strip PG boilerplate** — DESIGN §5.1 scopes stripping to the
+  gutenberg adapter. A sideloaded PG file keeps its boilerplate unless ingested as
+  `kind: gutenberg`. (Documented; see NOTES.)
+- **Markdown front-matter** is parsed by a minimal scalar `key: value` reader (no `pyyaml`
+  dep); only title/author/language/era are honored. `RawBook` gained an internal `era`
+  field (beyond DESIGN's minimal shape) so a user-supplied era survives to bake config.
+- **Chapter titles** are the matched heading text: heuristic-2 titles are the bare Roman
+  numeral (trailing `.` stripped, matching structure.json's `"title": "I"`); heuristic-1/3
+  titles are the full heading line.
+
+**Verification**
+- `uv run ruff check .` → clean. `uv run pytest` → 48 passed, 1 deselected (network).
+  `uv run pytest -m network` → 1 passed (live Gutendex, shape-only assertions).
+- reader/admin-ui untouched by S2 (remain green from S1).

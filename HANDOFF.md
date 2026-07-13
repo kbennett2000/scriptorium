@@ -1,20 +1,24 @@
 # Handoff
 
 ## Current state
-- **S1 complete** (PR open, awaiting human merge). Monorepo skeleton + all eleven
-  JSON Schemas + generated TS types + ADRs 0000/0001–0010/0012 + `/health` +
-  `schemas.validate` + seeds + tests.
-- Server: `uv run pytest` → 29 passed; `uv run ruff check .` clean.
-- reader & admin-ui scaffolds: lint + typecheck + build green.
-- TS type generation is deterministic (verified).
+- **S2 complete** (PR open, awaiting human merge). Ingestion adapters per DESIGN §5:
+  Gutenberg (search/fetch/strip/heuristics), markdown (front-matter), textfile, the
+  `RawBook`/registry in `ingest/base.py`, book-id derivation, raw-source archival, a dev
+  CLI, and offline fixtures/tests.
+- **S1 complete** (merged): monorepo skeleton + eleven JSON Schemas + generated TS types
+  + ADRs + `/health` + `schemas.validate` + seeds.
+- Server: `uv run pytest` → 48 passed, 1 deselected (network); `-m network` → 1 passed;
+  `uv run ruff check .` clean.
 
 ## Next up
-- **S2** — Ingestion adapters (txt/gutenberg, markdown, upload) per DESIGN §5.
-  Depends on S1 only. Also unblocked: **S4** (job runner) and **S12** (sync API),
-  which need only S1 schemas.
-- Schemas are frozen contracts now; later cycles consume `scriptorium.schemas`
-  and `shared/types` rather than redefining formats.
+- **S3** — Paginator + golden tests + `make_fixture_bundle.py` (DESIGN §6). Consumes
+  `RawBook` from S2; must align its NFC+`\n` normalization with
+  `ingest.base.normalize_source_text`. Round-trip byte-equality is the load-bearing test.
+- Also unblocked from S1 only: **S4** (job runner — will surface `RawBook.warnings` on
+  jobs) and **S12** (sync API).
 
 ## Open questions / blocked
-- None blocking. See `NOTES-FOR-NEXT-CYCLES.md` for environment prerequisites
-  (`just`, `wakeonlan`, GPU env vars) and the missing `system-overview.md`.
+- None blocking. See `NOTES-FOR-NEXT-CYCLES.md`: `system-overview.md` still missing (the
+  S2 pre-dispatch copy-in did not happen — non-blocking); ingestion decisions S3+ inherit
+  (paragraphs keep internal `\n`; textfile does not strip PG boilerplate; internal `era`
+  field; minimal front-matter parser); pytest now defaults to `-m 'not gpu and not network'`.
