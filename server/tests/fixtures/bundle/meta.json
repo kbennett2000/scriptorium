@@ -1,0 +1,39 @@
+{
+  "bundle_version": 1,
+  "book_id": "usr-ef6cf2047a5e",
+  "revision": 1,
+  "title": "The Tidewatch Fragment",
+  "author": "A. Fixture",
+  "language": "en",
+  "source": {
+    "kind": "user",
+    "retrieved_at": "2026-07-13T00:00:00Z"
+  },
+  "era": "an imagined coastal town",
+  "style_id": "engraving",
+  "density_preset": "classic",
+  "portraits_enabled": true,
+  "bake": {
+    "completed_at": "2026-07-13T00:00:00Z",
+    "transform_service": {
+      "url_host": "fixture.local",
+      "transforms": {
+        "cast-mentions": "0.0.0-fixture",
+        "cast-canonicalize": "0.0.0-fixture",
+        "scene-update": "0.0.0-fixture",
+        "illustration-prompt": "0.0.0-fixture"
+      }
+    },
+    "models": {
+      "llm": "fixture-llm",
+      "imagegen": "fixture-imagegen"
+    },
+    "pipeline_version": "S3-fixture"
+  },
+  "stats": {
+    "pages": 6,
+    "words": 3300,
+    "plates": 3,
+    "chapters": 2
+  }
+}

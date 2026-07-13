@@ -69,3 +69,41 @@ DESIGN §1/§15 as canonical and stop listing it as required reading.
 `pyproject.toml` now sets `addopts = "-m 'not gpu and not network'"`. A CLI `-m <expr>`
 overrides it (e.g. `pytest -m network`, `pytest -m gpu`). Keep new opt-in suites behind
 these markers so the default run stays offline/GPU-less.
+
+## From S3
+
+### `system-overview.md` is *still* missing (third cycle running)
+Pre-dispatch again asked to copy it into the repo root; `find -iname 'system-overview*'`
+returns nothing anywhere on disk, so there is no file to copy — not skipped, *absent*.
+**Recommendation: stop listing it as a pre-dispatch step and required reading.** Its §5
+invariants are fully realized in DESIGN §1/§15 (ADRs 0001–0010), which the schemas, the
+immutability guard, and now the paginator's byte-stability were built from. Treat DESIGN
+§1/§15 as canonical unless the file resurfaces.
+
+### Paginator decisions later cycles inherit
+- **Verse signal is literally "paragraph contains `\n`"** (§6.5). Because ingestion keeps
+  hard-wrap `\n` in prose too (S2 decision), wrapped prose is *also* unsplittable-move-whole.
+  Fine today. If a future cycle wants prose reflowed (collapse `\n`→space) it must do so
+  *before* pagination and re-hash the `usr-` id — the paginator will then only see genuine
+  verse as multi-line. Don't reflow inside the paginator (would break byte-stability).
+- **Round-trip is guaranteed via a separator ledger**, not naive `\n\n` joining: at a
+  sentence/line split the consumed whitespace has nowhere to live on the page (no trailing
+  whitespace, §6.6), so `PaginatedBook` records the boundary separator and
+  `reconstruct_chapter()` reinserts it. Any tool that reassembles page text (verify, export)
+  must use that, not a blind join, or split paragraphs won't rejoin byte-exactly.
+- **Page `id` is 4-digit zero-padded (`^[0-9]{4}$`)** → hard cap of 9999 pages per book in
+  v1 (page schema pattern). Real books are ~100s of pages; revisit the schema pattern +
+  paginator only if a >9999-page book appears (would need a `bundle_version` bump).
+- **`RawBook` → paginator is the P0 seam** (§7.1). The job runner (S4) should call
+  `ingest.load` then `paginate`, archive the raw source via `ingest.base.archive_source`,
+  and persist `pages/*.json` + `structure.json` as the P0 checkpoint. `RawBook.warnings`
+  (boilerplate/chapters) surface on the job there — the paginator itself ignores warnings.
+
+### Fixture bundle is the R1 dev diet + S10 verify target
+`server/tests/fixtures/bundle/` is a complete valid bundle (`book_id: usr-ef6cf2047a5e`,
+6 pages, 2 chapters, 3 plates + cover + 1 portrait). Regenerate with
+`cd server && uv run python ../tools/make_fixture_bundle.py`. Determinism depends on the
+installed **Pillow version** (flat-colour PNG/WebP encoding) — if a Pillow bump changes the
+image bytes, re-commit the regenerated bundle in that same PR. Selection/cast/prompts are
+hand-written to schema now; when S7/S5/S8 land, consider regenerating those sections from
+the real engines so the fixture tracks reality.

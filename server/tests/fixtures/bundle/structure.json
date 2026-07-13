@@ -1,0 +1,22 @@
+{
+  "chapters": [
+    {
+      "index": 1,
+      "title": "Chapter I",
+      "page_ids": [
+        "0001",
+        "0002",
+        "0003"
+      ]
+    },
+    {
+      "index": 2,
+      "title": "Chapter II",
+      "page_ids": [
+        "0004",
+        "0005",
+        "0006"
+      ]
+    }
+  ]
+}

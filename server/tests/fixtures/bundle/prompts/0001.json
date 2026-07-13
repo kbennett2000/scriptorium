@@ -1,0 +1,22 @@
+{
+  "page_id": "0001",
+  "derived": {
+    "prompt": "a lantern-lit workshop at the end of a lane, tools on the bench",
+    "avoid": "modern dress, machinery",
+    "scene": "a lantern-lit workshop at the end of a lane, tools on the bench"
+  },
+  "edited_prompt": null,
+  "final_subject_prompt": "a lantern-lit workshop at the end of a lane, tools on the bench",
+  "wrapped_prompt": "19th-century steel engraving book illustration, fine crosshatching, monochrome ink, dramatic light, a lantern-lit workshop at the end of a lane, tools on the bench, intricate linework, aged paper tone, high detail",
+  "negative_prompt": "photo, color photograph, modern, text, watermark, signature, blurry, modern dress, machinery",
+  "render": {
+    "at": "2026-07-13T00:00:00Z",
+    "params_echo": {
+      "seed": 1234,
+      "width": 832,
+      "height": 1216,
+      "steps": 30
+    },
+    "attempts": 1
+  }
+}
