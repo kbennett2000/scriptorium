@@ -1,0 +1,11 @@
+# Personal Claude Code config (permissions) — not shared. This pattern ignores the file both
+# in this standalone project and while the folder is still nested inside its origin repo.
+.claude/settings.local.json
+
+# The shared engine pin (.claude/settings.json) is intentionally NOT ignored — it travels with
+# the repo so every clone runs on the same model/effort.
+
+# cycle runtime
+/.factory/
+/cycle.log
+PAUSE
