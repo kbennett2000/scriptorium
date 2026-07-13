@@ -1,0 +1,89 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://scriptorium.local/schemas/cast.schema.json",
+  "title": "cast",
+  "description": "Dramatis personae for a bundle (cast.json): the reduced, canonicalized character list produced by the cast pipeline (DESIGN §4.3, §7.2). This is the published contract; work-phase reducer intermediates (e.g. is_person, descriptors) are not part of it.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["characters"],
+  "properties": {
+    "characters": {
+      "description": "All characters kept in the cast, majors and minors.",
+      "type": "array",
+      "items": {
+        "description": "One character.",
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "slug",
+          "name",
+          "aliases",
+          "mention_pages",
+          "major",
+          "visual_description",
+          "one_line",
+          "tags",
+          "portrait",
+          "edited_by_human"
+        ],
+        "properties": {
+          "slug": {
+            "description": "Kebab-case, de-articled, uniquified identifier for this character (DESIGN §7.2). Stable within the bundle; used in portrait filenames and pseudo-plate ids.",
+            "type": "string",
+            "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$"
+          },
+          "name": {
+            "description": "Display name: the most frequent full label for this character (DESIGN §7.2).",
+            "type": "string",
+            "minLength": 1
+          },
+          "aliases": {
+            "description": "Other labels for this character besides the canonical name.",
+            "type": "array",
+            "items": {
+              "description": "One alias string.",
+              "type": "string"
+            }
+          },
+          "mention_pages": {
+            "description": "Zero-padded 4-digit page ids on which this character is mentioned, used for the reader's furthest-read cast filter (DESIGN §13, ADR-0008).",
+            "type": "array",
+            "items": {
+              "description": "A page id: zero-padded 4-digit sequence string.",
+              "type": "string",
+              "pattern": "^[0-9]{4}$"
+            }
+          },
+          "major": {
+            "description": "Whether this character is a major (rendered with a canonical visual description and eligible for a portrait). See the major rule in DESIGN §7.2.",
+            "type": "boolean"
+          },
+          "visual_description": {
+            "description": "Canonical visual description used in prompts and portraits. Null for minors, which get no detailed canonicalization (DESIGN §7.2).",
+            "type": ["string", "null"]
+          },
+          "one_line": {
+            "description": "One-line character summary for the dramatis-personae page and prompt context.",
+            "type": "string"
+          },
+          "tags": {
+            "description": "Free-form descriptive tags for the character.",
+            "type": "array",
+            "items": {
+              "description": "One tag string.",
+              "type": "string"
+            }
+          },
+          "portrait": {
+            "description": "Relative bundle path to this character's rendered portrait PNG (e.g. 'images/portraits/time-traveller.png'), or null if no portrait exists.",
+            "type": ["string", "null"]
+          },
+          "edited_by_human": {
+            "description": "True if a human edited this character's visual_description/one_line in the review gate (DESIGN §11.1).",
+            "type": "boolean"
+          }
+        }
+      }
+    }
+  }
+}

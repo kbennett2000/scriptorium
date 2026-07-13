@@ -1,0 +1,180 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://scriptorium.local/schemas/meta.schema.json",
+  "title": "meta",
+  "description": "Bundle-level metadata (meta.json). Identity, bake configuration, provenance and summary statistics for one published book. See DESIGN §4.3.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "bundle_version",
+    "book_id",
+    "revision",
+    "title",
+    "author",
+    "language",
+    "source",
+    "era",
+    "style_id",
+    "density_preset",
+    "portraits_enabled",
+    "bake",
+    "stats"
+  ],
+  "properties": {
+    "bundle_version": {
+      "description": "Schema/version generation of this bundle. v1 bundles are always 1; the field exists so future bundle formats can be distinguished and migrated (DESIGN §4).",
+      "const": 1
+    },
+    "book_id": {
+      "description": "Permanent book identifier. Gutenberg books are 'pg-{gutenberg_id}'; user-supplied books are 'usr-{first 12 hex of sha256 of normalized source text}' (DESIGN §4.1). Ids never change and are never reused.",
+      "type": "string",
+      "pattern": "^(pg-[0-9]+|usr-[0-9a-f]{12})$"
+    },
+    "revision": {
+      "description": "Monotonic revision counter, starting at 1 on first publish. Bumped whenever an additive revision (re-selection or plate re-render) changes the bundle (DESIGN §4.4).",
+      "type": "integer",
+      "minimum": 1
+    },
+    "title": {
+      "description": "Human-readable book title. From the source adapter, overridable in bake config.",
+      "type": "string",
+      "minLength": 1
+    },
+    "author": {
+      "description": "Author name as a display string. May be empty for anonymous/unknown works but the field is always present.",
+      "type": "string"
+    },
+    "language": {
+      "description": "Primary language of the text as a short code (e.g. 'en'). Advisory; feeds transforms and reader typography.",
+      "type": "string",
+      "minLength": 1
+    },
+    "source": {
+      "description": "Where the text came from, for provenance and offline re-bake.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "retrieved_at"],
+      "properties": {
+        "kind": {
+          "description": "Origin class of the bundle text. 'gutenberg' = fetched from Project Gutenberg via Gutendex; 'user' = uploaded/pasted/markdown sideload (DESIGN §5.3). Distinct from the admin API request 'kind' (gutenberg|text|markdown), which is not stored here.",
+          "type": "string",
+          "enum": ["gutenberg", "user"]
+        },
+        "gutenberg_id": {
+          "description": "Project Gutenberg book number. Present only when kind = 'gutenberg'.",
+          "type": "integer",
+          "minimum": 1
+        },
+        "retrieved_at": {
+          "description": "ISO-8601 UTC timestamp at which the source text was retrieved/ingested.",
+          "type": "string",
+          "format": "date-time"
+        }
+      }
+    },
+    "era": {
+      "description": "Historical/aesthetic era for the book (e.g. '1890s England'). Set in bake config (human), defaulted from an admin-UI guess. Feeds the transform prompts (DESIGN §4.3).",
+      "type": "string",
+      "minLength": 1
+    },
+    "style_id": {
+      "description": "Id of the illustration style used for this bake, referencing an entry in styles.json (DESIGN §9). Not enum-locked because styles are data, not schema.",
+      "type": "string",
+      "minLength": 1
+    },
+    "density_preset": {
+      "description": "Plate-density preset used for selection (DESIGN §8). One of the three v1 presets.",
+      "type": "string",
+      "enum": ["lavish", "classic", "sparse"]
+    },
+    "portraits_enabled": {
+      "description": "Whether dramatis-personae portraits were rendered for major characters in this bake (DESIGN §10).",
+      "type": "boolean"
+    },
+    "bake": {
+      "description": "Provenance of the bake that produced this bundle: when, against which services/models, at which pipeline version. Pins everything needed to reproduce or audit generation (DESIGN §4.3, ADR-0003).",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["completed_at", "transform_service", "models", "pipeline_version"],
+      "properties": {
+        "completed_at": {
+          "description": "ISO-8601 UTC timestamp at which the bake (publish) completed.",
+          "type": "string",
+          "format": "date-time"
+        },
+        "transform_service": {
+          "description": "The text-transform-service instance and transform versions used.",
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["url_host", "transforms"],
+          "properties": {
+            "url_host": {
+              "description": "Host (and optionally port) of the text-transform-service that served this bake.",
+              "type": "string",
+              "minLength": 1
+            },
+            "transforms": {
+              "description": "Map of transform name (e.g. 'scene-update', 'cast-mentions') to the exact version string reported by the service at bake time. Keys are transform names; values are version strings.",
+              "type": "object",
+              "additionalProperties": {
+                "description": "Version string of one transform, as reported by the service.",
+                "type": "string"
+              }
+            }
+          }
+        },
+        "models": {
+          "description": "Model identifiers as reported by the GPU services at bake time.",
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["llm", "imagegen"],
+          "properties": {
+            "llm": {
+              "description": "LLM model tag used for text transforms (e.g. 'qwen3:8b'), as reported by the transform service.",
+              "type": "string",
+              "minLength": 1
+            },
+            "imagegen": {
+              "description": "Image-generation model tag used for rendering (e.g. an SDXL variant), as reported by the imagegen service.",
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        },
+        "pipeline_version": {
+          "description": "Version of the scriptorium pipeline that produced this bundle (e.g. a 'git describe' string).",
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "stats": {
+      "description": "Summary counts for the published bundle, for display and sanity checks.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["pages", "words", "plates", "chapters"],
+      "properties": {
+        "pages": {
+          "description": "Total number of logical pages in the bundle.",
+          "type": "integer",
+          "minimum": 0
+        },
+        "words": {
+          "description": "Total word count across all pages.",
+          "type": "integer",
+          "minimum": 0
+        },
+        "plates": {
+          "description": "Number of rendered plates (illustrations) in the bundle, excluding cover and portraits.",
+          "type": "integer",
+          "minimum": 0
+        },
+        "chapters": {
+          "description": "Number of chapters detected/used in the bundle.",
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    }
+  }
+}

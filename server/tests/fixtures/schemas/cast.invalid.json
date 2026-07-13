@@ -1,0 +1,24 @@
+{
+  "characters": [
+    {
+      "slug": "time-traveller",
+      "name": "the Time Traveller",
+      "aliases": [
+        "the Traveller"
+      ],
+      "mention_pages": [
+        "0001",
+        "0002"
+      ],
+      "major": true,
+      "visual_description": "A pale, energetic Victorian gentleman.",
+      "one_line": "The inventor of the machine.",
+      "tags": [
+        "protagonist"
+      ],
+      "portrait": "images/portraits/time-traveller.png",
+      "edited_by_human": false,
+      "unexpected": 1
+    }
+  ]
+}

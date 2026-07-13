@@ -1,0 +1,17 @@
+{
+  "book_id": "pg-35",
+  "revision": 1,
+  "bundle_version": 1,
+  "files": [
+    {
+      "path": "p",
+      "sha256": "abc",
+      "bytes": 1
+    }
+  ],
+  "reader_required": [
+    "pages/*",
+    "images/web/**"
+  ],
+  "total_bytes_reader": 4312
+}

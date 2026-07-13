@@ -1,0 +1,86 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://scriptorium.local/schemas/selection.schema.json",
+  "title": "selection",
+  "description": "Plate selection for a bundle (selection.json): the density preset, its parameters, and the chosen plates with their lifecycle status. Updated additively across revisions (DESIGN §4.3, §8).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["preset", "params", "plates"],
+  "properties": {
+    "preset": {
+      "description": "Density preset that produced this selection (DESIGN §8).",
+      "type": "string",
+      "enum": ["lavish", "classic", "sparse"]
+    },
+    "params": {
+      "description": "Effective selection parameters (from the preset table, DESIGN §8).",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["min_gap", "max_gap", "salience_floor", "chapter_open", "scene_boundary"],
+      "properties": {
+        "min_gap": {
+          "description": "Minimum number of pages between kept plates.",
+          "type": "integer",
+          "minimum": 0
+        },
+        "max_gap": {
+          "description": "Maximum gap before a fill plate is sought within the window.",
+          "type": "integer",
+          "minimum": 0
+        },
+        "salience_floor": {
+          "description": "Minimum visual_salience [0,1] a fill candidate must clear to be selected.",
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "chapter_open": {
+          "description": "Whether the first page of each chapter is a mandatory mark.",
+          "type": "boolean"
+        },
+        "scene_boundary": {
+          "description": "Whether pages with scene_changed=true are mandatory marks.",
+          "type": "boolean"
+        }
+      }
+    },
+    "plates": {
+      "description": "Selected plates in seq order. Only 'selected' plates flow to prompt derivation and render; 'retired' plates keep their files (additive invariant, DESIGN §4.4, §8).",
+      "type": "array",
+      "items": {
+        "description": "One plate choice.",
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["page_id", "reason", "salience", "status", "added_in_revision"],
+        "properties": {
+          "page_id": {
+            "description": "Zero-padded 4-digit page id the plate illustrates. (Cover and portrait pseudo-plates are tracked in prompts/, not here.)",
+            "type": "string",
+            "pattern": "^[0-9]{4}$"
+          },
+          "reason": {
+            "description": "Why the page was selected (DESIGN §8): a mandatory chapter opener, a scene boundary, a gap fill, or a manual override in review.",
+            "type": "string",
+            "enum": ["chapter_open", "scene_boundary", "fill", "manual"]
+          },
+          "salience": {
+            "description": "Visual salience score [0,1] of the page at selection time.",
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1
+          },
+          "status": {
+            "description": "Lifecycle of the plate: 'selected' (chosen, not yet approved), 'approved' (locked in review), 'rendered' (pixels exist), 'retired' (deselected in a later revision; files retained).",
+            "type": "string",
+            "enum": ["selected", "approved", "rendered", "retired"]
+          },
+          "added_in_revision": {
+            "description": "Bundle revision in which this plate was first selected (DESIGN §8 re-selection).",
+            "type": "integer",
+            "minimum": 1
+          }
+        }
+      }
+    }
+  }
+}

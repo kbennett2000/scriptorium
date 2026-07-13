@@ -1,0 +1,66 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://scriptorium.local/schemas/manifest.schema.json",
+  "title": "manifest",
+  "description": "Bundle manifest (manifest.json): the authoritative file list with hashes and sizes, plus the set of files a reader must download. Drives delta sync by path+sha256 (DESIGN §4.3, §4.4).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["book_id", "revision", "bundle_version", "files", "reader_required", "total_bytes_reader"],
+  "properties": {
+    "book_id": {
+      "description": "Permanent book identifier (see meta.book_id).",
+      "type": "string",
+      "pattern": "^(pg-[0-9]+|usr-[0-9a-f]{12})$"
+    },
+    "revision": {
+      "description": "Bundle revision this manifest describes.",
+      "type": "integer",
+      "minimum": 1
+    },
+    "bundle_version": {
+      "description": "Bundle format generation (v1 bundles are always 1).",
+      "const": 1
+    },
+    "files": {
+      "description": "Every file in the bundle, with content hash and byte size. The delta-sync unit: clients download new/changed paths by comparing sha256.",
+      "type": "array",
+      "items": {
+        "description": "One file entry.",
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["path", "sha256", "bytes"],
+        "properties": {
+          "path": {
+            "description": "Bundle-relative POSIX path (e.g. 'pages/0001.json').",
+            "type": "string",
+            "minLength": 1
+          },
+          "sha256": {
+            "description": "Lowercase hex SHA-256 of the file contents.",
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          },
+          "bytes": {
+            "description": "File size in bytes.",
+            "type": "integer",
+            "minimum": 0
+          }
+        }
+      }
+    },
+    "reader_required": {
+      "description": "Glob patterns (bundle-relative) selecting the files a reader downloads by default; full-res archival plates are excluded (DESIGN §4.3).",
+      "type": "array",
+      "items": {
+        "description": "One glob pattern selecting reader-required files.",
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "total_bytes_reader": {
+      "description": "Total size in bytes of all reader_required files, for download-size display.",
+      "type": "integer",
+      "minimum": 0
+    }
+  }
+}

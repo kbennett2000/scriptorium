@@ -1,50 +1,36 @@
-# CLAUDE.md
+# CLAUDE.md — scriptorium
 
-<!-- Everything above the PROJECT CONTEXT marker is inherited from project-template.
-     Do not edit per-project. Project-specific content is appended below the marker
-     by the factory generator from the new-project issue. -->
+Illuminated-book pipeline + offline-first reader. Bakery on the i5 server (port 8720) orchestrates GPU work over the LAN (text-transform-service :8712, imagegen-service); readers check out immutable bundles and work fully offline. Monorepo:
 
-## How work runs here
+- `server/` — Python 3.12, FastAPI, uv (bakery, library, sync, static hosting)
+- `reader/` — Vite + React + TS (Capacitor Android/iOS + desktop PWA)
+- `admin-ui/` — Vite + React + TS (bake wizard + review gate)
+- `shared/schemas/` — JSON Schemas: **the single source of truth for every file format.** Schema change → regenerate TS types → both sides.
 
-- Work is executed one cycle at a time by a headless `claude -p` run — no persistent session, and no human watching the run.
-- Each cycle starts fresh. Current state lives in `HANDOFF.md`, the ADRs under `docs/adr/`, and this file — not in remembered conversation. Read them at the start of every cycle.
-- End each cycle by updating `HANDOFF.md` so the next cycle can pick up cleanly.
+## Read before working
+1. `system-overview.md` — invariants (§5) are binding
+2. `scriptorium-DESIGN.md` — the sections your cycle names
+3. `scriptorium-BUILD-PLAN.md` — §0 discipline + your current cycle only
 
-## The cycle contract
+One cycle per session. Plan mode first: restate scope, files, tests, ambiguities. Ambiguity → ask.
 
-**Never pause or wait for a human.** No one is watching the terminal. You must never end by printing a question and stopping — a question that isn't recorded on the issue is lost. Every cycle ends in exactly one of the two terminal states below, then exits.
+## Commands
+```
+just server-dev / server-test    # uv; tests must pass with NO GPU services running
+just reader-dev / admin-dev
+just lint-all / test-all
+just android-build               # after R5
+```
 
-**Do the work. Don't ask permission.** When files change, you ALWAYS — without asking, every time:
-1. Work on a branch, never `master`/`main`.
-2. Commit and push.
-3. Open a PR for human review/merge.
+## Hard rules (violating these is a bug even if it works)
+- **Fixtures first.** All GPU-service interactions are tested against recorded fixtures in `server/tests/fixtures/tts/`; live calls only behind `-m gpu`.
+- **Immutability.** Published page text/structure never changes; revisions are additive; retired plates keep their files. The publish integrity guard is sacred.
+- **Byte-stability.** Paginator output is deterministic and byte-exact forever — annotation anchors depend on it. Round-trip tests must stay green.
+- **Causality / no spoilers.** Generation for page N sees only pages ≤ N; the selection engine's input type contains no text fields; the reader's cast page filters by furthest-read.
+- **Zero-online read path.** No CDN anything; fonts vendored; network calls only in reader `sync/` + `shelf/` (ESLint-enforced — don't weaken the rule).
+- **Review gate.** No render before human approval. Don't add bypasses, even for dev (use FakeImagegen instead).
+- **GPU sequencing.** Single job worker; TTS unload before any render; `GpuUnavailable` → `waiting_gpu`, never a paid fallback. No API keys in this repo, ever.
+- **Never assert exact LLM or image content in tests.** Schema, shape, cross-references only.
 
-Committing, pushing, and opening a PR are never optional and never require confirmation. A human reviews and merges the PR; you do not close the issue.
-
-**Decide, don't stall.** If something is uncertain but you can proceed, make the reasonable choice and note it in the PR description. "Should I also do X?" is not a blocker — do the obvious thing or note it and move on. Non-blocking uncertainty never stops a cycle.
-
-**Stopping early is rare and only for true blockers.** Stop only when you are missing information you genuinely cannot proceed without. Stopping means: record the blocker on the issue (the `needs-input` state below) and exit. This is recording, not asking — you never wait for a reply. A destructive or unwalkbackable action (force push, history rewrite, deleting branches/data) counts as a blocker: do not do it; record it and stop.
-
-## End of cycle — always update the issue
-
-You are given the instruction issue number for this cycle (e.g. #1). Before you exit, run exactly one case:
-
-- **Completed** (files changed, PR opened):
-  - `gh issue comment <N> --body "PR: <pr-url>"`
-  - `gh issue edit <N> --add-label cycle-summary --remove-label instructions`
-- **Blocked** (missing info you cannot proceed without):
-  - `gh issue comment <N> --body "<the blocker, stated clearly>"`
-  - `gh issue edit <N> --add-label needs-input --remove-label instructions`
-
-Every cycle ends in one of these two states, then stops. Never close the issue.
-
-## Conventions
-
-- ADR-first: significant decisions get an ADR in `docs/adr/` before implementation.
-- Keep changes small and reviewable.
-
-<!-- ===== PROJECT CONTEXT (appended per repo — do not add content above this line) ===== -->
-
-## Project context
-
-     What this project is, stack, test command, project-specific conventions. -->
+## Done means
+ruff clean (server) · eslint + tsc clean (reader, admin-ui) · non-gpu tests green · cycle acceptance checklist satisfied · `CYCLE-LOG.md` entry · commits prefixed `S{n}:`/`R{n}:` · schemas and generated types in sync (`git diff --exit-code` after regen).

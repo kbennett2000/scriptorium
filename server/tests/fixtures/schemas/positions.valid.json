@@ -1,0 +1,13 @@
+{
+  "furthest": {
+    "page_seq": 42,
+    "char": 310,
+    "modified": "2026-07-13T12:00:00Z"
+  },
+  "current": {
+    "page_seq": 17,
+    "char": 0,
+    "modified": "2026-07-13T12:00:00Z",
+    "device": "pixel8"
+  }
+}

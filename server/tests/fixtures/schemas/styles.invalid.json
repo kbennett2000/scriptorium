@@ -1,0 +1,16 @@
+{
+  "styles": [
+    {
+      "id": "engraving",
+      "name": "Victorian Engraving",
+      "consistency_friendly": true,
+      "prefix": "engraving, ",
+      "suffix": ", detail",
+      "negative": "photo",
+      "portrait_prefix": "engraved portrait, ",
+      "params": {
+        "steps": null
+      }
+    }
+  ]
+}

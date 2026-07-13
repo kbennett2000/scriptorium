@@ -1,0 +1,58 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://scriptorium.local/schemas/prompt.schema.json",
+  "title": "prompt",
+  "description": "The prompt record for one plate (prompts/NNNN.json, or the cover/portrait pseudo-plates). Holds the derived illustration prompt, any human edit, and the fully-assembled strings plus render provenance (DESIGN §4.3, §10).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["page_id", "derived", "edited_prompt", "final_subject_prompt"],
+  "properties": {
+    "page_id": {
+      "description": "Plate id: a zero-padded 4-digit page id, or a pseudo-plate id 'cover' or 'portrait-{slug}' (DESIGN §10).",
+      "type": "string",
+      "pattern": "^([0-9]{4}|cover|portrait-[a-z0-9]+(-[a-z0-9]+)*)$"
+    },
+    "derived": {
+      "description": "The 'illustration-prompt' transform output stored verbatim (DESIGN §4.3). Opaque — its internal shape (including fields like 'prompt' and 'avoid') is owned by text-transform-service, so it is not constrained here.",
+      "type": "object"
+    },
+    "edited_prompt": {
+      "description": "Human-edited subject prompt from the review gate, or null if unedited (DESIGN §11.1).",
+      "type": ["string", "null"]
+    },
+    "final_subject_prompt": {
+      "description": "The subject prompt actually used: edited_prompt if set, else derived.prompt (DESIGN §4.3).",
+      "type": "string"
+    },
+    "wrapped_prompt": {
+      "description": "The full style-wrapped string sent to imagegen: style.prefix + final_subject_prompt + style.suffix (DESIGN §10). Present after render; absent for draft prompts.",
+      "type": "string"
+    },
+    "negative_prompt": {
+      "description": "The negative prompt sent to imagegen: style.negative joined with derived.avoid (DESIGN §10). Present after render; absent for draft prompts.",
+      "type": "string"
+    },
+    "render": {
+      "description": "Render provenance for this plate. Absent until the plate has been rendered (P7).",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["at", "attempts"],
+      "properties": {
+        "at": {
+          "description": "ISO-8601 UTC timestamp of the (latest) render.",
+          "type": "string",
+          "format": "date-time"
+        },
+        "params_echo": {
+          "description": "The render parameters echoed back by the imagegen service (seed, size, steps, etc.). Opaque — shape owned by the imagegen service, not constrained here.",
+          "type": "object"
+        },
+        "attempts": {
+          "description": "Number of render attempts made for this plate.",
+          "type": "integer",
+          "minimum": 1
+        }
+      }
+    }
+  }
+}

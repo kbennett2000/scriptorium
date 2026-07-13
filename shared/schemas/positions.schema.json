@@ -1,0 +1,61 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://scriptorium.local/schemas/positions.schema.json",
+  "title": "positions",
+  "description": "One user's reading position for one book (sync/positions/{user}/{book}.json). Identity (user, book) lives in the file path, not the document. Merged as furthest-read-wins plus last-writer-wins current (DESIGN §4.5, §12).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["furthest", "current"],
+  "properties": {
+    "furthest": {
+      "description": "The furthest point ever reached. Merged by max tuple (page_seq, char) regardless of timestamp (furthest-read-wins).",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["page_seq", "char", "modified"],
+      "properties": {
+        "page_seq": {
+          "description": "1-based page sequence number of the furthest position.",
+          "type": "integer",
+          "minimum": 1
+        },
+        "char": {
+          "description": "UTF-16 character offset within that page.",
+          "type": "integer",
+          "minimum": 0
+        },
+        "modified": {
+          "description": "ISO-8601 UTC timestamp this furthest value was recorded.",
+          "type": "string",
+          "format": "date-time"
+        }
+      }
+    },
+    "current": {
+      "description": "The current reading position ('Continue' opens this). Merged by greater 'modified' (last-writer-wins).",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["page_seq", "char", "modified"],
+      "properties": {
+        "page_seq": {
+          "description": "1-based page sequence number of the current position.",
+          "type": "integer",
+          "minimum": 1
+        },
+        "char": {
+          "description": "UTF-16 character offset within that page.",
+          "type": "integer",
+          "minimum": 0
+        },
+        "modified": {
+          "description": "ISO-8601 UTC timestamp this current position was recorded.",
+          "type": "string",
+          "format": "date-time"
+        },
+        "device": {
+          "description": "Optional label of the device that recorded this position (e.g. 'pixel8'), for display.",
+          "type": "string"
+        }
+      }
+    }
+  }
+}

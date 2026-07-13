@@ -1,0 +1,13 @@
+{
+  "name": "@scriptorium/shared",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "JSON Schemas (single source of truth) and generated TypeScript types for all bundle/sync files.",
+  "scripts": {
+    "gen:types": "node gen-types.mjs"
+  },
+  "devDependencies": {
+    "json-schema-to-typescript": "^15.0.4"
+  }
+}

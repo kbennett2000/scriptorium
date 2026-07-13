@@ -1,0 +1,30 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://scriptorium.local/schemas/users.schema.json",
+  "title": "users",
+  "description": "Household profiles (users.json). A top-level array of passwordless profiles used by the reader's profile picker and to namespace per-user annotations/positions (DESIGN §14, ADR-0005).",
+  "type": "array",
+  "items": {
+    "description": "One household profile.",
+    "type": "object",
+    "additionalProperties": false,
+    "required": ["id", "name", "color"],
+    "properties": {
+      "id": {
+        "description": "Stable profile id, used to namespace sync files ({user}/{book}). Slug-like.",
+        "type": "string",
+        "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$"
+      },
+      "name": {
+        "description": "Display name shown in the profile picker.",
+        "type": "string",
+        "minLength": 1
+      },
+      "color": {
+        "description": "Avatar/accent color for this profile, as a CSS hex color (e.g. '#e07a5f').",
+        "type": "string",
+        "pattern": "^#[0-9a-fA-F]{6}$"
+      }
+    }
+  }
+}
