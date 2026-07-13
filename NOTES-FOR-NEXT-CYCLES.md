@@ -107,3 +107,54 @@ installed **Pillow version** (flat-colour PNG/WebP encoding) — if a Pillow bum
 image bytes, re-commit the regenerated bundle in that same PR. Selection/cast/prompts are
 hand-written to schema now; when S7/S5/S8 land, consider regenerating those sections from
 the real engines so the fixture tracks reality.
+
+## From S4
+
+### How S5+ real phases plug into the runner
+- **Register phases in the pipeline by `from_state`.** The runner (`bake/runner.py`)
+  resolves the phase for a job's current state via `pipeline: list[Phase]` (keyed on
+  `from_state`) and transitions the job to `phase.to_state` when all units are done. Each
+  `(from_state, to_state)` pair **must be a legal edge** in `LEGAL_TRANSITIONS` or
+  `Job.transition` raises. Today the app builds `Runner(cfg, pipeline=[])` in `app.py`'s
+  lifespan — S5 replaces `[]` with the real P1/P2 phases (and later cycles append P3…P7).
+- **A phase implements three methods** (`bake/phases/base.py::Phase`): `units(job, cfg)`
+  (deterministic order), `unit_done(job, cfg, unit)` (True iff the checkpoint artifact
+  exists **and** parses — this is the entire resume contract), `run_unit(job, cfg, unit)`
+  (writes that artifact; may raise `GpuUnavailable`/`UnitFailed`). `run_unit` may be sync or
+  async — the runner awaits it if awaitable, so S5's httpx-based GPU phases can be `async def`.
+- **Failure taxonomy is fixed:** raise `GpuUnavailable` for 503-class (→ `waiting_gpu`,
+  retried each tick with WoL), `UnitFailed` for 422-class retriable (→ 3× 10/60/300s ladder
+  → `failed_units`, phase continues), anything else = bug-class (→ job `failed`). P3's
+  "ledger gap" carry-forward (§7.3) is a P3 concern layered on top of `failed_units`, not the
+  runner's job.
+- **GPU phases must set `is_gpu = True`** so the runner sends WoL + polls the health gate
+  before running any unit. The default `gpu_gate` polls **TTS** `/health`; the **render**
+  phase (P7) needs an imagegen-health gate instead — pass a different `gpu_gate` for the
+  render pipeline, or make the gate per-phase, when S10 lands. Also §7.4: P7 must call TTS
+  `POST /v1/models/unload` and require success *before* entering — that unload step is not
+  yet implemented (no TTS client until S5); wire it as a render-phase precondition in S10.
+
+### The job record is internal runtime state (no schema)
+`jobs/{book_id}.json` has **no JSON Schema** on purpose — it is gitignored runtime state, not
+a distributed bundle file. Don't add one just to satisfy "schemas are the source of truth";
+that rule governs *interchange* formats (bundle files), which are all still schema-validated.
+If a future cycle needs cross-process job introspection beyond `/health`'s summary, prefer a
+read model over schematizing the on-disk record.
+
+### `job.id == book_id` (one job per book)
+`/api/admin/books/{id}` and `/api/admin/jobs/{id}` address the same record. If v1 ever needs
+re-bakes/history (multiple jobs per book), this is the spot that changes — add a job id
+distinct from `book_id` and an index; today the 1:1 mapping keeps everything addressable by
+`book_id` alone.
+
+### P0 source archival is user-source-only
+`POST /books` archives the raw source via `read_source` + `archive_source`, which only works
+for `text`/`markdown`/paste sources (they carry their bytes). A `gutenberg` source is
+adapter-fetched over the network and is **not** archived by S4's P0 (the `read_source`
+`ValueError` is swallowed). When the Gutenberg live path is exercised (M1), archive the
+fetched bytes inside the gutenberg flow so provenance (§5.1) holds for pg- books too.
+
+### Test-support lives in `tests/` and is imported top-level
+`tests/` has no `__init__.py`, so `tests/fake_phases.py` is imported as `from fake_phases
+import …` (pytest prepends the test dir to `sys.path`), not as a relative import. Keep new
+shared test doubles there and import them the same way.
