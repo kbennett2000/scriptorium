@@ -22,6 +22,9 @@ node_modules/
 dist/
 *.tsbuildinfo
 
+# Fixture-bundle tool scratch output (the committed bundle lives under server/tests/)
+/tools/out/
+
 # Runtime data dir (never committed; the repo ships data/styles.json seed only)
 /data/library/
 /data/work/

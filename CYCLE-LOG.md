@@ -129,3 +129,60 @@ folds into `XVI` (81 paras) — the intended textfile-vs-gutenberg difference.
 - `uv run ruff check .` → clean. `uv run pytest` → 48 passed, 1 deselected (network).
   `uv run pytest -m network` → 1 passed (live Gutendex, shape-only assertions).
 - reader/admin-ui untouched by S2 (remain green from S1).
+
+---
+
+## S3 — Paginator + golden tests + fixture bundle (2026-07-13)
+
+**Shipped**
+- `paginate/engine.py`: `paginate(RawBook, params) -> PaginatedBook` (DESIGN §6 steps
+  1–7). `PaginationParams(target=550, min=400, max=850)`, `VERSE_CAP=1.25`. Greedy
+  whole-paragraph packing; forced sentence-split (`(?<=[.!?…])\s+`, nearest target, via
+  `finditer` so the consumed whitespace is captured); verse/`\n`-containing paragraphs
+  move whole up to 1.25×max then split on line boundaries; chapters never share a page;
+  zero-padded 4-digit ids. Emits `structure.json` and runs `schemas.validate` on every
+  page + the structure before returning.
+- **Separator ledger** (`ChapterLayout`): every page records the exact separator consumed
+  at its leading boundary (`\n\n` between paragraphs, or the split whitespace mid-paragraph),
+  so `PaginatedBook.reconstruct_chapter(i)` rebuilds each chapter byte-for-byte **even
+  across sentence/line splits** — this is what makes the round-trip guarantee airtight.
+- `tools/make_fixture_bundle.py`: deterministic 6-page fake bundle (real P0 pagination +
+  hand-written schema-valid meta/cast/selection/prompts + Pillow flat-colour plate/cover/
+  portrait PNGs with web/thumb WebP derivatives + manifest with real sha256s). Committed
+  under `server/tests/fixtures/bundle/` (30 files, ~196 KB). `/tools/out/` gitignored.
+- Fixtures: `sources/verse.md`, `sources/longpara.txt` (one ~3000-word single-line para),
+  `sources/submin.txt`, `goldens/pg35.golden.json`.
+- Tests: `test_paginate.py` (19 — round-trip, determinism, properties, step-specific,
+  golden) and `test_fixture_bundle.py` (7 — schema-validate every file kind, verify every
+  manifest hash+size, reader_required present, cross-references).
+
+**pg35 result (acceptance eyeball)** — pg-35 (16 chapters) paginates to **58 pages**.
+Per-chapter page counts: `[3,3,3,4,3,4,4,7,4,4,4,5,2,4,1,3]`. Word-count distribution:
+min 35 (a short chapter-final page), max 729, mean ≈ 557 — clustered near target 550,
+no page under min except chapter-finals, none over the 1.25×max (1062) cap. Golden sample
+(page 1 edges): first40 `" Introduction\n\nThe Time Traveller (for s"`, last40
+`"ster the perspective of the\nthing. See?”"`. Round-trip byte-exact for all 16 chapters;
+two runs byte-identical.
+
+**Decisions / inferences**
+- **Normalization composition (§6.6 ∘ S2 `normalize_source_text`):** the paginator does
+  **not** re-normalize. `normalize_source_text` already applied NFC + `\n` endings before
+  `RawBook` existed and `split_paragraphs` stripped per-line trailing whitespace, so §6.6 is
+  satisfied by inheritance: the paginator only concatenates already-canonical strings with
+  `\n\n` and *asserts* the invariant on its output (`text == NFC(text)`, no `\r`, no trailing
+  whitespace) rather than redoing it. One normalization story, no double-normalize. NFC is
+  closed under the codepoint-safe boundaries we split on, so fragments stay NFC.
+- **Verse signal = "contains `\n`" (literal §6.5).** Hard-wrapped Gutenberg prose also
+  contains `\n`, so both are treated as unsplittable-move-whole. Harmless and correct in
+  practice: real wrapped paragraphs are small (they pack fine, never near the cap), while
+  paragraphs that actually *need* splitting arrive single-line (no `\n`) and split correctly.
+  One rule, no prose/verse classifier. Verified: pg35 packs by whole paragraphs (no splits);
+  the single-line `longpara` fixture splits into 6 pages and still round-trips byte-exact.
+- **structure title fallback** `chapter.title or raw_book.title or str(index)` (schema
+  requires a string); every chapter emits ≥1 page (empty chapter → one empty-text page).
+
+**Verification**
+- `uv run ruff check .` (server + tool) → clean. `uv run pytest` → 74 passed, 1 deselected
+  (network). Fixture bundle regenerates byte-identically (double-build sha256 match;
+  `git diff --exit-code` clean after commit).
+- reader/admin-ui untouched by S3 (remain green from S1).

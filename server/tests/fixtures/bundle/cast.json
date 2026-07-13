@@ -1,0 +1,42 @@
+{
+  "characters": [
+    {
+      "slug": "the-clockmaker",
+      "name": "the Clockmaker",
+      "aliases": [
+        "the old clockmaker"
+      ],
+      "mention_pages": [
+        "0001",
+        "0002",
+        "0003"
+      ],
+      "major": true,
+      "visual_description": "a spare, white-haired artisan in a leather apron, hands stained with brass polish",
+      "one_line": "The keeper of the workshop at the end of the lane.",
+      "tags": [
+        "artisan",
+        "recluse"
+      ],
+      "portrait": "images/portraits/the-clockmaker.png",
+      "edited_by_human": false
+    },
+    {
+      "slug": "the-stranger",
+      "name": "the Stranger",
+      "aliases": [],
+      "mention_pages": [
+        "0004",
+        "0005"
+      ],
+      "major": false,
+      "visual_description": null,
+      "one_line": "A pale visitor who arrives with the winter tide.",
+      "tags": [
+        "newcomer"
+      ],
+      "portrait": null,
+      "edited_by_human": false
+    }
+  ]
+}
