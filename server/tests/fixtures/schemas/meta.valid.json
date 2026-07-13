@@ -1,0 +1,37 @@
+{
+  "bundle_version": 1,
+  "book_id": "pg-35",
+  "revision": 1,
+  "title": "The Time Machine",
+  "author": "H. G. Wells",
+  "language": "en",
+  "source": {
+    "kind": "gutenberg",
+    "gutenberg_id": 35,
+    "retrieved_at": "2026-07-13T12:00:00Z"
+  },
+  "era": "1890s England",
+  "style_id": "engraving",
+  "density_preset": "classic",
+  "portraits_enabled": true,
+  "bake": {
+    "completed_at": "2026-07-13T12:00:00Z",
+    "transform_service": {
+      "url_host": "gpu.lan:8712",
+      "transforms": {
+        "scene-update": "0.1.0"
+      }
+    },
+    "models": {
+      "llm": "qwen3:8b",
+      "imagegen": "sdxl-base-1.0"
+    },
+    "pipeline_version": "v0.1.0-1-gabc123"
+  },
+  "stats": {
+    "pages": 118,
+    "words": 32700,
+    "plates": 21,
+    "chapters": 12
+  }
+}

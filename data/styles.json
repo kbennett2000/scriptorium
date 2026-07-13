@@ -1,0 +1,44 @@
+{
+  "styles": [
+    {
+      "id": "engraving",
+      "name": "Victorian Engraving",
+      "consistency_friendly": true,
+      "prefix": "19th-century steel engraving book illustration, fine crosshatching, monochrome ink, dramatic light, ",
+      "suffix": ", intricate linework, aged paper tone, high detail",
+      "negative": "photo, color photograph, modern, text, watermark, signature, blurry",
+      "portrait_prefix": "19th-century engraved portrait plate, bust composition, fine crosshatching, monochrome ink, ",
+      "params": { "steps": null, "cfg": null }
+    },
+    {
+      "id": "woodcut",
+      "name": "Woodcut",
+      "consistency_friendly": true,
+      "prefix": "bold woodcut print illustration, thick carved black lines, high contrast, limited palette, ",
+      "suffix": ", strong graphic shapes, hand-carved texture, ink on paper",
+      "negative": "photo, color photograph, gradient shading, soft focus, modern, text, watermark, signature, blurry",
+      "portrait_prefix": "bold woodcut portrait print, bust composition, thick carved black lines, high contrast, ",
+      "params": { "steps": null, "cfg": null }
+    },
+    {
+      "id": "watercolor",
+      "name": "Watercolor",
+      "consistency_friendly": true,
+      "prefix": "loose watercolor painting illustration, soft wet-on-wet washes, muted palette, gentle diffuse light, ",
+      "suffix": ", soft edges, textured paper, delicate pigment blooms",
+      "negative": "photo, hard outlines, harsh contrast, 3d render, modern, text, watermark, signature, blurry",
+      "portrait_prefix": "loose watercolor portrait, bust composition, soft washes, muted palette, ",
+      "params": { "steps": null, "cfg": null }
+    },
+    {
+      "id": "gouache-storybook",
+      "name": "Gouache Storybook",
+      "consistency_friendly": false,
+      "prefix": "mid-century children's storybook gouache illustration, flat opaque shapes, warm palette, playful composition, ",
+      "suffix": ", bold flat color areas, subtle paper grain, charming and whimsical",
+      "negative": "photo, photorealistic, harsh shadows, gritty, modern ui, text, watermark, signature, blurry",
+      "portrait_prefix": "mid-century storybook gouache portrait, bust composition, flat opaque shapes, warm palette, ",
+      "params": { "steps": null, "cfg": null }
+    }
+  ]
+}

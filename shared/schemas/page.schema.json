@@ -1,0 +1,39 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://scriptorium.local/schemas/page.schema.json",
+  "title": "page",
+  "description": "One logical page of a bundle (pages/NNNN.json). Text is byte-stable and immutable after first publish; anchors depend on it (DESIGN §4.3, §4.4, §6).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["id", "seq", "chapter", "text", "word_count"],
+  "properties": {
+    "id": {
+      "description": "Zero-padded 4-digit page id, equal to the zero-padded sequence number (e.g. '0007').",
+      "type": "string",
+      "pattern": "^[0-9]{4}$"
+    },
+    "seq": {
+      "description": "1-based page sequence number across the whole book.",
+      "type": "integer",
+      "minimum": 1
+    },
+    "chapter": {
+      "description": "1-based index of the chapter this page belongs to (matches structure.chapters[].index).",
+      "type": "integer",
+      "minimum": 1
+    },
+    "text": {
+      "description": "Final immutable page text: paragraphs joined by '\\n\\n', NFC-normalized, '\\n' line endings, no trailing whitespace (DESIGN §6.6). Byte-stable forever — annotation anchors are UTF-16 offsets into this string.",
+      "type": "string"
+    },
+    "word_count": {
+      "description": "Number of words on this page (whitespace-delimited count used by pagination, DESIGN §6).",
+      "type": "integer",
+      "minimum": 0
+    },
+    "ledger": {
+      "description": "Scene-ledger for this page: the 'scene-update' transform output stored verbatim (DESIGN §4.3, §7.1 P3). Opaque provenance — its internal shape is owned by text-transform-service, so it is not constrained here. Present in published bundles; absent in early (P0) work-phase pages, which carry text only.",
+      "type": "object"
+    }
+  }
+}

@@ -9,3 +9,22 @@
 /.factory/
 /cycle.log
 PAUSE
+
+# Python / uv (server)
+__pycache__/
+*.py[cod]
+.venv/
+.pytest_cache/
+.ruff_cache/
+
+# Node / Vite (reader, admin-ui, shared)
+node_modules/
+dist/
+*.tsbuildinfo
+
+# Runtime data dir (never committed; the repo ships data/styles.json seed only)
+/data/library/
+/data/work/
+/data/sync/
+/data/jobs/
+/data/users.json

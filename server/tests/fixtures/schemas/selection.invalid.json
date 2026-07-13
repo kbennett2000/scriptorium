@@ -1,0 +1,19 @@
+{
+  "preset": "classic",
+  "params": {
+    "min_gap": 2,
+    "max_gap": 6,
+    "salience_floor": 0.55,
+    "chapter_open": true,
+    "scene_boundary": true
+  },
+  "plates": [
+    {
+      "page_id": "0007",
+      "reason": "because",
+      "salience": 0.82,
+      "status": "selected",
+      "added_in_revision": 1
+    }
+  ]
+}

@@ -1,0 +1,89 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://scriptorium.local/schemas/annotations.schema.json",
+  "title": "annotations",
+  "description": "One user's annotations for one book (sync/annotations/{user}/{book}.json). The only mutable layer; merged server-authoritatively by last-writer-wins with tombstones (DESIGN §4.5, §12).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["book_id", "user_id", "annotations"],
+  "properties": {
+    "book_id": {
+      "description": "Permanent book identifier these annotations belong to.",
+      "type": "string",
+      "pattern": "^(pg-[0-9]+|usr-[0-9a-f]{12})$"
+    },
+    "user_id": {
+      "description": "Id of the household profile that owns these annotations (matches users[].id).",
+      "type": "string",
+      "minLength": 1
+    },
+    "annotations": {
+      "description": "All annotations, including tombstones (deleted=true), for last-writer-wins merge.",
+      "type": "array",
+      "items": {
+        "description": "One annotation.",
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "type", "page_id", "anchor", "created", "modified", "deleted"],
+        "properties": {
+          "id": {
+            "description": "Client-generated stable id (UUID) for the annotation; merge key.",
+            "type": "string",
+            "minLength": 1
+          },
+          "type": {
+            "description": "Annotation kind: a text highlight, a note (highlight plus body text), or a page-level bookmark.",
+            "type": "string",
+            "enum": ["highlight", "note", "bookmark"]
+          },
+          "page_id": {
+            "description": "Zero-padded 4-digit page id the annotation anchors to.",
+            "type": "string",
+            "pattern": "^[0-9]{4}$"
+          },
+          "anchor": {
+            "description": "Character range within the page's immutable text. Offsets are UTF-16 code-unit offsets, because that is what the browser's Selection/Range API yields; the server never interprets them (DESIGN §4.5). A bookmark uses {start:0,end:0} (page-level).",
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["start", "end"],
+            "properties": {
+              "start": {
+                "description": "Inclusive start offset (UTF-16 code units) into the page text.",
+                "type": "integer",
+                "minimum": 0
+              },
+              "end": {
+                "description": "Exclusive end offset (UTF-16 code units) into the page text; >= start.",
+                "type": "integer",
+                "minimum": 0
+              }
+            }
+          },
+          "text": {
+            "description": "Note body. Present only for type='note'.",
+            "type": "string"
+          },
+          "color": {
+            "description": "Highlight color. Present for highlight/note; absent for bookmark.",
+            "type": "string",
+            "enum": ["yellow", "blue", "green", "pink"]
+          },
+          "created": {
+            "description": "ISO-8601 UTC creation timestamp.",
+            "type": "string",
+            "format": "date-time"
+          },
+          "modified": {
+            "description": "ISO-8601 UTC last-modified timestamp; drives last-writer-wins merge (DESIGN §12).",
+            "type": "string",
+            "format": "date-time"
+          },
+          "deleted": {
+            "description": "Tombstone flag. When true the annotation is deleted but retained for merge convergence (DESIGN §12).",
+            "type": "boolean"
+          }
+        }
+      }
+    }
+  }
+}

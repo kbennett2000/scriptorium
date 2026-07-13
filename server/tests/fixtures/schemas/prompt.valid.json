@@ -1,0 +1,11 @@
+{
+  "page_id": "0007",
+  "derived": {
+    "prompt": "a man beside a brass machine",
+    "avoid": [
+      "color"
+    ]
+  },
+  "edited_prompt": null,
+  "final_subject_prompt": "a man beside a brass machine"
+}

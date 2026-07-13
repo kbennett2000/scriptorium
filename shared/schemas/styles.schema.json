@@ -1,0 +1,71 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://scriptorium.local/schemas/styles.schema.json",
+  "title": "styles",
+  "description": "Illustration style catalog (styles.json). Each style carries the prompt-assembly strings that turn a subject prompt into an imagegen request; style rides in the prompt, not in the model (DESIGN §9, §10).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["styles"],
+  "properties": {
+    "styles": {
+      "description": "All available styles. The admin picker sorts consistency_friendly first.",
+      "type": "array",
+      "items": {
+        "description": "One style.",
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "name", "consistency_friendly", "prefix", "suffix", "negative", "portrait_prefix", "params"],
+        "properties": {
+          "id": {
+            "description": "Stable style id referenced by meta.style_id.",
+            "type": "string",
+            "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$"
+          },
+          "name": {
+            "description": "Human-readable style name for the picker.",
+            "type": "string",
+            "minLength": 1
+          },
+          "consistency_friendly": {
+            "description": "Whether character identity stays consistent across plates in this style. Unfriendly styles get a drift warning in the picker (DESIGN §9).",
+            "type": "boolean"
+          },
+          "prefix": {
+            "description": "String prepended to the subject prompt for plates (leading style cues).",
+            "type": "string"
+          },
+          "suffix": {
+            "description": "String appended to the subject prompt for plates (trailing style cues).",
+            "type": "string"
+          },
+          "negative": {
+            "description": "Base negative prompt for this style; joined with derived.avoid at render (DESIGN §10).",
+            "type": "string"
+          },
+          "portrait_prefix": {
+            "description": "String prepended to portrait subject prompts (bust-composition style cues).",
+            "type": "string"
+          },
+          "params": {
+            "description": "Optional imagegen parameter overrides for this style. Null values mean 'use the imagegen default'; v1 leaves both null (DESIGN §9).",
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["steps", "cfg"],
+            "properties": {
+              "steps": {
+                "description": "Override for the number of diffusion steps, or null for the imagegen default.",
+                "type": ["integer", "null"],
+                "minimum": 1
+              },
+              "cfg": {
+                "description": "Override for the CFG guidance scale, or null for the imagegen default.",
+                "type": ["number", "null"],
+                "minimum": 0
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,42 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://scriptorium.local/schemas/structure.schema.json",
+  "title": "structure",
+  "description": "Chapter structure of a bundle (structure.json): the ordered list of chapters and the page ids each contains. Frozen after first publish (DESIGN §4.3, §4.4).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["chapters"],
+  "properties": {
+    "chapters": {
+      "description": "Chapters in reading order. Chapters never share a page (DESIGN §6).",
+      "type": "array",
+      "items": {
+        "description": "One chapter.",
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["index", "title", "page_ids"],
+        "properties": {
+          "index": {
+            "description": "1-based chapter number in reading order.",
+            "type": "integer",
+            "minimum": 1
+          },
+          "title": {
+            "description": "Chapter title as detected or edited (e.g. 'I', 'CHAPTER 1', or a book title for single-chapter works).",
+            "type": "string"
+          },
+          "page_ids": {
+            "description": "Zero-padded 4-digit page ids belonging to this chapter, in reading order (e.g. ['0001','0002']).",
+            "type": "array",
+            "items": {
+              "description": "A page id: zero-padded 4-digit sequence string.",
+              "type": "string",
+              "pattern": "^[0-9]{4}$"
+            },
+            "minItems": 1
+          }
+        }
+      }
+    }
+  }
+}
