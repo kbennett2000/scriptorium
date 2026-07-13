@@ -49,6 +49,11 @@ class Config:
         return self.data_dir / "jobs"
 
     @property
+    def work_dir(self) -> Path:
+        """Scratch/provenance area for in-progress bakes (raw sources, §5.1)."""
+        return self.data_dir / "work"
+
+    @property
     def schemas_dir(self) -> Path:
         """Directory holding the JSON Schemas (shared/schemas)."""
         return self.shared_dir / "schemas"

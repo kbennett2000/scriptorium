@@ -31,6 +31,9 @@ packages = ["src/scriptorium"]
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
+# GPU/network tests are opt-in: run them with `-m gpu` / `-m network` (a CLI -m
+# overrides this default expression). The default suite stays offline & GPU-less.
+addopts = "-m 'not gpu and not network'"
 markers = [
     "gpu: tests that require a live GPU service (skipped by default).",
     "network: tests that require live network access (skipped by default).",

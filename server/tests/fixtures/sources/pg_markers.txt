@@ -1,0 +1,36 @@
+The Project Gutenberg eBook of A Synthetic Sample
+
+Title: A Synthetic Sample
+
+Author: Ada Fixture
+
+Language: English
+
+
+*** START OF THIS PROJECT GUTENBERG EBOOK A SYNTHETIC SAMPLE ***
+
+
+A Synthetic Sample
+
+by Ada Fixture
+
+
+CHAPTER I
+
+The first paragraph of the first chapter sits here, plainly, so the
+paragraph splitter has something contiguous to fold into one unit.
+
+A second paragraph follows a blank line, and it too is prose that the
+ingestion adapter should treat as a single display paragraph.
+
+CHAPTER II
+
+The second chapter opens with this paragraph. Two chapters is enough
+for heuristic 1 to win before heuristics 2 and 3 are ever consulted.
+
+The end of the sample body.
+
+
+*** END OF THIS PROJECT GUTENBERG EBOOK A SYNTHETIC SAMPLE ***
+
+This trailing license text is outside the markers and must be stripped.

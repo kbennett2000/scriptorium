@@ -42,3 +42,30 @@ No tag exists yet; the first tag should be created before S10's publish phase so
 `fastapi.testclient` emits a StarletteDeprecationWarning about httpx. Harmless for
 now; if it becomes an error in a future dependency bump, migrate the health tests
 to `httpx.ASGITransport` directly.
+
+## From S2
+
+### `system-overview.md` is *still* missing
+The S2 pre-dispatch note said it would be copied into the repo root; it was not
+(still absent on disk). Non-blocking, as established in S1 — its invariants live in
+DESIGN §15/§1. If it truly exists somewhere, drop it in the root; otherwise treat
+DESIGN §1/§15 as canonical and stop listing it as required reading.
+
+### Ingestion decisions that later cycles inherit
+- **textfile does not strip PG boilerplate** (strip is gutenberg-only, per DESIGN §5.1).
+  If a user sideloads a raw Project Gutenberg `.txt` as `kind: text`, the header/license
+  stay in chapter text. The S9 admin chapter editor / a "detected as Gutenberg?" hint
+  could offer to strip; out of scope for S2.
+- **RawBook keeps internal `\n` in paragraphs** (verse-safe, lossless). The paginator
+  (S3) must decide reflow/normalization on top of this — it already plans NFC + `\n`
+  normalization, which aligns with `ingest.base.normalize_source_text`.
+- **RawBook has an internal `era` field** (from markdown front-matter) that is *not* in
+  DESIGN's minimal RawBook shape. When S9 builds bake config, wire front-matter `era`
+  into the proposed `meta.era` default instead of re-deriving it.
+- **Front-matter parser is minimal** (scalar `key: value`, four honored keys, no `pyyaml`).
+  If a real book needs list/nested front-matter, add `pyyaml` then.
+
+### pytest default marker filter
+`pyproject.toml` now sets `addopts = "-m 'not gpu and not network'"`. A CLI `-m <expr>`
+overrides it (e.g. `pytest -m network`, `pytest -m gpu`). Keep new opt-in suites behind
+these markers so the default run stays offline/GPU-less.
