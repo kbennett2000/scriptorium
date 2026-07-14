@@ -1,0 +1,1042 @@
+{
+  "seed": 4835,
+  "note": "Synthetic 120-page score field for P4 engine tests (DESIGN \u00a78). Generated once with random.Random(seed); committed so tests are RNG-independent.",
+  "scores": [
+    {
+      "seq": 1,
+      "page_id": "0001",
+      "chapter": 1,
+      "scene_changed": false,
+      "visual_salience": 0.83
+    },
+    {
+      "seq": 2,
+      "page_id": "0002",
+      "chapter": 1,
+      "scene_changed": false,
+      "visual_salience": 0.5
+    },
+    {
+      "seq": 3,
+      "page_id": "0003",
+      "chapter": 1,
+      "scene_changed": false,
+      "visual_salience": 0.81
+    },
+    {
+      "seq": 4,
+      "page_id": "0004",
+      "chapter": 1,
+      "scene_changed": false,
+      "visual_salience": 0.13
+    },
+    {
+      "seq": 5,
+      "page_id": "0005",
+      "chapter": 1,
+      "scene_changed": false,
+      "visual_salience": 0.79
+    },
+    {
+      "seq": 6,
+      "page_id": "0006",
+      "chapter": 1,
+      "scene_changed": true,
+      "visual_salience": 0.08
+    },
+    {
+      "seq": 7,
+      "page_id": "0007",
+      "chapter": 1,
+      "scene_changed": true,
+      "visual_salience": 0.87
+    },
+    {
+      "seq": 8,
+      "page_id": "0008",
+      "chapter": 1,
+      "scene_changed": false,
+      "visual_salience": 0.33
+    },
+    {
+      "seq": 9,
+      "page_id": "0009",
+      "chapter": 1,
+      "scene_changed": false,
+      "visual_salience": 0.01
+    },
+    {
+      "seq": 10,
+      "page_id": "0010",
+      "chapter": 1,
+      "scene_changed": false,
+      "visual_salience": 0.9
+    },
+    {
+      "seq": 11,
+      "page_id": "0011",
+      "chapter": 2,
+      "scene_changed": false,
+      "visual_salience": 0.95
+    },
+    {
+      "seq": 12,
+      "page_id": "0012",
+      "chapter": 2,
+      "scene_changed": false,
+      "visual_salience": 0.53
+    },
+    {
+      "seq": 13,
+      "page_id": "0013",
+      "chapter": 2,
+      "scene_changed": true,
+      "visual_salience": 0.06
+    },
+    {
+      "seq": 14,
+      "page_id": "0014",
+      "chapter": 2,
+      "scene_changed": false,
+      "visual_salience": 0.42
+    },
+    {
+      "seq": 15,
+      "page_id": "0015",
+      "chapter": 2,
+      "scene_changed": true,
+      "visual_salience": 0.59
+    },
+    {
+      "seq": 16,
+      "page_id": "0016",
+      "chapter": 2,
+      "scene_changed": true,
+      "visual_salience": 0.9
+    },
+    {
+      "seq": 17,
+      "page_id": "0017",
+      "chapter": 2,
+      "scene_changed": false,
+      "visual_salience": 0.54
+    },
+    {
+      "seq": 18,
+      "page_id": "0018",
+      "chapter": 2,
+      "scene_changed": false,
+      "visual_salience": 0.82
+    },
+    {
+      "seq": 19,
+      "page_id": "0019",
+      "chapter": 2,
+      "scene_changed": true,
+      "visual_salience": 0.85
+    },
+    {
+      "seq": 20,
+      "page_id": "0020",
+      "chapter": 2,
+      "scene_changed": false,
+      "visual_salience": 0.21
+    },
+    {
+      "seq": 21,
+      "page_id": "0021",
+      "chapter": 3,
+      "scene_changed": false,
+      "visual_salience": 0.92
+    },
+    {
+      "seq": 22,
+      "page_id": "0022",
+      "chapter": 3,
+      "scene_changed": false,
+      "visual_salience": 0.47
+    },
+    {
+      "seq": 23,
+      "page_id": "0023",
+      "chapter": 3,
+      "scene_changed": false,
+      "visual_salience": 0.8
+    },
+    {
+      "seq": 24,
+      "page_id": "0024",
+      "chapter": 3,
+      "scene_changed": true,
+      "visual_salience": 0.67
+    },
+    {
+      "seq": 25,
+      "page_id": "0025",
+      "chapter": 3,
+      "scene_changed": true,
+      "visual_salience": 0.55
+    },
+    {
+      "seq": 26,
+      "page_id": "0026",
+      "chapter": 3,
+      "scene_changed": false,
+      "visual_salience": 0.53
+    },
+    {
+      "seq": 27,
+      "page_id": "0027",
+      "chapter": 3,
+      "scene_changed": false,
+      "visual_salience": 0.94
+    },
+    {
+      "seq": 28,
+      "page_id": "0028",
+      "chapter": 3,
+      "scene_changed": false,
+      "visual_salience": 0.61
+    },
+    {
+      "seq": 29,
+      "page_id": "0029",
+      "chapter": 3,
+      "scene_changed": false,
+      "visual_salience": 0.27
+    },
+    {
+      "seq": 30,
+      "page_id": "0030",
+      "chapter": 3,
+      "scene_changed": false,
+      "visual_salience": 0.51
+    },
+    {
+      "seq": 31,
+      "page_id": "0031",
+      "chapter": 4,
+      "scene_changed": false,
+      "visual_salience": 0.16
+    },
+    {
+      "seq": 32,
+      "page_id": "0032",
+      "chapter": 4,
+      "scene_changed": false,
+      "visual_salience": 0.58
+    },
+    {
+      "seq": 33,
+      "page_id": "0033",
+      "chapter": 4,
+      "scene_changed": false,
+      "visual_salience": 0.6
+    },
+    {
+      "seq": 34,
+      "page_id": "0034",
+      "chapter": 4,
+      "scene_changed": false,
+      "visual_salience": 0.08
+    },
+    {
+      "seq": 35,
+      "page_id": "0035",
+      "chapter": 4,
+      "scene_changed": false,
+      "visual_salience": 0.67
+    },
+    {
+      "seq": 36,
+      "page_id": "0036",
+      "chapter": 4,
+      "scene_changed": false,
+      "visual_salience": 0.33
+    },
+    {
+      "seq": 37,
+      "page_id": "0037",
+      "chapter": 4,
+      "scene_changed": false,
+      "visual_salience": 0.53
+    },
+    {
+      "seq": 38,
+      "page_id": "0038",
+      "chapter": 4,
+      "scene_changed": false,
+      "visual_salience": 0.68
+    },
+    {
+      "seq": 39,
+      "page_id": "0039",
+      "chapter": 4,
+      "scene_changed": false,
+      "visual_salience": 0.75
+    },
+    {
+      "seq": 40,
+      "page_id": "0040",
+      "chapter": 4,
+      "scene_changed": true,
+      "visual_salience": 0.73
+    },
+    {
+      "seq": 41,
+      "page_id": "0041",
+      "chapter": 5,
+      "scene_changed": false,
+      "visual_salience": 0.23
+    },
+    {
+      "seq": 42,
+      "page_id": "0042",
+      "chapter": 5,
+      "scene_changed": false,
+      "visual_salience": 0.49
+    },
+    {
+      "seq": 43,
+      "page_id": "0043",
+      "chapter": 5,
+      "scene_changed": false,
+      "visual_salience": 0.6
+    },
+    {
+      "seq": 44,
+      "page_id": "0044",
+      "chapter": 5,
+      "scene_changed": false,
+      "visual_salience": 0.87
+    },
+    {
+      "seq": 45,
+      "page_id": "0045",
+      "chapter": 5,
+      "scene_changed": false,
+      "visual_salience": 0.15
+    },
+    {
+      "seq": 46,
+      "page_id": "0046",
+      "chapter": 5,
+      "scene_changed": false,
+      "visual_salience": 0.7
+    },
+    {
+      "seq": 47,
+      "page_id": "0047",
+      "chapter": 5,
+      "scene_changed": false,
+      "visual_salience": 0.75
+    },
+    {
+      "seq": 48,
+      "page_id": "0048",
+      "chapter": 5,
+      "scene_changed": false,
+      "visual_salience": 0.19
+    },
+    {
+      "seq": 49,
+      "page_id": "0049",
+      "chapter": 5,
+      "scene_changed": false,
+      "visual_salience": 0.01
+    },
+    {
+      "seq": 50,
+      "page_id": "0050",
+      "chapter": 5,
+      "scene_changed": false,
+      "visual_salience": 0.63
+    },
+    {
+      "seq": 51,
+      "page_id": "0051",
+      "chapter": 6,
+      "scene_changed": true,
+      "visual_salience": 0.02
+    },
+    {
+      "seq": 52,
+      "page_id": "0052",
+      "chapter": 6,
+      "scene_changed": false,
+      "visual_salience": 0.79
+    },
+    {
+      "seq": 53,
+      "page_id": "0053",
+      "chapter": 6,
+      "scene_changed": false,
+      "visual_salience": 0.74
+    },
+    {
+      "seq": 54,
+      "page_id": "0054",
+      "chapter": 6,
+      "scene_changed": false,
+      "visual_salience": 0.99
+    },
+    {
+      "seq": 55,
+      "page_id": "0055",
+      "chapter": 6,
+      "scene_changed": false,
+      "visual_salience": 0.24
+    },
+    {
+      "seq": 56,
+      "page_id": "0056",
+      "chapter": 6,
+      "scene_changed": false,
+      "visual_salience": 0.51
+    },
+    {
+      "seq": 57,
+      "page_id": "0057",
+      "chapter": 6,
+      "scene_changed": false,
+      "visual_salience": 0.98
+    },
+    {
+      "seq": 58,
+      "page_id": "0058",
+      "chapter": 6,
+      "scene_changed": false,
+      "visual_salience": 0.93
+    },
+    {
+      "seq": 59,
+      "page_id": "0059",
+      "chapter": 6,
+      "scene_changed": false,
+      "visual_salience": 0.05
+    },
+    {
+      "seq": 60,
+      "page_id": "0060",
+      "chapter": 6,
+      "scene_changed": false,
+      "visual_salience": 0.22
+    },
+    {
+      "seq": 61,
+      "page_id": "0061",
+      "chapter": 7,
+      "scene_changed": false,
+      "visual_salience": 0.46
+    },
+    {
+      "seq": 62,
+      "page_id": "0062",
+      "chapter": 7,
+      "scene_changed": false,
+      "visual_salience": 0.52
+    },
+    {
+      "seq": 63,
+      "page_id": "0063",
+      "chapter": 7,
+      "scene_changed": false,
+      "visual_salience": 0.84
+    },
+    {
+      "seq": 64,
+      "page_id": "0064",
+      "chapter": 7,
+      "scene_changed": true,
+      "visual_salience": 0.11
+    },
+    {
+      "seq": 65,
+      "page_id": "0065",
+      "chapter": 7,
+      "scene_changed": false,
+      "visual_salience": 0.29
+    },
+    {
+      "seq": 66,
+      "page_id": "0066",
+      "chapter": 7,
+      "scene_changed": false,
+      "visual_salience": 0.27
+    },
+    {
+      "seq": 67,
+      "page_id": "0067",
+      "chapter": 7,
+      "scene_changed": false,
+      "visual_salience": 0.68
+    },
+    {
+      "seq": 68,
+      "page_id": "0068",
+      "chapter": 7,
+      "scene_changed": true,
+      "visual_salience": 0.03
+    },
+    {
+      "seq": 69,
+      "page_id": "0069",
+      "chapter": 7,
+      "scene_changed": false,
+      "visual_salience": 0.26
+    },
+    {
+      "seq": 70,
+      "page_id": "0070",
+      "chapter": 7,
+      "scene_changed": false,
+      "visual_salience": 0.02
+    },
+    {
+      "seq": 71,
+      "page_id": "0071",
+      "chapter": 8,
+      "scene_changed": false,
+      "visual_salience": 1.0
+    },
+    {
+      "seq": 72,
+      "page_id": "0072",
+      "chapter": 8,
+      "scene_changed": false,
+      "visual_salience": 0.51
+    },
+    {
+      "seq": 73,
+      "page_id": "0073",
+      "chapter": 8,
+      "scene_changed": false,
+      "visual_salience": 0.6
+    },
+    {
+      "seq": 74,
+      "page_id": "0074",
+      "chapter": 8,
+      "scene_changed": false,
+      "visual_salience": 0.86
+    },
+    {
+      "seq": 75,
+      "page_id": "0075",
+      "chapter": 8,
+      "scene_changed": false,
+      "visual_salience": 0.71
+    },
+    {
+      "seq": 76,
+      "page_id": "0076",
+      "chapter": 8,
+      "scene_changed": false,
+      "visual_salience": 0.03
+    },
+    {
+      "seq": 77,
+      "page_id": "0077",
+      "chapter": 8,
+      "scene_changed": false,
+      "visual_salience": 0.39
+    },
+    {
+      "seq": 78,
+      "page_id": "0078",
+      "chapter": 8,
+      "scene_changed": false,
+      "visual_salience": 0.25
+    },
+    {
+      "seq": 79,
+      "page_id": "0079",
+      "chapter": 8,
+      "scene_changed": false,
+      "visual_salience": 0.77
+    },
+    {
+      "seq": 80,
+      "page_id": "0080",
+      "chapter": 8,
+      "scene_changed": false,
+      "visual_salience": 0.73
+    },
+    {
+      "seq": 81,
+      "page_id": "0081",
+      "chapter": 9,
+      "scene_changed": false,
+      "visual_salience": 0.71
+    },
+    {
+      "seq": 82,
+      "page_id": "0082",
+      "chapter": 9,
+      "scene_changed": false,
+      "visual_salience": 0.0
+    },
+    {
+      "seq": 83,
+      "page_id": "0083",
+      "chapter": 9,
+      "scene_changed": false,
+      "visual_salience": 0.93
+    },
+    {
+      "seq": 84,
+      "page_id": "0084",
+      "chapter": 9,
+      "scene_changed": false,
+      "visual_salience": 0.77
+    },
+    {
+      "seq": 85,
+      "page_id": "0085",
+      "chapter": 9,
+      "scene_changed": false,
+      "visual_salience": 0.32
+    },
+    {
+      "seq": 86,
+      "page_id": "0086",
+      "chapter": 9,
+      "scene_changed": false,
+      "visual_salience": 0.35
+    },
+    {
+      "seq": 87,
+      "page_id": "0087",
+      "chapter": 9,
+      "scene_changed": false,
+      "visual_salience": 0.71
+    },
+    {
+      "seq": 88,
+      "page_id": "0088",
+      "chapter": 9,
+      "scene_changed": false,
+      "visual_salience": 0.72
+    },
+    {
+      "seq": 89,
+      "page_id": "0089",
+      "chapter": 9,
+      "scene_changed": false,
+      "visual_salience": 0.06
+    },
+    {
+      "seq": 90,
+      "page_id": "0090",
+      "chapter": 9,
+      "scene_changed": false,
+      "visual_salience": 0.7
+    },
+    {
+      "seq": 91,
+      "page_id": "0091",
+      "chapter": 10,
+      "scene_changed": false,
+      "visual_salience": 0.7
+    },
+    {
+      "seq": 92,
+      "page_id": "0092",
+      "chapter": 10,
+      "scene_changed": true,
+      "visual_salience": 0.37
+    },
+    {
+      "seq": 93,
+      "page_id": "0093",
+      "chapter": 10,
+      "scene_changed": false,
+      "visual_salience": 0.01
+    },
+    {
+      "seq": 94,
+      "page_id": "0094",
+      "chapter": 10,
+      "scene_changed": false,
+      "visual_salience": 0.91
+    },
+    {
+      "seq": 95,
+      "page_id": "0095",
+      "chapter": 10,
+      "scene_changed": false,
+      "visual_salience": 0.51
+    },
+    {
+      "seq": 96,
+      "page_id": "0096",
+      "chapter": 10,
+      "scene_changed": false,
+      "visual_salience": 0.52
+    },
+    {
+      "seq": 97,
+      "page_id": "0097",
+      "chapter": 10,
+      "scene_changed": false,
+      "visual_salience": 0.4
+    },
+    {
+      "seq": 98,
+      "page_id": "0098",
+      "chapter": 10,
+      "scene_changed": false,
+      "visual_salience": 0.64
+    },
+    {
+      "seq": 99,
+      "page_id": "0099",
+      "chapter": 10,
+      "scene_changed": false,
+      "visual_salience": 0.89
+    },
+    {
+      "seq": 100,
+      "page_id": "0100",
+      "chapter": 10,
+      "scene_changed": false,
+      "visual_salience": 0.34
+    },
+    {
+      "seq": 101,
+      "page_id": "0101",
+      "chapter": 11,
+      "scene_changed": false,
+      "visual_salience": 0.65
+    },
+    {
+      "seq": 102,
+      "page_id": "0102",
+      "chapter": 11,
+      "scene_changed": false,
+      "visual_salience": 0.93
+    },
+    {
+      "seq": 103,
+      "page_id": "0103",
+      "chapter": 11,
+      "scene_changed": false,
+      "visual_salience": 0.85
+    },
+    {
+      "seq": 104,
+      "page_id": "0104",
+      "chapter": 11,
+      "scene_changed": false,
+      "visual_salience": 0.21
+    },
+    {
+      "seq": 105,
+      "page_id": "0105",
+      "chapter": 11,
+      "scene_changed": false,
+      "visual_salience": 0.93
+    },
+    {
+      "seq": 106,
+      "page_id": "0106",
+      "chapter": 11,
+      "scene_changed": false,
+      "visual_salience": 0.29
+    },
+    {
+      "seq": 107,
+      "page_id": "0107",
+      "chapter": 11,
+      "scene_changed": true,
+      "visual_salience": 0.25
+    },
+    {
+      "seq": 108,
+      "page_id": "0108",
+      "chapter": 11,
+      "scene_changed": false,
+      "visual_salience": 0.64
+    },
+    {
+      "seq": 109,
+      "page_id": "0109",
+      "chapter": 11,
+      "scene_changed": true,
+      "visual_salience": 0.7
+    },
+    {
+      "seq": 110,
+      "page_id": "0110",
+      "chapter": 11,
+      "scene_changed": false,
+      "visual_salience": 0.71
+    },
+    {
+      "seq": 111,
+      "page_id": "0111",
+      "chapter": 12,
+      "scene_changed": false,
+      "visual_salience": 0.36
+    },
+    {
+      "seq": 112,
+      "page_id": "0112",
+      "chapter": 12,
+      "scene_changed": false,
+      "visual_salience": 0.91
+    },
+    {
+      "seq": 113,
+      "page_id": "0113",
+      "chapter": 12,
+      "scene_changed": false,
+      "visual_salience": 0.1
+    },
+    {
+      "seq": 114,
+      "page_id": "0114",
+      "chapter": 12,
+      "scene_changed": false,
+      "visual_salience": 0.06
+    },
+    {
+      "seq": 115,
+      "page_id": "0115",
+      "chapter": 12,
+      "scene_changed": false,
+      "visual_salience": 0.73
+    },
+    {
+      "seq": 116,
+      "page_id": "0116",
+      "chapter": 12,
+      "scene_changed": false,
+      "visual_salience": 0.2
+    },
+    {
+      "seq": 117,
+      "page_id": "0117",
+      "chapter": 12,
+      "scene_changed": false,
+      "visual_salience": 0.22
+    },
+    {
+      "seq": 118,
+      "page_id": "0118",
+      "chapter": 12,
+      "scene_changed": false,
+      "visual_salience": 0.03
+    },
+    {
+      "seq": 119,
+      "page_id": "0119",
+      "chapter": 12,
+      "scene_changed": false,
+      "visual_salience": 0.62
+    },
+    {
+      "seq": 120,
+      "page_id": "0120",
+      "chapter": 12,
+      "scene_changed": false,
+      "visual_salience": 0.86
+    }
+  ],
+  "structure": {
+    "chapters": [
+      {
+        "index": 1,
+        "title": "Chapter 1",
+        "page_ids": [
+          "0001",
+          "0002",
+          "0003",
+          "0004",
+          "0005",
+          "0006",
+          "0007",
+          "0008",
+          "0009",
+          "0010"
+        ]
+      },
+      {
+        "index": 2,
+        "title": "Chapter 2",
+        "page_ids": [
+          "0011",
+          "0012",
+          "0013",
+          "0014",
+          "0015",
+          "0016",
+          "0017",
+          "0018",
+          "0019",
+          "0020"
+        ]
+      },
+      {
+        "index": 3,
+        "title": "Chapter 3",
+        "page_ids": [
+          "0021",
+          "0022",
+          "0023",
+          "0024",
+          "0025",
+          "0026",
+          "0027",
+          "0028",
+          "0029",
+          "0030"
+        ]
+      },
+      {
+        "index": 4,
+        "title": "Chapter 4",
+        "page_ids": [
+          "0031",
+          "0032",
+          "0033",
+          "0034",
+          "0035",
+          "0036",
+          "0037",
+          "0038",
+          "0039",
+          "0040"
+        ]
+      },
+      {
+        "index": 5,
+        "title": "Chapter 5",
+        "page_ids": [
+          "0041",
+          "0042",
+          "0043",
+          "0044",
+          "0045",
+          "0046",
+          "0047",
+          "0048",
+          "0049",
+          "0050"
+        ]
+      },
+      {
+        "index": 6,
+        "title": "Chapter 6",
+        "page_ids": [
+          "0051",
+          "0052",
+          "0053",
+          "0054",
+          "0055",
+          "0056",
+          "0057",
+          "0058",
+          "0059",
+          "0060"
+        ]
+      },
+      {
+        "index": 7,
+        "title": "Chapter 7",
+        "page_ids": [
+          "0061",
+          "0062",
+          "0063",
+          "0064",
+          "0065",
+          "0066",
+          "0067",
+          "0068",
+          "0069",
+          "0070"
+        ]
+      },
+      {
+        "index": 8,
+        "title": "Chapter 8",
+        "page_ids": [
+          "0071",
+          "0072",
+          "0073",
+          "0074",
+          "0075",
+          "0076",
+          "0077",
+          "0078",
+          "0079",
+          "0080"
+        ]
+      },
+      {
+        "index": 9,
+        "title": "Chapter 9",
+        "page_ids": [
+          "0081",
+          "0082",
+          "0083",
+          "0084",
+          "0085",
+          "0086",
+          "0087",
+          "0088",
+          "0089",
+          "0090"
+        ]
+      },
+      {
+        "index": 10,
+        "title": "Chapter 10",
+        "page_ids": [
+          "0091",
+          "0092",
+          "0093",
+          "0094",
+          "0095",
+          "0096",
+          "0097",
+          "0098",
+          "0099",
+          "0100"
+        ]
+      },
+      {
+        "index": 11,
+        "title": "Chapter 11",
+        "page_ids": [
+          "0101",
+          "0102",
+          "0103",
+          "0104",
+          "0105",
+          "0106",
+          "0107",
+          "0108",
+          "0109",
+          "0110"
+        ]
+      },
+      {
+        "index": 12,
+        "title": "Chapter 12",
+        "page_ids": [
+          "0111",
+          "0112",
+          "0113",
+          "0114",
+          "0115",
+          "0116",
+          "0117",
+          "0118",
+          "0119",
+          "0120"
+        ]
+      }
+    ]
+  }
+}

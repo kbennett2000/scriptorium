@@ -326,6 +326,75 @@ cast.json; resume skips done pages; P1 503 → waiting_gpu → resume; P2 503 �
 `cast_running`; canonicalize 422 → `failed_units` + null major, phase completes; mentions 400
 → job `failed`), `test_job_states` updated for `cast_running`. reader/admin-ui untouched.
 
+## S7 — P4 selection engine (deterministic) (2026-07-13) — shipped
+
+The pure, deterministic plate-selection function (DESIGN §8) plus its re-selection diff and the
+CPU bake phase that turns per-page ledger scores into `selection.json`, filling the last open
+pipeline edge `ledger_done → selected`.
+
+**No state/schema/runner change.** `JobState.SELECTED` and the `ledger_done → selected` edge
+already existed in `_CHAIN`; `SELECTED` is not a GPU state; `"selection"` is a registered
+schema kind. P4 is the pipeline's **first pure rest→rest CPU phase** — `is_gpu=False`, one
+`Unit("select")`, sync `run_unit`, **no enter/`*_running` split** (enter phases exist only so a
+GPU phase can park on `waiting_gpu`; a CPU phase skips the gate). Registered as `P4Select()` in
+`app.py` after `LedgerScenes()`.
+
+**Engine (`selection/engine.py`).** `select(scores, structure, params)` over three frozen
+dataclasses — `PageScore` (**numbers + booleans + the page-id only; the spoiler invariant made
+structural**, pinned by a test), `Params`, `PlateChoice` — and a `PRESETS` data table (the §8
+rows verbatim: lavish 1/3/0.40, classic 2/6/0.55, sparse 4/12/0.85 with scene_boundary off).
+Steps: (1) mandatory marks — chapter openers from `structure.chapters[].page_ids[0]` + enabled
+scene boundaries; (2) `min_gap` collapse by precedence `chapter_open > scene_boundary` →
+salience → earlier seq, via greedy chain resolution; (3) fill; (4) tiny-work `<8 pages →
+{page 1} ∪ {argmax}`; (5) reasons. Fully deterministic (no RNG, every tie-break specified),
+proven by a repeat-run test.
+
+**Interpretation — fill window ∩ min_gap (documented deviation from a literal read).** §8 step 3
+writes the fill window as `(last+1 … last+max_gap)`, but the binding acceptance property is "no
+two plates closer than `min_gap`" over *all* plates, including fills — a literal `last+1` lower
+bound can violate it. The engine therefore intersects the fill window with the min_gap constraint:
+`[last+min_gap, min(last+max_gap, next_anchor−min_gap)]` (tail: up to the last page). For all
+three presets `max_gap ≥ 2·min_gap`, so a fill region is always wide enough; the floor is the
+only reason a gap is left unfilled ("gaps may exceed max_gap rather than force a weak plate").
+
+**Re-selection (`selection/reselect.py`, standalone).** `reselect(fresh, existing_plates,
+revision)`: manual entries pass through untouched; a re-chosen **rendered** plate stays
+`rendered` (no re-render, `added_in_revision` preserved); re-chosen `selected`/`approved` keep
+their status; re-chosen `retired` revives to `selected`; a new page is `selected@revision`; a
+**rendered** plate not re-chosen → `retired` (files kept — additive invariant); `retired` stays
+`retired`; a **never-rendered non-manual** (`selected`/`approved`) plate not re-chosen is
+**dropped** (no pixels to preserve). That last rule is the one place a human `approved` on an
+*unrendered* plate is discarded — a deliberate reading of §8, flagged here for review. The P4
+**phase** only ever writes a *fresh* selection (revision 1); wiring `reselect` into a density
+re-turn belongs where revisions are bumped (re-bake/publish), outside the S7 runner path.
+
+**Scores read from `pages/*.json`, not `ledgers/*.json`** (the merged, gap-filled view, per
+NOTES "From S6"); P4 consumes only `scene_changed` + `visual_salience`.
+
+**Plate counts over the committed synthetic 120-page field** (12 chapters × 10 pages,
+`fixtures/selection/synthetic-120.json`, `random.Random(4835)`, committed so tests are
+RNG-independent): **lavish 53** (12 chapter_open / 14 scene_boundary / 27 fill), **classic 34**
+(12 / 9 / 13), **sparse 12** (12 chapter_open, no scene/fill — chapters are 10 apart < max_gap
+12, so sparse resolves to exactly the openers). All presets satisfy the min_gap property; every
+fill clears its floor.
+
+**Fixture-pipeline acceptance / divergence note (for the S10 verify tool).** Running P4 over the
+S3 bundle book (6 pages, ledgers merged from the S6 `scene-update` fixtures) yields a schema-valid
+`selection.json`, but it **legitimately differs** from the hand-written `bundle/selection.json`:
+the bundle is 6 pages → tiny-work → `{0001, argmax=0004}`, whereas the hand-written fixture lists
+`0001/0003/0004` with `0003` as a `scene_boundary` (the fixture ledger has `scene_changed:false`
+at 0003) and `0003/0004` adjacent (a classic min_gap=2 violation). The test asserts schema +
+invariants, not equality.
+
+**Verification:** `uv run ruff check .` (+ `tools/`) → clean. `uv run pytest` → **169 passed,
+3 deselected** (network + the two `-m gpu` live tests). New tests: `test_selection_engine.py`
+(preset properties over synthetic-120 — min_gap, floor, openers present, reasons, determinism;
+precedence/salience/seq tie-breaks; tiny-work + dedup; pathological all-low-salience; the
+structural spoiler test; schema-valid output), `test_reselect.py` (denser/sparser/overlap/manual/
+retired-revive/ordering), `test_phases_p4.py` (phase → schema-valid selection through the runner;
+preset from `bake_config`; idempotent skip; the fixture-pipeline acceptance box). reader/admin-ui
+untouched; no schema change (no type regen).
+
 ## S6 — P3 scene ledger (strictly sequential) (2026-07-13) — shipped
 
 The single sequential `scene-update` pass that produces both the per-page continuity ledger
