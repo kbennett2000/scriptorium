@@ -41,6 +41,7 @@ class JobState:
     IN_REVIEW = "in_review"
     APPROVED = "approved"
     RENDERING = "rendering"
+    RENDERED = "rendered"
     PUBLISHED = "published"
     # cross-cutting
     WAITING_GPU = "waiting_gpu"
@@ -65,6 +66,7 @@ _CHAIN: tuple[str, ...] = (
     JobState.IN_REVIEW,
     JobState.APPROVED,
     JobState.RENDERING,
+    JobState.RENDERED,
     JobState.PUBLISHED,
 )
 

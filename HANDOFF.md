@@ -1,7 +1,21 @@
 # Handoff
 
 ## Current state
-- **S9b complete** (PR open, awaiting human merge). The review-gate **admin UI** — `admin-ui/`
+- **S10a complete** (PR open, awaiting human merge). The render half of S10 (split at the plan gate;
+  **S10b = publish + verify**). Real P7: `bake/phases/p7_render.py` (`RenderEnter` `approved →
+  rendering` + `Render` `rendering → rendered`) replaces the S9 stub — a leading `__unload__` unit
+  frees TTS (`unload_models()`, require success) then gates imagegen `health()` (§7.4/ADR-0009),
+  then each approved plate style-wraps, renders at the §10 size (plate/cover 832×1216, portrait
+  1024×1024) into the §4.2 bundle layout, makes idempotent WebP derivatives, and records
+  `wrapped_prompt`/`negative_prompt`/`render` on `prompts/*.json`. New `render/imagegen.py`
+  `RealImagegenClient` (per **ADR-0011**), `render/derivatives.py`, new `JobState.RENDERED`, and a
+  pre-publish regen endpoint `POST …/plates/{id}/regen`. Client is injected (`Render(client=…)`);
+  `FakeImagegen` stays the double. **ADR-0011** records the real imagegen API + the "extend
+  imagegen-service" size decision. Separate **imagegen-service PR #13** adds optional
+  `width`/`height` to `/generate` (default 1024²). Offline **225 passed / 5 deselected**; ruff/
+  eslint/tsc/vitest clean; no type drift. Live checkpoint deferred (TTS degraded). See NOTES
+  "From S10a".
+- **S9b complete** (merged). The review-gate **admin UI** — `admin-ui/`
   grown from the blank scaffold into the four §11.3 screens (Books list; New Book wizard; Book
   detail; Review gate; feature-flagged Post-render), wired to the S9a endpoints. **No server
   changes** — every endpoint already existed. Tooling: **Vitest+RTL+jsdom** (offline smoke test,
@@ -72,25 +86,21 @@
   exceptions), `bake/api.py` (admin endpoints; P0 inline). Kill-test proves ≤1 unit lost.
 - **S3 / S2 / S1 complete** (merged): paginator + fixture bundle; ingestion adapters;
   monorepo skeleton + schemas + generated TS types + `/health`.
-- Server: `uv run pytest` → **214 passed, 4 deselected** (network + three gpu-live);
+- Server: `uv run pytest` → **225 passed, 5 deselected** (network + four gpu-live incl. render);
   `uv run ruff check .` (server + `tools/`) clean. admin-ui: `npm run test` (Vitest) → **1 passed**
-  (the offline smoke); eslint + tsc clean; `npm run build` OK.
-
-## S9 acceptance box #1 — human-pending (the real-browser walk)
-Both run paths (per the S9b plan decision "Both paths"):
-- **No-GPU (works on this box):** `cd server && uv run python ../tools/seed_review_book.py`
-  (seeds `usr-seedreview01` at `prompts_draft`), then in two shells `just server-dev` (runner on)
-  and `just admin-dev`; open `http://localhost:5173/admin/`, click the seeded book → **Open Review**
-  → edit a prompt, toggle a plate, **Approve** → the P7 stub renders it to `rendering` → open
-  **Post-render** to see the placeholder thumbs. Capture a screenshot/recording.
-- **Full LAN (TTS up):** `just server-dev` + `just admin-dev` → **New Book** wizard → create →
-  Start → watch P1–P5 progress → **Open Review** → Approve → stub render.
+  (the offline smoke); eslint + tsc clean; `npm run build` OK. imagegen-service (PR #13):
+  `npm run test:unit` → **36 pass**, `tsc` clean.
 
 ## Next up
-- **S10** — the real render pipeline (P7 `p7_render.py` replacing the stub, TTS unload, §10
-  wrapped/negative prompts, WebP derivatives, publish P8) + the post-publish flows (regen endpoint,
-  reselect revision bump). When it lands, wire `PostRender.tsx`'s Regen button + drop the disabled
-  state, and gate the placeholder banner on `job.render_stub`. See NOTES "From S9b"/"From S9a".
+- **S10b** — publish (P8) + the bundle verifier: `bake/phases/p8_publish.py` (`rendered → published`,
+  `library/{id}` assembly, `manifest.json` with sha256s + `reader_required`, the §4.4 byte-identical
+  **integrity guard**, revision bump, `meta.bake` pinning), `Config.library_dir`,
+  `tools/verify_bundle.py`, fixture-bundle regeneration, extend e2e to **P0→P8**, post-publish regen
+  `-rN`, and the admin-UI Regen/`rendered`-gate wiring. See NOTES **"From S10a"** for the full scope.
+  **Prereq:** merge imagegen-service **PR #13** and redeploy before any real 832×1216 render.
+- **R1** — reader shell/shelf/checkout, unblocked since S3 (build against
+  `server/tests/fixtures/bundle/`; the reader can copy admin-ui's test-runner/fetch-client shape but
+  keep network calls fenced to `sync/`+`shelf/`). **S12** (sync API) unblocked from S1.
 - **R1** — reader shell/shelf/checkout, unblocked since S3 (build against
   `server/tests/fixtures/bundle/`; the reader can copy admin-ui's test-runner/fetch-client shape but
   keep network calls fenced to `sync/`+`shelf/`). **S12** (sync API) unblocked from S1.

@@ -326,6 +326,62 @@ cast.json; resume skips done pages; P1 503 → waiting_gpu → resume; P2 503 �
 `cast_running`; canonicalize 422 → `failed_units` + null major, phase completes; mentions 400
 → job `failed`), `test_job_states` updated for `cast_running`. reader/admin-ui untouched.
 
+## S10a — Real render (P7) + imagegen client + ADR-0011 (2026-07-13) — shipped
+
+The render half of S10 (S10 split at the plan gate; **S10b = publish P8 + verify_bundle**). Approved
+shot lists now become pixels: TTS-unload → SDXL render → WebP derivatives, resting at a new
+`rendered` state. Publish (`rendered → published`) is S10b.
+
+**ADR-0011 (evidence-first, Task 0).** Read the real imagegen-service API before building. It is a
+TypeScript/`node:http` ComfyUI proxy on :8189: `POST /generate` → raw `image/png`; body
+`{prompt, negativePrompt?, style?, quality?, seed?}`; `GET /health` → `{comfyuiReachable,…}` (no
+busy signal, no load/unload/warmup endpoint). Negative prompts ✅ and seed ✅ — but it emits a
+**fixed 1024×1024** with **no width/height param** (hardcoded `EmptyLatentImage` node "5"). DESIGN
+§10's 832×1216 was therefore impossible → the mandated stop-and-report. **Product-owner decision
+(AskUserQuestion): "Extend imagegen-service"** — a small backward-compatible PR to that repo adds
+optional `width`/`height` (default 1024²); scriptorium builds to §10 sizes unchanged.
+
+**Shipped (scriptorium).**
+- `docs/adr/0011-imagegen-api.md` — endpoint map, client binding, error→exception mapping, the size
+  decision.
+- `render/imagegen.py`: `RealImagegenClient` (httpx → `/generate`/`/health`; 503/conn →
+  `GpuUnavailable`, 422 → `UnitFailed`, else → `PipelineBug`; unset `IMAGEGEN_URL` → parks). Protocol
+  + `FakeImagegen` kept as the shared double.
+- `render/derivatives.py`: Pillow WebP (LANCZOS q80) web (≤1080 plate/cover, ≤768 portrait) + 320w
+  thumb, **idempotent** via a `{out}.src.sha256` sidecar (skip when source unchanged).
+- `bake/phases/p7_render.py` (deletes `p7_render_stub.py`): `RenderEnter` (`approved → rendering`,
+  CPU) + `Render` (`rendering → rendered`, GPU). Render's **leading `__unload__` unit** calls TTS
+  `unload_models()` (require success) then imagegen `health()` — either failure → `waiting_gpu`, so
+  TTS is always freed before SDXL (§7.4/ADR-0009). Per-plate: style-wrap (`prefix+subject+suffix`,
+  `negative = style.negative + avoid`; cover/portrait pre-wrapped by P5 pass through), render at the
+  §10 size into the §4.2 bundle layout (`images/plates|cover|portraits`), derivatives, and
+  `wrapped_prompt`/`negative_prompt`/`render` provenance onto `prompts/*.json`; page plates flip
+  `selection.status → rendered`. Client is **injected** (`Render(client=…)`) — no hardcoding.
+  Registered in `BAKE_PIPELINE`.
+- New `JobState.RENDERED` (approved deviation; precedent S5 `cast_running`) so the enter/GPU split
+  has an intermediate state; `test_job_states` updated (`rendering → rendered → published`).
+- Regen endpoint `POST …/plates/{id}/regen` (review_api): pre-publish single-plate re-render with a
+  fresh seed via a shared `render_plate()`; **409 if published** (the additive `-rN` post-publish
+  path is S10b). Client injected via `_imagegen_client` seam.
+
+**Shipped (imagegen-service, separate PR #13).** `POST /generate` gains optional `width`/`height`
+(int, multiple of 8, [256,2048], else 422) applied to node "5", default 1024². Backward-compatible;
+`tsc` clean; `npm run test:unit` 36 pass; `process.env` still absent (ADR-0001).
+
+**Tests.** Offline **225 passed / 5 deselected** (+11 offline, +1 gpu-live deselected): `test_phases_p7`
+(pixels at §10 sizes + derivatives + provenance; unload-before-render ordering; unload-failure parks
+`waiting_gpu`; render idempotent), `test_render_derivatives` (sizing + sidecar idempotency),
+`test_regen` (new-seed changes pixels + bumps attempts; endpoint 200/409/404), `test_pipeline_e2e`
+extended to **P0→P7** (FakeImagegen → `rendered`, artifacts schema-valid), `test_render_live`
+(`-m gpu`, pending: renders 2 real plates, asserts 832×1216 + TTS-unloaded-after). ruff clean; no
+type drift (schemas already carried `wrapped_prompt`/`negative_prompt`/`render`). admin-ui untouched
+(eslint+tsc+vitest still green).
+
+**Deferred to S10b (noted in NOTES).** Publish/manifest/integrity-guard/verify_bundle; fixture-bundle
+regeneration; post-publish regen `-rN`; admin-UI Regen wiring + `rendered`-state gate. Also: the live
+checkpoint mini-dispatch was **deferred** — TTS reported `degraded`/`ollama_reachable:false` (can't
+transform), so live captures/gpu-tests were not run (its own guard says stop-and-report).
+
 ## S9b — Admin UI review-gate workbench (2026-07-13) — shipped
 
 The UI half of S9: `admin-ui/` grown from a blank scaffold into the four §11.3 screens, wired to the
