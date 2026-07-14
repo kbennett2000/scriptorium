@@ -71,7 +71,7 @@ export function Reader({
   // R2 annotation UI state.
   const [pendingSel, setPendingSel] = useState<{
     anchor: Anchor;
-    rect: { top: number; left: number; width: number };
+    rect: { top: number; bottom: number; left: number; width: number };
     text: string;
   } | null>(null);
   const [noteTarget, setNoteTarget] = useState<NoteTarget | null>(null);
@@ -306,8 +306,12 @@ export function Reader({
     const r =
       typeof range.getBoundingClientRect === "function"
         ? range.getBoundingClientRect()
-        : { top: 0, left: 0, width: 0 };
-    setPendingSel({ anchor, rect: { top: r.top, left: r.left, width: r.width }, text: range.toString() });
+        : { top: 0, bottom: 0, left: 0, width: 0 };
+    setPendingSel({
+      anchor,
+      rect: { top: r.top, bottom: r.bottom, left: r.left, width: r.width },
+      text: range.toString(),
+    });
   }, [pageDoc]);
 
   useEffect(() => {

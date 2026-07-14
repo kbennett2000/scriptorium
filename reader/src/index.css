@@ -238,6 +238,12 @@ span.hl {
   z-index: 20;
   transform: translate(-50%, calc(-100% - 6px));
   display: flex;
+}
+/* Flip below the selection when there isn't room above (selection near the top of the page). */
+.sel-bar.sel-bar--below {
+  transform: translate(-50%, 6px);
+}
+.sel-bar {
   gap: 0.3rem;
   align-items: center;
   padding: 0.3rem 0.4rem;

@@ -365,8 +365,19 @@ named astral (surrogate-pair), verse-`\n`, collapsed-reject, outside-text-reject
 consistency cases; `segments`/`store`/`nav` units; component tests (bookmark persist/restore across
 remount, highlight survives reload rendering over the same chars, live selection blocks page-turn).
 Lint + tsc + build clean; fixture-mode build inlines the fixture. Server **279 passed / 5 deselected**
-(untouched). No type drift (no schema change). **Manual reload-survival check is human-pending** (OPFS,
-browser-only): highlight → reload → same characters; network idle. See NOTES "From R2".
+(untouched). No type drift (no schema change). See NOTES "From R2".
+
+**Reload-survival acceptance — VERIFIED in a real browser** (headless Chromium via Playwright against
+`VITE_FIXTURE_BUNDLE=1` dev): select text → highlight → the annotation is written to **real OPFS** at
+`/annotations/default/usr-ce8f5ebd29d0.json`, and after a full tab reload the highlight **re-renders
+over the same characters** ("quiet ha"). This is the one path jsdom couldn't cover (real OPFS + real
+Selection/Range) — now closed, reproducibly.
+
+**Follow-up fix (found during that run):** the floating selection bar rendered above the viewport for a
+selection near the top of a page (its "above the selection" transform went off-screen). `SelectionBar`
+now flips **below** the selection when there isn't clearance above (`sel-bar--below`), so it's always
+reachable. Note: the app is blank in the VS Code Simple Browser (sandboxed webview) — use a real
+external browser; that is not a code issue.
 
 ## R1b — Reader: the reading surface (2026-07-14) — shipped
 
