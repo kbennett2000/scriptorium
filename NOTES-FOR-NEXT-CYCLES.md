@@ -373,3 +373,41 @@ one-click "add + derive", it should call reselect or a future targeted re-derive
 wizard's only route to the style list. `GET /api/admin/books/{id}/plate-image/{page_id}.png` serves
 a work-dir plate PNG (path-traversal-guarded, admin-only, pre-publish) for the S9b post-render
 thumbs; the real reader image serving is the S11 library file server, separate from this.
+
+## From S9b
+
+### S9b is done — `admin-ui/` is now a working workbench (four §11.3 screens)
+Built against the S9a endpoints with **no server changes**. Tooling now established in `admin-ui`:
+Vitest+RTL+jsdom (explicit imports), a Vite dev `server.proxy` → `:8720`, a hand-rolled hash router
+(`src/routes.ts`), a typed fetch client (`src/api/client.ts`) + hand-written API types
+(`src/api/types.ts`). The reader can copy this shape when R1 needs a test runner / network client
+(but the reader's calls stay fenced to `sync/`+`shelf/` — admin-ui is deliberately unfenced).
+
+### Missing GET endpoint: current chapter paragraphs (chapter editor is crippled without it)
+`PUT /api/admin/books/{id}/chapters` replaces chapters, but there is **no endpoint to READ** the
+current chapter/paragraph text, so the S9b chapter editor is a raw JSON re-submit (you can't load
+what's there to edit it). Add a `GET /api/admin/books/{id}/chapters` (or fold structure+page text
+into the book detail payload) so a real chapter-break editor is possible. Low priority (pre-P1 only).
+
+### S10 replaces the post-render stub UX, not just the phase
+`PostRender.tsx` is feature-flagged (`POSTRENDER_ENABLED`, `src/config.ts`) and shows a
+"placeholder render" banner + a **disabled Regen** button. When S10 lands the real
+`POST …/plates/{page_id}/regen`, wire the Regen button to it and drop the disabled state + the
+stub banner (gate the banner on `job.render_stub` instead of always-on). S10 clearing `render_stub`
+(per From S9a) is what flips that banner off.
+
+### Style swatches are placeholders (inline SVG); commit real samples at M1
+`src/components/StyleSwatch.tsx` derives an abstract SVG from the style id. DESIGN §11.3 wants
+"pre-rendered static samples committed to the repo" — produce those at M1 (one small image per
+style id under `admin-ui/public/` or `data/`) and swap the swatch to render them.
+
+### The seed helper is a dev double for the no-GPU acceptance walk
+`tools/seed_review_book.py` puts a book at `prompts_draft` from the fixture bundle so the review →
+approve → stub-render walk runs with zero GPU/TTS. It's not part of the pipeline; keep it working as
+the fixture bundle evolves (it copies pages/structure/selection/cast/prompts and resets plate
+statuses to `selected`). When S10 regenerates the bundle prompts (From S8), the seed still works.
+
+### Serving `admin-ui/dist` at `/admin` is still not wired
+The server does not `StaticFiles`-mount the built admin UI; dev relies on the Vite proxy. If you
+want the i5 server to serve `/admin` in production, add the mount in `app.py` (a server change,
+deliberately out of S9b's UI-only scope). `admin-ui/dist/` is gitignored.

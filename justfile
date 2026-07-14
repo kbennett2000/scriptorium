@@ -21,6 +21,10 @@ reader-dev:
 admin-dev:
     cd admin-ui && npm run dev
 
+# Build the admin-ui production bundle (into admin-ui/dist).
+admin-build:
+    cd admin-ui && npm run build
+
 # --- generation ---
 
 # Regenerate shared TypeScript types from the JSON Schemas (deterministic).
@@ -33,8 +37,12 @@ gen-types:
 server-test:
     cd server && uv run pytest
 
-# Run every test suite. (Client test suites are added in later cycles.)
-test-all: server-test
+# Run the admin-ui test suite (Vitest + RTL + jsdom; offline, stubbed fetch).
+admin-test:
+    cd admin-ui && npm run test
+
+# Run every test suite.
+test-all: server-test admin-test
 
 # --- lint ---
 

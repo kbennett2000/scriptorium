@@ -326,6 +326,65 @@ cast.json; resume skips done pages; P1 503 → waiting_gpu → resume; P2 503 �
 `cast_running`; canonicalize 422 → `failed_units` + null major, phase completes; mentions 400
 → job `failed`), `test_job_states` updated for `cast_running`. reader/admin-ui untouched.
 
+## S9b — Admin UI review-gate workbench (2026-07-13) — shipped
+
+The UI half of S9: `admin-ui/` grown from a blank scaffold into the four §11.3 screens, wired to the
+S9a endpoints. Makes invariant #4 ("no plate rendered before a human approves") real for an
+operator. **No server changes** — every endpoint already existed (verified against `bake/api.py` +
+`bake/review_api.py`).
+
+**Shipped**
+- **Tooling.** Test stack chosen fresh (none existed in the repo): **Vitest 2.1 + @testing-library/
+  react 16 + user-event 14 + jest-dom 6 + jsdom 25**, explicit imports (no globals). Vite dev
+  `server.proxy` `/api`+`/health` → `:8720`; a `test` block in `vite.config.ts` (via `vitest/config`).
+  `justfile`: `admin-test`, `admin-build`; `test-all` now runs `admin-test` too.
+- **API layer** (`src/api/`): `client.ts` (typed fetch wrapper; `ApiError{status,detail}` so screens
+  special-case the approve 422 / gutendex 502 / review 409) and `types.ts` (hand-written `Job`,
+  `ReviewPayload`, `GutendexResult`, `CreateBookBody`, `ApproveError`; nested bundle shapes
+  re-exported from `@scriptorium/shared`).
+- **Router**: a hand-rolled hash router (`routes.ts`) — a `Route` discriminated union, no
+  `react-router` dependency (executor's call; keeps the workbench dep-free). Shell in `App.tsx`,
+  one dense stylesheet `index.css`.
+- **Screens** (`src/features/`): **BooksList**; **NewBookWizard** (Gutendex/paste/upload → metadata
+  + era → style picker with placeholder inline-SVG swatches → density → portraits → `POST /books`);
+  **BookDetail** (milestone progress, warnings/failed_units/prompt_warnings, pre-P1 chapter editor,
+  start/pause/resume, links to Review/Post-render); **ReviewGate** (`PlatesTable` with inline-
+  editable prompts + include toggles + beats + per-row prompt_warnings + cover/portrait pseudo-
+  plates; `CastPanel` editable with `edited_by_human` badge; density re-select; **Approve** with a
+  plate-count confirmation and a **422 refusal that names the promptless pages**); **PostRender**
+  (feature-flagged `POSTRENDER_ENABLED`, stub thumbs via `plate-image`, **disabled Regen** — the
+  endpoint is S10).
+- **Dev seed helper** `tools/seed_review_book.py` — materializes a book at `prompts_draft` from the
+  committed fixture bundle (statuses reset to `selected`, images omitted so the stub renders fresh)
+  so the **no-GPU** browser walk works on a box with no TTS.
+- **Smoke test** (`src/test/smoke.test.tsx`): wizard → create → detail → review → edit prompt →
+  toggle plate → approve, entirely on a stubbed `fetch` (offline). The automated half of box #1.
+
+**Decisions**
+- **Hand-rolled router**, not react-router — five destinations don't justify a dependency in a
+  workbench; hash routing deep-links and refreshes fine (jsdom fires `hashchange`, so the smoke test
+  exercises real navigation).
+- **Test stack** Vitest+RTL+jsdom with explicit imports (no `globals:true`), so eslint/tsconfig need
+  no globals wiring. Playwright deferred.
+- **Chapter editor is minimal** (a raw chapters-JSON re-submit) because there is **no admin endpoint
+  to READ current chapter paragraphs** — only `PUT …/chapters` to replace them. A richer editor
+  waits on a GET-chapters endpoint (filed in NOTES From S9b).
+- **Style swatches are placeholders** (deterministic inline SVG from the style id). DESIGN §11.3
+  wants committed static samples — deferred to M1.
+- **No static `/admin` mount** (that's a server change); dev uses the Vite proxy. `admin-ui/dist/` is
+  gitignored.
+
+**Verification**: eslint + tsc clean; `vitest run` → 1 passed; `npm run build` OK; ruff clean
+(server + `tools/seed_review_book.py`); server pytest unchanged (**214 passed / 4 deselected** — no
+server code touched); `git diff --exit-code` clean after `gen-types` (no schema edits).
+
+**Box #1 (human-pending)**: verified the no-GPU path works via TestClient against a seeded book
+(review 200 → 3 plates + cover/portrait prompts → approve 200 → `approved`). The **real-browser**
+walk is human-pending; run steps for both paths are in HANDOFF / the plan file.
+
+The **frontend-design skill was again absent** in this environment — density/restraint applied
+directly.
+
 ## S9a — Review-gate server + demo P7 stub (2026-07-13) — shipped
 
 The server half of S9 (the review gate). Surfaces the `prompts_draft` shot list for a human, lets
