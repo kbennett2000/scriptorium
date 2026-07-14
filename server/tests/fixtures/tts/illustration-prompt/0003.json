@@ -1,0 +1,19 @@
+{
+  "output": {
+    "prompt": "A cluttered laboratory at night, the same inventor seated in the saddle of a larger machine of quartz bars, nickel and glass, one hand on a starting lever, his face lit from below as the apparatus begins to blur at its edges",
+    "depicted": ["the Time Traveller"],
+    "shot": "medium",
+    "avoid": ["color", "modern machinery", "text"]
+  },
+  "meta": {
+    "transform": "illustration-prompt",
+    "transform_version": "0.1.0",
+    "model": "qwen3:8b",
+    "input_tokens_est": 640,
+    "truncated": true,
+    "attempts": 2,
+    "latency_ms": 1580,
+    "queued_ms": 0,
+    "warnings": ["input truncated to fit the generation budget"]
+  }
+}

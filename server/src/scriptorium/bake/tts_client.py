@@ -47,10 +47,10 @@ class TtsClient:
             raise PipelineBug("TTS_URL is not configured")
         self._base = cfg.tts_url.rstrip("/")
 
-    async def transform(
+    async def _post(
         self, name: str, text: str, options: dict[str, Any] | None = None
     ) -> dict[str, Any]:
-        """Run transform ``name`` over ``text`` and return its ``output`` object.
+        """POST a transform and return the full ``{output, meta}`` response envelope.
 
         Maps the TTS error taxonomy onto phase-control exceptions (see module docstring).
         Connection/timeout failures are treated as 503-class (the service is unreachable).
@@ -64,8 +64,26 @@ class TtsClient:
             raise GpuUnavailable(f"TTS unreachable for {name!r}: {exc}") from exc
 
         if resp.is_success:
-            return resp.json()["output"]
+            return resp.json()
         raise _map_error(name, resp)
+
+    async def transform(
+        self, name: str, text: str, options: dict[str, Any] | None = None
+    ) -> dict[str, Any]:
+        """Run transform ``name`` over ``text`` and return its ``output`` object."""
+        return (await self._post(name, text, options))["output"]
+
+    async def transform_with_meta(
+        self, name: str, text: str, options: dict[str, Any] | None = None
+    ) -> tuple[dict[str, Any], dict[str, Any]]:
+        """Like :meth:`transform`, but also return the ``meta`` provenance block.
+
+        P5 needs ``meta`` to surface any ``meta.warnings`` (e.g. a truncated/low-confidence
+        generation) onto the job for the review gate; the per-page ``output`` still becomes the
+        prompt's verbatim ``derived``. ``meta`` defaults to ``{}`` if the service omits it.
+        """
+        data = await self._post(name, text, options)
+        return data["output"], data.get("meta", {})
 
     async def unload_models(self, model: str | None = None) -> dict[str, Any]:
         """Unload TTS models (``POST /v1/models/unload``) — the pre-render GPU handoff.

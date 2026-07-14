@@ -1,0 +1,18 @@
+{
+  "output": {
+    "prompt": "A lamplit Victorian smoking-room at evening, a lean inventor gestures toward a small brass-and-ivory model machine on the table while several seated gentlemen in frock coats lean in, sceptical and intent, tobacco smoke hanging in the warm light",
+    "depicted": ["the Time Traveller", "Filby", "the Psychologist"],
+    "shot": "wide",
+    "avoid": ["modern dress", "electric light", "photographic realism"]
+  },
+  "meta": {
+    "transform": "illustration-prompt",
+    "transform_version": "0.1.0",
+    "model": "qwen3:8b",
+    "input_tokens_est": 812,
+    "truncated": false,
+    "attempts": 1,
+    "latency_ms": 1043,
+    "queued_ms": 12
+  }
+}
