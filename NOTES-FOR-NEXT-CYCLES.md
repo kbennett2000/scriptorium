@@ -910,3 +910,6 @@ The M1 backup captured `library/` + `work/` but `sync/` was empty and `users.jso
 
 ### `pipeline_version` git tag still not created
 `meta.bake.pipeline_version` fell back to the commit short-sha (`ea8a7b5`) — meaningful, but the annotated tag NOTES From S1 asked for still doesn't exist (the render auto-started on approve before a tag step). Create the first `pipeline-vN` tag in a release cycle.
+
+### Post-render admin view can't preview the cover or portraits (404)
+In the `#/book/{id}/postrender` view the 18 page plates render, but the **cover and all portraits show broken-image icons**. The files are fine and correctly published (`images/cover.png` 832×1216, `images/portraits/{slug}.png` 1024×1024 — the reader shows them). Cause: `review_api.py:408-419` `plate_image` only serves `work/{id}/images/plates/{page_id}.png`, so the pseudo-plate ids `cover` and `portrait-{slug}` 404 (their files live at `images/cover.png` and `images/portraits/{slug}.png`, and the portrait filename is `{slug}.png`, not `portrait-{slug}.png`). Fix: route `cover` → `images/cover.png` and `portrait-{slug}` → `images/portraits/{slug}.png` in the endpoint (and match in the post-render UI's `<img src>`). Admin-preview only — no bundle/reader impact.
