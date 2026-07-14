@@ -588,3 +588,45 @@ server (uvicorn) normalizes `..` in the path *before* routing, so a two-segment 
 match → **404**. `TestClient` doesn't normalize, so tests see 400. `test_encoded_traversal_never_
 escapes` asserts rejection ∈ {400, 404} + no leak rather than a fixed code. Nothing reaches disk
 outside `sync_dir` either way (the `is_relative_to` backstop).
+
+## From R1a (reader: shell + shelf + checkout)
+
+### The `-rN` drift guard is `shared/test-vectors/rn-resolution.json` — extend it when variants land
+Both `server/src/scriptorium/library/checkout.py` and `reader/src/shelf/resolve.ts` are pinned
+against this one vector file (`server/tests/test_rn_vectors.py` + `reader/src/shelf/resolve.test.ts`).
+When a real post-publish `-rN` regen bundle exists, add a case built from it so the guard covers
+production shapes, not just synthetic ones. If you ever change the resolution rule, change the vector
+and BOTH suites move together — that's the point.
+
+### OpfsStorage is only contract-tested via MemoryStorage (jsdom has no OPFS)
+`shell/storage-contract.test.ts` pins the `Storage` semantics against `MemoryStorage`. `OpfsStorage`
+itself (real `navigator.storage.getDirectory()`) is exercised only in a real browser — do it as part
+of **R1b's offline-acceptance run** (checkout the fixture in a browser, kill the server, confirm
+reading + zero network). If OPFS behaviour ever surprises us, that's where it surfaces.
+
+### R1b owes: the reading surface, VITE_FIXTURE_BUNDLE, and full offline acceptance
+R1a stops at Resident. R1b must add: byte-faithful `<p>`-per-`\n\n` text render with verse `\n`
+preserved (lock with a rendering test — R2 anchors depend on it); plate-at-page-top + lightbox
+(map page_id→`images/web/plates/{page_id}.webp` via `selection.json`); page-turn nav; position
+tracking (page_seq + approximate top-visible char — document the approximation); `VITE_FIXTURE_BUNDLE`
+zero-server dev mode; and the offline acceptance (open/navigate/plates/position-survives-reload +
+DevTools network idle). Plate images come from Storage as bytes → `Blob`/object URL.
+
+### Retired-plate hiding is deferred (R1b/R4)
+A page has a plate iff its `page_id` is in `selection.json` `plates[]`; the image path is by
+convention `images/web/plates/{page_id}.webp` (resolved highest-`-rN`). R1a downloads whatever the
+manifest's `reader_required` covers. **A `retired` plate keeps its files** (§4.4), so a naive reader
+would still show it. R1b/R4 should cross-check `selection.plates[].status != "retired"` before
+rendering a plate. Not handled yet (the fixture has none).
+
+### Reader TypeScript floats to 5.9 (from ^5.6.3) — WebCrypto/OPFS need ArrayBuffer copies
+`npm install` resolved `typescript@^5.6.3` to 5.9.3, whose `Uint8Array<ArrayBufferLike>` generics make
+a plain `Uint8Array` non-assignable to `BufferSource`. `sha256Hex` and `OpfsStorage.writeBytes` copy
+into a fresh `ArrayBuffer` before the WebCrypto/OPFS call, and `OpfsStorage.walk` narrows
+`FileSystemDirectoryHandle.entries()` locally (not yet in the DOM lib). If the toolchain is pinned to
+5.6 later, these copies/narrowings can be simplified but are harmless.
+
+### CapacitorStorage is still a throwing stub (R5)
+`shell/capacitor.ts` implements the `Storage` shape but every method throws "implemented in R5" — no
+`@capacitor/*` dependency is pulled into the reader yet. R5 (Capacitor build) fills it and wires
+`getStorage()` to select it on native platforms.

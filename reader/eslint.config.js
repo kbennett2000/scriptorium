@@ -12,4 +12,36 @@ export default tseslint.config(
       globals: { ...globals.browser, ...globals.node },
     },
   },
+  // Zero-online-read fence (DESIGN §13, ADR-0003): the reading path performs no network I/O. All
+  // server calls live in src/shelf/ and src/sync/ ONLY; fetch/XHR/WebSocket/sendBeacon anywhere else
+  // fails lint. This is the mechanical enforcement §13 asks for — do not weaken it.
+  {
+    files: ["src/**/*.{ts,tsx}"],
+    ignores: ["src/shelf/**", "src/sync/**"],
+    rules: {
+      "no-restricted-syntax": [
+        "error",
+        {
+          selector: "CallExpression[callee.name='fetch']",
+          message:
+            "Network calls are only allowed in src/shelf/ and src/sync/ (DESIGN §13 zero-online read path).",
+        },
+        {
+          selector: "NewExpression[callee.name='XMLHttpRequest']",
+          message:
+            "Network calls are only allowed in src/shelf/ and src/sync/ (DESIGN §13 zero-online read path).",
+        },
+        {
+          selector: "NewExpression[callee.name='WebSocket']",
+          message:
+            "Network calls are only allowed in src/shelf/ and src/sync/ (DESIGN §13 zero-online read path).",
+        },
+        {
+          selector: "MemberExpression[object.name='navigator'][property.name='sendBeacon']",
+          message:
+            "Network calls are only allowed in src/shelf/ and src/sync/ (DESIGN §13 zero-online read path).",
+        },
+      ],
+    },
+  },
 );

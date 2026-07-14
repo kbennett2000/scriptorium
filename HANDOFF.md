@@ -1,7 +1,27 @@
 # Handoff
 
 ## Current state
-- **S12 complete** (PR open, awaiting human merge) — **the server is now feature-complete for M1;
+- **R1a complete** (PR open, awaiting human merge) — **first reader cycle.** R1 (size L) was split at
+  the plan gate (user-approved): R1a = offline-first plumbing; **R1b = the reading surface (next).**
+  Filled the reader scaffold's empty `shell/`/`shelf/` stubs. **`shell/`**: `Storage` interface +
+  `OpfsStorage` (real, OPFS) / `MemoryStorage` (tests) / `CapacitorStorage` (R5 stub) + `Platform.
+  persistHint` + factories; device layout `books/{id}/…` (annotations live outside → Remove keeps
+  them). **`shelf/`**: `resolve.ts` (the **`-rN` TS port** of `library/checkout.py`), `client.ts`
+  (`HttpLibraryClient` — `reachable()` 2 s ping/60 s cache, library/manifest/file fetch; the reader's
+  only network module besides `sync/`), `checkout.ts` (state machine: fetch→`-rN` resolve→sha256-
+  verify→`manifest.local.json`→Resident, **retry only the failing file**, `delta` fetch+prune,
+  `remove`, `bookState`). **ESLint network-boundary rule** bans `fetch`/XHR/WebSocket/sendBeacon
+  outside `shelf/`+`sync/` (a lint test proves it fires). Minimal shelf UI. Test stack (vitest+jsdom+
+  testing-library) mirrored from admin-ui. Anti-drift **`shared/test-vectors/rn-resolution.json`** used
+  by both `reader/src/shelf/resolve.test.ts` and new `server/tests/test_rn_vectors.py`. Reader **20
+  vitest** green (storage contract; `-rN` vector; checkout corrupt-retry/resume/delta/remove; ESLint
+  fence); lint/typecheck/build clean. Server **279 passed** (+6 vector cases); no type drift. Live
+  smoke: the reader's client targets all answer over real HTTP (health/library/manifest/file+ETag).
+  In-browser OPFS `Download→Resident` needs a real browser → manual step folded into R1b's offline
+  acceptance. Reader TypeScript floated to 5.9.3 (ArrayBuffer copies for WebCrypto/OPFS). See NOTES
+  "From R1a". **Next up: R1b** (reading surface: byte-faithful render, plates/lightbox, navigation,
+  position tracking, `VITE_FIXTURE_BUNDLE`, offline acceptance), then R2→R5.
+- **S12 complete** (merged) — **the server is now feature-complete for M1;
   everything after is reader work.** The DESIGN §12 sync API — the mutable layer the reader syncs to.
   New **`sync/merge.py`** (pure): `merge_annotations` (union by `id`, LWW by `modified` string-compare,
   tombstones identical, output canonical/sorted-by-id) + `merge_positions` (`furthest` tuple-max on
@@ -137,19 +157,22 @@
   exceptions), `bake/api.py` (admin endpoints; P0 inline). Kill-test proves ≤1 unit lost.
 - **S3 / S2 / S1 complete** (merged): paginator + fixture bundle; ingestion adapters;
   monorepo skeleton + schemas + generated TS types + `/health`.
-- Server: `uv run pytest` → **273 passed, 5 deselected** (network + four gpu-live incl. render);
-  `uv run ruff check . ../tools` clean. admin-ui: `npm run test` (Vitest) → **1 passed**
-  (the offline smoke); eslint + tsc clean. `tools/verify_bundle.py` exits 0 over the fixture bundle.
-  imagegen-service (PR #13, merged): `npm run test:unit` → **36 pass**, `tsc` clean.
+- Server: `uv run pytest` → **279 passed, 5 deselected** (network + four gpu-live incl. render);
+  `uv run ruff check . ../tools` clean. reader: `npm run test` (Vitest) → **20 passed**; lint + tsc +
+  build clean. admin-ui: `npm run test` (Vitest) → **1 passed** (the offline smoke); eslint + tsc
+  clean. `tools/verify_bundle.py` exits 0 over the fixture bundle. imagegen-service (PR #13, merged):
+  `npm run test:unit` → **36 pass**, `tsc` clean.
 
 ## Next up
-**The server is feature-complete for M1 (S1–S12 done). All remaining cycles are reader (R1–R5).**
-- **R1** — reader shell/shelf/checkout, unblocked since S3 and fully unblocked by S11's
-  `/api/library/*`. Build against `server/tests/fixtures/bundle/` (a **real** P8 bundle) and a live
-  server; the reader can copy admin-ui's test-runner/fetch-client shape but must keep network calls
-  fenced to `sync/`+`shelf/`. **Port `library/checkout.py`'s highest-`-rN`-wins resolution** into the
-  reader's `sync/` so delta-sync fetches exactly one current image per plate (NOTES From S11).
-- **R3** — sync client + profile picker: consumes this S12 API. Its TS merge must mirror
+**Server done (S1–S12). Reader in progress: R1a shipped; R1b next, then R2–R5.**
+- **R1b** — reader reading surface (the other half of R1). Byte-faithful `<p>`-per-`\n\n` render
+  (verse `\n` preserved — lock with a rendering test; R2 anchors depend on it); plate-at-page-top +
+  lightbox (page_id→`images/web/plates/{id}.webp` via `selection.json`, honoring `-rN`); page-turn
+  nav (swipe/tap-zones/←→); chapter headers; position tracking (page_seq + approx top char, document
+  the approximation); `VITE_FIXTURE_BUNDLE` zero-server dev; **offline acceptance** (checkout fixture
+  in a browser, kill server, read + view plates + position survives + network idle). Opens a Resident
+  book (R1a leaves it Resident). See NOTES "From R1a".
+- **R3** — sync client + profile picker: consumes the S12 API. Its TS merge must mirror
   `server/src/scriptorium/sync/merge.py` **including the tie-breaks** (NOTES From S12).
 - **Ops (not a cycle):** restart `imagegen-service` on the GPU box so PR #13 (width/height) is live,
   then re-run `pytest -m gpu tests/test_render_live.py` to close the gpu-marked box (832×1216).

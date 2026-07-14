@@ -1,0 +1,66 @@
+/* Minimal, dense, legible. The designed skin (typography, themes) lands in R4. */
+:root {
+  color-scheme: light dark;
+  font-family: system-ui, sans-serif;
+  line-height: 1.5;
+}
+body {
+  margin: 0;
+}
+.app {
+  max-width: 48rem;
+  margin: 0 auto;
+  padding: 1rem;
+}
+.app-header h1 {
+  font-size: 1.25rem;
+  margin: 0 0 0.5rem;
+}
+.shelf-status {
+  display: flex;
+  gap: 0.75rem;
+  align-items: center;
+  font-size: 0.85rem;
+  opacity: 0.8;
+  margin-bottom: 0.75rem;
+}
+.shelf-error {
+  color: #b00020;
+  font-size: 0.85rem;
+}
+.shelf-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0.5rem;
+}
+.shelf-card {
+  border: 1px solid currentColor;
+  border-radius: 6px;
+  padding: 0.6rem 0.75rem;
+}
+.shelf-card-head {
+  display: flex;
+  gap: 0.5rem;
+  align-items: baseline;
+  justify-content: space-between;
+}
+.shelf-author {
+  font-size: 0.85rem;
+  opacity: 0.75;
+}
+.shelf-card-meta {
+  font-size: 0.8rem;
+  opacity: 0.7;
+  margin: 0.25rem 0 0.5rem;
+}
+.shelf-card-actions {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+}
+.shelf-resident {
+  font-size: 0.85rem;
+  color: #0a7d33;
+}

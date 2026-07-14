@@ -1,0 +1,92 @@
+{
+  "description": "Shared test vectors for the `-rN` reader-file resolution (DESIGN §4.4). Consumed by BOTH the Python impl (server/tests/test_rn_vectors.py over scriptorium.library.checkout.resolve_reader_files) AND the TypeScript port (reader/src/shelf/resolve.test.ts over resolveReaderFiles). Keeping the two in lockstep is the whole point: if either impl drifts, one of these suites goes red. `expected` is the ordered list of resolved file paths (manifest file order preserved). Mirrors the scenarios in server/tests/test_checkout_resolve.py.",
+  "cases": [
+    {
+      "name": "base_only_passes_through",
+      "manifest": {
+        "reader_required": ["meta.json", "images/web/**"],
+        "files": [
+          { "path": "meta.json", "sha256": "h0", "bytes": 10 },
+          { "path": "images/web/plates/0001.webp", "sha256": "h1", "bytes": 100 }
+        ]
+      },
+      "expected": ["meta.json", "images/web/plates/0001.webp"],
+      "expected_total_bytes": 110
+    },
+    {
+      "name": "highest_variant_wins",
+      "manifest": {
+        "reader_required": ["images/web/**"],
+        "files": [
+          { "path": "images/web/plates/0001.webp", "sha256": "h0", "bytes": 100 },
+          { "path": "images/web/plates/0001-r2.webp", "sha256": "h1", "bytes": 110 },
+          { "path": "images/web/plates/0001-r3.webp", "sha256": "h2", "bytes": 120 }
+        ]
+      },
+      "expected": ["images/web/plates/0001-r3.webp"],
+      "expected_total_bytes": 120
+    },
+    {
+      "name": "full_res_png_never_reader_required",
+      "manifest": {
+        "reader_required": ["images/web/**", "images/thumbs/**"],
+        "files": [
+          { "path": "images/plates/0001.png", "sha256": "h0", "bytes": 999 },
+          { "path": "images/web/plates/0001.webp", "sha256": "h1", "bytes": 50 }
+        ]
+      },
+      "expected": ["images/web/plates/0001.webp"],
+      "expected_total_bytes": 50
+    },
+    {
+      "name": "json_and_cover_portrait_variants",
+      "manifest": {
+        "reader_required": ["pages/*", "images/thumbs/**", "images/web/**"],
+        "files": [
+          { "path": "pages/0001.json", "sha256": "h0", "bytes": 5 },
+          { "path": "pages/0002.json", "sha256": "h1", "bytes": 6 },
+          { "path": "images/thumbs/cover.webp", "sha256": "h2", "bytes": 20 },
+          { "path": "images/thumbs/cover-r2.webp", "sha256": "h3", "bytes": 22 },
+          { "path": "images/web/portraits/wanderer.webp", "sha256": "h4", "bytes": 30 },
+          { "path": "images/web/portraits/wanderer-r2.webp", "sha256": "h5", "bytes": 33 }
+        ]
+      },
+      "expected": [
+        "pages/0001.json",
+        "pages/0002.json",
+        "images/thumbs/cover-r2.webp",
+        "images/web/portraits/wanderer-r2.webp"
+      ],
+      "expected_total_bytes": 66
+    },
+    {
+      "name": "web_and_thumb_variants_resolve_independently",
+      "manifest": {
+        "reader_required": ["images/web/**", "images/thumbs/**"],
+        "files": [
+          { "path": "images/web/plates/0006.webp", "sha256": "h0", "bytes": 100 },
+          { "path": "images/web/plates/0006-r2.webp", "sha256": "h1", "bytes": 105 },
+          { "path": "images/thumbs/plates/0006.webp", "sha256": "h2", "bytes": 40 },
+          { "path": "images/thumbs/plates/0006-r2.webp", "sha256": "h3", "bytes": 42 }
+        ]
+      },
+      "expected": [
+        "images/web/plates/0006-r2.webp",
+        "images/thumbs/plates/0006-r2.webp"
+      ],
+      "expected_total_bytes": 147
+    },
+    {
+      "name": "pages_glob_is_single_segment",
+      "manifest": {
+        "reader_required": ["pages/*"],
+        "files": [
+          { "path": "pages/0001.json", "sha256": "h0", "bytes": 5 },
+          { "path": "pages/sub/nested.json", "sha256": "h1", "bytes": 7 }
+        ]
+      },
+      "expected": ["pages/0001.json"],
+      "expected_total_bytes": 5
+    }
+  ]
+}
