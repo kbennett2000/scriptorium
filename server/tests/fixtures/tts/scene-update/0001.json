@@ -1,0 +1,27 @@
+{
+  "output": {
+    "location": "the Time Traveller's smoking-room, Richmond",
+    "time_of_day": "evening",
+    "atmosphere": "lamplit, expectant, tobacco smoke",
+    "present": [
+      "the Time Traveller",
+      "Filby",
+      "the Psychologist",
+      "the Medical Man"
+    ],
+    "scene_changed": false,
+    "visual_salience": 0.82,
+    "best_visual_beat": "The tiny model machine blurs, becomes indistinct, and vanishes from the table before the gathered guests.",
+    "carry_notes": "The Traveller has just demonstrated a working model time machine to sceptical dinner guests."
+  },
+  "meta": {
+    "transform": "scene-update",
+    "transform_version": "0.1.0",
+    "model": "qwen3:8b",
+    "input_tokens_est": 760,
+    "truncated": false,
+    "attempts": 1,
+    "latency_ms": 3900,
+    "queued_ms": 0
+  }
+}

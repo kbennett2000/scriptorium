@@ -1,0 +1,25 @@
+{
+  "output": {
+    "location": "a green sunlit lawn beneath a colossal white sphinx, year 802,701",
+    "time_of_day": "afternoon",
+    "atmosphere": "warm, verdant, strangely hushed",
+    "present": [
+      "the Time Traveller",
+      "the Eloi"
+    ],
+    "scene_changed": true,
+    "visual_salience": 0.88,
+    "best_visual_beat": "The machine halts on a lawn before a huge weathered sphinx of white marble, and small graceful figures approach through the flowers.",
+    "carry_notes": "The Traveller has arrived in 802,701 AD; the gentle Eloi gather around him and the sphinx."
+  },
+  "meta": {
+    "transform": "scene-update",
+    "transform_version": "0.1.0",
+    "model": "qwen3:8b",
+    "input_tokens_est": 810,
+    "truncated": false,
+    "attempts": 1,
+    "latency_ms": 4300,
+    "queued_ms": 0
+  }
+}

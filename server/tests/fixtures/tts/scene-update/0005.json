@@ -1,0 +1,26 @@
+{
+  "output": {
+    "location": "a rushing river in the world of 802,701",
+    "time_of_day": "afternoon",
+    "atmosphere": "sunlit, then suddenly urgent",
+    "present": [
+      "the Time Traveller",
+      "Weena",
+      "the Eloi"
+    ],
+    "scene_changed": false,
+    "visual_salience": 0.79,
+    "best_visual_beat": "The Traveller wades into the river and drags a drowning Eloi woman to the bank as the others watch, indifferent.",
+    "carry_notes": "The Traveller rescues Weena from drowning; she attaches herself to him in gratitude."
+  },
+  "meta": {
+    "transform": "scene-update",
+    "transform_version": "0.1.0",
+    "model": "qwen3:8b",
+    "input_tokens_est": 795,
+    "truncated": false,
+    "attempts": 1,
+    "latency_ms": 4110,
+    "queued_ms": 0
+  }
+}

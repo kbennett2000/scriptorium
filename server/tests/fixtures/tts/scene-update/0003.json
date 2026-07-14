@@ -1,0 +1,24 @@
+{
+  "output": {
+    "location": "the machine's saddle, hurtling through time",
+    "time_of_day": "unknown",
+    "atmosphere": "giddy, disorienting, day and night flickering",
+    "present": [
+      "the Time Traveller"
+    ],
+    "scene_changed": false,
+    "visual_salience": 0.68,
+    "best_visual_beat": "Day and night merge into a continuous grey as the sun races across the sky in flickering arcs.",
+    "carry_notes": "The Traveller rides the machine forward; time accelerates around him toward the far future."
+  },
+  "meta": {
+    "transform": "scene-update",
+    "transform_version": "0.1.0",
+    "model": "qwen3:8b",
+    "input_tokens_est": 740,
+    "truncated": false,
+    "attempts": 1,
+    "latency_ms": 3820,
+    "queued_ms": 0
+  }
+}

@@ -213,3 +213,40 @@ kill mid-P2b loses ≤1 unit. Minors (and un-canonicalized/failed majors) get
 **whichever set has more members** (tie → the ≥3 set). Non-persons are never auto-major.
 Both branches are pinned by `test_reduce_cast.py`. For tiny casts (<6 persons) the top-6
 branch makes nearly everyone major — that is the spec's literal behavior, not a bug.
+
+## From S6
+
+### The "trailing pseudo-unit" pattern for a phase-end finalize (reusable)
+The S4 runner has **no post-units / finalize hook** — `advance_job` runs the units loop then
+immediately `transition(to_state)` — and it is load-bearing (outside every cycle's scope
+fence). When a phase needs work that must run **once, after all real units, only if the phase
+actually completes** (P3's gap-rule merge into `pages/*.json`), express it as a **trailing
+pseudo-unit** appended to `units()` (P3 uses `id="merge"`, a non-numeric id that can't collide
+with a page id). The runner reaches it only after every prior unit has succeeded or
+ladder-failed, and parks on `waiting_gpu` *before* it on a 503 — giving exactly "phase end, not
+unit time." Its `unit_done` should be an idempotent completion check (P3: "every page carries a
+`ledger`"). P5's prompt assembly, if it ever needs a post-pass rollup, can reuse this shape
+rather than touching the runner.
+
+### P3 threading: generation vs. the merged gap ledger (don't conflate them)
+Two different "prior ledgers" exist and must stay distinct: (1) during **generation**, a page's
+`prior_ledger` is the last *successful* stored `ledgers/*.json` before it — so a gap page is
+skipped over and the next real page threads from the last real ledger; (2) the **merge** writes
+a permanently-failed page's slot in `pages/*.json` as an inherited copy of its predecessor +
+`carry_notes += " [ledger gap]"`. Generation never reads the inherited copy. If P4/P5 read
+ledgers, read them from `pages/*.json` (the merged, gap-filled view), not `ledgers/*.json` (the
+raw, possibly-sparse artifacts).
+
+### Page ledgers now live on `pages/*.json`; `ledgers/*.json` are raw artifacts
+P3 stores each raw `scene-update` output at `work/{id}/ledgers/{page}.json` (the resume
+checkpoint) and, at phase end, merges the effective ledger onto `work/{id}/pages/{page}.json`
+under the `ledger` key (`page.schema.json` already permits it; validated as kind `"page"`). P4
+selection consumes only `scene_changed` / `visual_salience` (numbers + booleans — the spoiler
+invariant); P5 prompts consume the full ledger. `cast_names` for `scene-update` come from
+`cast.json` `name`s (cap 40); `era` from `bake_config`.
+
+### `scene-update` fixtures are hand-written too (same convention as S5)
+`server/tests/fixtures/tts/scene-update/*` were authored by hand (TTS unreachable). The capture
+tool now threads `scene-update` over 6 pages; run it on-LAN to overwrite, and run
+`test_ledger_live.py` (`-m gpu`) to paste a real per-page ledger summary into CYCLE-LOG. Tests
+assert shape/threading only, so re-captures stay green.

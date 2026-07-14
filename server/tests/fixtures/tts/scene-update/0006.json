@@ -1,0 +1,25 @@
+{
+  "output": {
+    "location": "the pedestal of the White Sphinx at dusk",
+    "time_of_day": "evening",
+    "atmosphere": "uneasy, shadows lengthening, first dread of the Morlocks",
+    "present": [
+      "the Time Traveller",
+      "Weena"
+    ],
+    "scene_changed": false,
+    "visual_salience": 0.74,
+    "best_visual_beat": "In the failing light the Traveller finds the bronze doors of the sphinx open and the machine gone from where he left it.",
+    "carry_notes": "The machine has vanished into the sphinx's pedestal; the Traveller suspects the subterranean Morlocks. Weena stays close."
+  },
+  "meta": {
+    "transform": "scene-update",
+    "transform_version": "0.1.0",
+    "model": "qwen3:8b",
+    "input_tokens_est": 805,
+    "truncated": false,
+    "attempts": 1,
+    "latency_ms": 4180,
+    "queued_ms": 0
+  }
+}
