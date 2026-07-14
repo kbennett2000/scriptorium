@@ -1,7 +1,24 @@
 # Handoff
 
 ## Current state
-- **S10b complete** (PR open, awaiting human merge). The publish half of S10 — the bakery is now
+- **S11 complete** (PR open, awaiting human merge). The library + checkout API — a published bundle
+  is now fully checkout-able. New **`library/api.py`** (`APIRouter(prefix="/api/library")`, wired in
+  `app.py`, served **only** from `cfg.library_dir`): `GET /api/library` (shelf listing: id, title,
+  author, cover-thumb URL, revision, resolved `total_bytes_reader`, best-effort dir scan),
+  `GET /api/library/{id}/manifest` (verbatim), `GET /api/library/{id}/files/{path}`
+  (path-traversal-guarded → 400, **ETag = sha256** from the manifest, **`If-None-Match` → 304**,
+  json/webp/png content-types). New **`library/checkout.py`** — the pure `-rN` resolution
+  (`resolve_reader_files`/`resolved_total_bytes`: expand `reader_required` globs, collapse each image
+  group to its **highest `-rN`**, base = rev 1; JSON passes through) — the documented
+  highest-`-rN`-wins convention (no schema/endpoint change; the reader mirrors it). **Static mounts**
+  (`app._mount_static`): admin-ui `dist/` at `/admin`, reader PWA `dist/` at `/` (catch-all last;
+  missing dir skipped silently) — closes the S9b "static mount unwired" note. New
+  `Config.reader_dist`/`admin_dist` (env-overridable). Offline **253 passed / 5 deselected**;
+  ruff/eslint/tsc/vitest clean; no type drift; `verify_bundle` still green. **Live acceptance GREEN**:
+  real `uvicorn` + scripted client over HTTP fetched manifest + all 18 resolved reader files (every
+  sha256 verified), transfer == `total_bytes_reader` (41812), ETag/304, traversal 400. See NOTES
+  "From S11". **Next up: S12 (sync) + R1 (reader eats a real bundle) — dispatchable in parallel.**
+- **S10b complete** (merged). The publish half of S10 — the bakery is now
   complete end-to-end (P0→P8). `bake/phases/p8_publish.py`: **`Publish`** (`rendered → published`,
   CPU rest→rest, registered after `Render()`) assembles the immutable `library/{id}` bundle from
   `work/` — **integrity guard** (§4.4: published `pages/*` frozen byte-for-byte or refuse with
@@ -101,21 +118,21 @@
   exceptions), `bake/api.py` (admin endpoints; P0 inline). Kill-test proves ≤1 unit lost.
 - **S3 / S2 / S1 complete** (merged): paginator + fixture bundle; ingestion adapters;
   monorepo skeleton + schemas + generated TS types + `/health`.
-- Server: `uv run pytest` → **237 passed, 5 deselected** (network + four gpu-live incl. render);
+- Server: `uv run pytest` → **253 passed, 5 deselected** (network + four gpu-live incl. render);
   `uv run ruff check . ../tools` clean. admin-ui: `npm run test` (Vitest) → **1 passed**
   (the offline smoke); eslint + tsc clean. `tools/verify_bundle.py` exits 0 over the fixture bundle.
   imagegen-service (PR #13, merged): `npm run test:unit` → **36 pass**, `tsc` clean.
 
 ## Next up
-- **S11** — library / checkout serving: the `/api/library/*` reader endpoints (§11.1 —
-  `GET /api/library`, `…/{id}/manifest`, `…/{id}/files/{path}` path-traversal-guarded, ETag =
-  sha256) over the `library/{id}` bundles P8 now produces. This is what connects a published bundle
-  to the reader. Implement the post-publish `-rN` current-variant resolution here (highest wins —
-  see NOTES From S10b). The bakery (P0→P8) is otherwise complete.
-- **R1** — reader shell/shelf/checkout, unblocked since S3 (build against
-  `server/tests/fixtures/bundle/` — now a **real** P8 bundle; the reader can copy admin-ui's
-  test-runner/fetch-client shape but keep network calls fenced to `sync/`+`shelf/`). **S12** (sync
-  API) unblocked from S1.
+- **S12** — sync API: annotations/positions delta protocol (the second reader-facing group,
+  §11.1). The library group (S11) is done; sync is the remaining server surface before the reader is
+  fully served. Unblocked from S1.
+- **R1** — reader shell/shelf/checkout, unblocked since S3 and now fully unblocked by S11's
+  `/api/library/*`. Build against `server/tests/fixtures/bundle/` (a **real** P8 bundle) and a live
+  server; the reader can copy admin-ui's test-runner/fetch-client shape but must keep network calls
+  fenced to `sync/`+`shelf/`. **Port `library/checkout.py`'s highest-`-rN`-wins resolution** into the
+  reader's `sync/` so delta-sync fetches exactly one current image per plate (NOTES From S11).
+  S12 and R1 are dispatchable in parallel.
 - **Ops (not a cycle):** restart `imagegen-service` on the GPU box so PR #13 (width/height) is live,
   then re-run `pytest -m gpu tests/test_render_live.py` to close the gpu-marked box (832×1216).
 

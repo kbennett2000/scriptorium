@@ -326,6 +326,69 @@ cast.json; resume skips done pages; P1 503 → waiting_gpu → resume; P2 503 �
 `cast_running`; canonicalize 422 → `failed_units` + null major, phase completes; mentions 400
 → job `failed`), `test_job_states` updated for `cast_running`. reader/admin-ui untouched.
 
+## S11 — Library + checkout API (2026-07-13) — shipped
+
+The bridge from a published bundle to the reader: the DESIGN §11.1 library group, the two static
+mounts S9b left unwired, and the `-rN` variant-resolution the S10b NOTES deferred here. After this
+cycle a published bundle is fully checkout-able; S12 (sync) and R1 (reader eats a real bundle) unblock.
+
+**Shipped**
+- **`library/api.py`** (`APIRouter(prefix="/api/library")`, wired in `app.py`) — three read-only,
+  unauthenticated (ADR-0005, LAN trust) endpoints, served **only** from `cfg.library_dir` (`work/`
+  is never reachable):
+  - `GET /api/library` — shelf listing `{id, title, author, cover_thumb_url, revision,
+    total_bytes_reader}`. Best-effort dir scan (a malformed/incomplete bundle dir is skipped, not
+    fatal). `total_bytes_reader` is the **resolved** reader set (see below).
+  - `GET /api/library/{id}/manifest` — `manifest.json` verbatim (the full additive ledger, all
+    `-rN` variants); 404 on unknown id.
+  - `GET /api/library/{id}/files/{path}` — **path-traversal guard** (`.resolve()` +
+    `is_relative_to` → 400, the `review_api.plate_image` idiom), **ETag = sha256** (from the
+    manifest; hash-on-the-fly fallback for untracked files), **`If-None-Match` → 304**, content-type
+    by extension (json/webp/png).
+- **`library/checkout.py`** — the pure, FastAPI-free `-rN` resolution: `resolve_reader_files(manifest)`
+  expands the `reader_required` globs then collapses each image variant group `(parent, base_stem,
+  ext)` to its **highest `-rN`** (base = revision 1); `resolved_total_bytes()`. JSON files pass
+  through untouched. Importable by the scripted-client test; the TS reader mirrors the convention.
+- **Static mounts** (`app._mount_static`) — admin-ui `dist/` at `/admin`, reader PWA `dist/` at `/`
+  (catch-all mounted **last** so `/api/*` + `/health` win). A dist dir that doesn't exist (tests/CI)
+  is skipped silently. New `Config.reader_dist`/`admin_dist` (defaulted; env
+  `SCRIPTORIUM_READER_DIST`/`SCRIPTORIUM_ADMIN_DIST`). Closes the S9b "static mount unwired" note.
+- **Tests** (+16): `test_checkout_resolve.py` (glob dialect; base-only; highest-of-r2/r3;
+  full-res-png-excluded; cover/portrait + web/thumb variants collapse independently) and
+  `test_library_api.py` (listing shape; incomplete-dir skip; manifest verbatim + 404; content-types;
+  **path traversal rejected** — 3 encoded `%2e%2e` attacks, secret planted in `work/` never leaks;
+  ETag=sha256 + 304 flow; the **scripted-client checkout contract** — fetch manifest + every resolved
+  file, verify each sha256, transfer == resolved total == listing total; **`-rN` fetch set** via a
+  real `regen_published_plate` → exactly one web + one thumb per plate, the `-r2`, base still in
+  manifest, `verify_bundle` green). Offline **253 passed / 5 deselected**.
+
+**The `-rN` resolution design call**
+Highest-`-rN`-wins, resolved by the library layer as a **documented convention + Python reference
+impl**, not a schema field or new endpoint (the prompt `render` block is `additionalProperties:false`
+— no current-variant pointer exists). The manifest stays the full additive ledger; `verify_bundle`
+and §4.4 immutability are untouched. `GET /api/library` reports `total_bytes_reader` over the
+**resolved** set (what the reader downloads); for the fixture (a clean first publish, no variants)
+this equals the stored `41812`, so **no P8 change, no fixture regen**. It diverges from the stored
+manifest field only after a regen (the stored field still counts the superseded base) — reconciling
+P8's stored total is a NOTES follow-up.
+
+**Live acceptance (green)**
+Ran a real `uvicorn scriptorium.app:app` over a seeded fixture library and drove the scripted client
+against it over HTTP (localhost, in lieu of a second LAN box):
+- `GET /api/library` → the one book, `total_bytes_reader: 41812`.
+- Fetched manifest + all **18** resolved reader-required files: **every sha256 matched the
+  manifest**; total transfer **41812 bytes == resolved total == listing total_bytes_reader**.
+- `curl` evidence: `ETag: "6158…fa9f"` + `content-type: image/webp` on a thumb; re-request with
+  `If-None-Match` → **304**; encoded `../../work/x.json` traversal → **400** (planted secret never
+  served).
+
+**Decisions**
+- Resolution is convention-level (highest-`-rN`), not a schema/endpoint change — see above.
+- Static dirs are mounted at import time from env; missing dirs skip silently so the test/CI import
+  (no `dist/`) is unaffected while dev/prod serve the built SPAs.
+- No auth on the library group (ADR-0005); no schema changes (all fields already existed → no
+  gen-types drift).
+
 ## S10b — Publish (P8) + bundle verifier + post-publish regen + fixture regen (2026-07-13) — shipped
 
 The publish half of S10 (S10 split at the S10a plan gate). Rendered bakes now become an immutable,

@@ -9,7 +9,7 @@ than error (see app.health). Env contract per DESIGN §11 / BUILD-PLAN §0.1.
 from __future__ import annotations
 
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 # Repo root = server/src/scriptorium/config.py -> scriptorium -> src -> server -> <root>
@@ -42,6 +42,10 @@ class Config:
     gpu_wol_enabled: bool
     runner_tick_s: int
     shared_dir: Path
+    # Built SPA dirs for the two static mounts (S11). Defaulted so tests that
+    # construct Config directly need not supply them; load_config sets them from env.
+    reader_dist: Path = field(default_factory=lambda: _REPO_ROOT / "reader" / "dist")
+    admin_dist: Path = field(default_factory=lambda: _REPO_ROOT / "admin-ui" / "dist")
 
     @property
     def jobs_dir(self) -> Path:
@@ -69,6 +73,12 @@ def load_config() -> Config:
     shared_dir = Path(
         os.environ.get("SCRIPTORIUM_SHARED_DIR", str(_REPO_ROOT / "shared"))
     )
+    reader_dist = Path(
+        os.environ.get("SCRIPTORIUM_READER_DIST", str(_REPO_ROOT / "reader" / "dist"))
+    )
+    admin_dist = Path(
+        os.environ.get("SCRIPTORIUM_ADMIN_DIST", str(_REPO_ROOT / "admin-ui" / "dist"))
+    )
     return Config(
         data_dir=Path(os.environ.get("SCRIPTORIUM_DATA", "/var/lib/scriptorium")),
         port=_env_int("SCRIPTORIUM_PORT", 8720),
@@ -78,4 +88,6 @@ def load_config() -> Config:
         gpu_wol_enabled=_env_bool("GPU_WOL_ENABLED", False),
         runner_tick_s=_env_int("RUNNER_TICK_S", 120),
         shared_dir=shared_dir,
+        reader_dist=reader_dist,
+        admin_dist=admin_dist,
     )
