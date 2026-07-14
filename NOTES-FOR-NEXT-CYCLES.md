@@ -250,3 +250,37 @@ invariant); P5 prompts consume the full ledger. `cast_names` for `scene-update` 
 tool now threads `scene-update` over 6 pages; run it on-LAN to overwrite, and run
 `test_ledger_live.py` (`-m gpu`) to paste a real per-page ledger summary into CYCLE-LOG. Tests
 assert shape/threading only, so re-captures stay green.
+
+## From S7
+
+### `selection/reselect.py` is standalone until a revision re-bake wires it in
+The P4 phase (`bake/phases/p4_select.py`) only ever writes a **fresh** `selection.json` (all
+plates `selected`, `added_in_revision: 1`) — the `ledger_done → selected` hop has no notion of a
+prior revision. The re-selection diff (`selection/reselect.py`, fully unit-tested) is where a
+density-knob re-turn merges a fresh run against the existing selection (retiring rendered plates,
+preserving manual entries, bumping `added_in_revision`). Wire it in wherever revisions are bumped
+— the re-bake / publish path (S10-ish), not inside a bake phase. One reading baked into reselect
+and flagged in CYCLE-LOG for confirmation: a **never-rendered** non-manual plate (`selected`/
+`approved`) not re-chosen is **dropped**, so a human `approved` on an unrendered plate is
+discarded on a re-turn. Revisit if the review UX should instead retire (tombstone) approvals.
+
+### P4 reads scores only from `pages/*.json`; the input type is the spoiler boundary
+`select()` takes `PageScore` = `{seq, page_id, chapter, scene_changed, visual_salience}` — numbers
+and booleans and the id only, a frozen dataclass. This is the structural enforcement of the
+spoiler invariant: no text field can reach selection, so it cannot look ahead into content (score
+lookahead is fine). A test pins the exact field set. When P5/P7 need the *full* ledger they read
+`pages/*.json` directly; they must not route text through the selection types.
+
+### Fill window is intersected with `min_gap` (engine interpretation)
+DESIGN §8 step 3's fill window `(last+1 … last+max_gap)` is intersected with the `min_gap`
+constraint (`[last+min_gap, min(last+max_gap, next_anchor−min_gap)]`) so the "no two plates
+closer than min_gap" acceptance property holds over *all* plates, fills included. Safe because
+every preset has `max_gap ≥ 2·min_gap`. If a future preset breaks that ratio, re-derive the
+window bounds. The S10 verify tool should treat `min_gap`/`floor`/valid-reason as invariants,
+not exact plate equality (the hand-written `bundle/selection.json` intentionally diverges — see
+CYCLE-LOG S7).
+
+### Selection score fixtures: committed synthetic field, not in-test RNG
+`server/tests/fixtures/selection/synthetic-120.json` is generated once with `random.Random(4835)`
+and committed, so the engine property tests are independent of Python's RNG across versions. Regen
+only if you deliberately want a new field (and update the plate counts in CYCLE-LOG S7).
