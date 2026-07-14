@@ -1,24 +1,53 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
-import type { Page as PageDoc, Selection, Structure } from "@scriptorium/shared";
+import type { Annotations, Page as PageDoc, Selection, Structure } from "@scriptorium/shared";
 
+import {
+  AnnotationsPanel,
+  NoteSheet,
+  SelectionBar,
+  createHighlight,
+  createNote,
+  deleteAnnotation,
+  domRangeToAnchor,
+  hasBookmark,
+  liveAnnotations,
+  readAnnotations,
+  toggleBookmark,
+  updateAnnotation,
+  type Anchor,
+  type Annotation,
+  type HighlightColor,
+  type Span,
+} from "../annotations";
 import type { Storage } from "../shell";
 import type { BundleReader } from "./BundleReader";
 import { Lightbox } from "./Lightbox";
+import { edgeTapAction } from "./nav";
 import { Page } from "./Page";
 import { paragraphIndexForChar, paragraphStarts, splitParagraphs, throttle, topVisibleChar } from "./pagetext";
 import { deviceId, readPosition, writePosition } from "./position";
 
 // The reading surface for one Resident (or fixture) book (DESIGN §13 ADR-0004). Loads structure +
-// selection once, then walks pages in reading order as scrolled units. Owns navigation
-// (buttons / ←→ keys / swipe / edge tap-zones), the plate lightbox, and position persist/restore.
+// selection + annotations once, then walks pages in reading order as scrolled units. Owns navigation
+// (buttons / ←→ keys / swipe / edge taps), the plate lightbox, position persist/restore, and the R2
+// annotation UX: select → floating bar, note sheet, bookmark toggle, per-book list + jump/flash, and
+// tap-a-highlight recolor/note/delete.
 //
 // The reading path performs ZERO network I/O — everything comes through the injected BundleReader
-// (local Storage bytes or inlined fixtures). Position `char` is the top-visible paragraph offset
-// (see pagetext.topVisibleChar); we persist on page-turn, on a throttled scroll, and on unmount.
+// (local bytes / inlined fixtures) and the local annotation store. Position `char` is the top-visible
+// paragraph offset; we persist on page-turn, on a throttled scroll, and on unmount.
 
 const PLATE_DIR = "images/web/plates";
 const SCROLL_PERSIST_MS = 500;
+const FLASH_MS = 1200;
+const SWIPE_PX = 60;
+const DEFAULT_NOTE_COLOR: HighlightColor = "yellow";
+
+// A note being composed: created from a fresh selection, or editing an existing note's text.
+type NoteTarget =
+  | { mode: "create"; anchor: Anchor; color: HighlightColor }
+  | { mode: "edit"; id: string; initial: string };
 
 export function Reader({
   reader,
@@ -33,10 +62,24 @@ export function Reader({
 }) {
   const [structure, setStructure] = useState<Structure | null>(null);
   const [selection, setSelection] = useState<Selection | null>(null);
+  const [annDoc, setAnnDoc] = useState<Annotations | null>(null);
   const [index, setIndex] = useState(0);
   const [pageDoc, setPageDoc] = useState<PageDoc | null>(null);
   const [lightboxSrc, setLightboxSrc] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  // R2 annotation UI state.
+  const [pendingSel, setPendingSel] = useState<{
+    anchor: Anchor;
+    rect: { top: number; left: number; width: number };
+    text: string;
+  } | null>(null);
+  const [noteTarget, setNoteTarget] = useState<NoteTarget | null>(null);
+  const [panelOpen, setPanelOpen] = useState(false);
+  const [hlMenu, setHlMenu] = useState<{ id: string; rect: DOMRect } | null>(null);
+  const [flashId, setFlashId] = useState<string | null>(null);
+  const [flashPage, setFlashPage] = useState(false);
+  const flashTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const deviceRef = useRef<string>("");
@@ -48,6 +91,7 @@ export function Reader({
     () => (structure ? structure.chapters.flatMap((c) => c.page_ids) : []),
     [structure],
   );
+  const currentId = useMemo(() => pageIds[index] ?? null, [pageIds, index]);
   // A chapter's first page shows that chapter's title header.
   const titleByFirstPage = useMemo(() => {
     const m = new Map<string, string>();
@@ -65,7 +109,21 @@ export function Reader({
     return s;
   }, [selection]);
 
-  // Load structure + selection + device id + saved position once.
+  // Highlight/note spans on the current page (bookmarks are page-level, not rendered as spans).
+  const pageSpans = useMemo<Span[]>(() => {
+    if (!annDoc || !currentId) return [];
+    return liveAnnotations(annDoc).flatMap((a) =>
+      (a.type === "highlight" || a.type === "note") && a.page_id === currentId && a.color
+        ? [{ id: a.id, start: a.anchor.start, end: a.anchor.end, color: a.color }]
+        : [],
+    );
+  }, [annDoc, currentId]);
+  const bookmarked = useMemo(
+    () => (annDoc && currentId ? hasBookmark(annDoc, currentId) : false),
+    [annDoc, currentId],
+  );
+
+  // Load structure + selection + annotations + device id + saved position once.
   useEffect(() => {
     let live = true;
     void (async () => {
@@ -76,9 +134,11 @@ export function Reader({
         ]);
         deviceRef.current = await deviceId(storage);
         const saved = await readPosition(storage, bookId);
+        const anns = await readAnnotations(storage, bookId);
         if (!live) return;
         setStructure(st);
         setSelection(sel);
+        setAnnDoc(anns);
         if (saved) {
           // page_seq is 1-based book-wide reading order, contiguous — so index = seq - 1 (clamped).
           const order = st.chapters.flatMap((c) => c.page_ids);
@@ -94,8 +154,11 @@ export function Reader({
     };
   }, [reader, storage, bookId]);
 
-  // Release the reader's object URLs when the surface unmounts.
+  // Release the reader's object URLs (and any pending flash timer) when the surface unmounts.
   useEffect(() => () => reader.dispose(), [reader]);
+  useEffect(() => () => {
+    if (flashTimer.current) clearTimeout(flashTimer.current);
+  }, []);
 
   // Lazy-load the current page document whenever the index changes.
   useEffect(() => {
@@ -163,15 +226,21 @@ export function Reader({
         container.scrollTop = 0;
       }
     }
-    void persist(topVisibleChar(
-      paragraphStarts(splitParagraphs(pageDoc.text)),
-      paragraphTops(),
-      container?.scrollTop ?? 0,
-    ));
+    void persist(
+      topVisibleChar(
+        paragraphStarts(splitParagraphs(pageDoc.text)),
+        paragraphTops(),
+        container?.scrollTop ?? 0,
+      ),
+    );
   }, [pageDoc, paragraphTops, persist]);
+
+  // A live (non-collapsed) text selection blocks page-turns so a selection drag is never a nav gesture.
+  const selectionCollapsed = () => document.getSelection()?.isCollapsed ?? true;
 
   const go = useCallback(
     (delta: number) => {
+      if (!selectionCollapsed()) return;
       persistScroll.cancel();
       setIndex((i) => Math.min(Math.max(i + delta, 0), Math.max(pageIds.length - 1, 0)));
     },
@@ -189,18 +258,180 @@ export function Reader({
     return () => window.removeEventListener("keydown", onKey);
   }, [go, lightboxSrc]);
 
-  // Touch swipe: horizontal drag past a threshold turns the page.
-  const touchStartX = useRef<number | null>(null);
+  // Touch: a horizontal drag past the threshold is a swipe page-turn; a quick tap in the outer edge
+  // is an edge page-turn (edgeTapAction). Both go through `go`, which ignores them mid-selection. The
+  // R1b transparent tap-zone <button>s are gone, so text under the page edges stays selectable.
+  const touchStart = useRef<{ x: number; y: number; t: number } | null>(null);
   const onTouchStart = (e: React.TouchEvent) => {
-    touchStartX.current = e.changedTouches[0]?.clientX ?? null;
+    const t = e.changedTouches[0];
+    touchStart.current = t ? { x: t.clientX, y: t.clientY, t: Date.now() } : null;
   };
   const onTouchEnd = (e: React.TouchEvent) => {
-    const start = touchStartX.current;
-    touchStartX.current = null;
-    if (start == null) return;
-    const dx = (e.changedTouches[0]?.clientX ?? start) - start;
-    if (Math.abs(dx) > 60) go(dx < 0 ? 1 : -1);
+    const start = touchStart.current;
+    touchStart.current = null;
+    const t = e.changedTouches[0];
+    if (!start || !t) return;
+    const dx = t.clientX - start.x;
+    const dy = t.clientY - start.y;
+    if (Math.abs(dx) > SWIPE_PX && Math.abs(dx) > Math.abs(dy)) {
+      go(dx < 0 ? 1 : -1);
+      return;
+    }
+    const width = e.currentTarget.clientWidth || 1;
+    const action = edgeTapAction({
+      dx,
+      dy,
+      durationMs: Date.now() - start.t,
+      xFraction: t.clientX / width,
+      selectionCollapsed: selectionCollapsed(),
+    });
+    if (action) go(action);
   };
+
+  // Capture a live text selection inside the page text into a pending anchor (drives the floating bar).
+  const captureSelection = useCallback(() => {
+    const sel = document.getSelection();
+    const container = scrollRef.current?.querySelector<HTMLElement>(".page-text");
+    if (!sel || sel.rangeCount === 0 || sel.isCollapsed || !container || !pageDoc) {
+      setPendingSel(null);
+      return;
+    }
+    const range = sel.getRangeAt(0);
+    const anchor = domRangeToAnchor(range, container, pageDoc.text);
+    if (!anchor) {
+      setPendingSel(null);
+      return;
+    }
+    // Range.getBoundingClientRect exists in browsers but not jsdom; fall back to the origin under test.
+    const r =
+      typeof range.getBoundingClientRect === "function"
+        ? range.getBoundingClientRect()
+        : { top: 0, left: 0, width: 0 };
+    setPendingSel({ anchor, rect: { top: r.top, left: r.left, width: r.width }, text: range.toString() });
+  }, [pageDoc]);
+
+  useEffect(() => {
+    // While a modal-ish surface owns the interaction, don't track selection.
+    if (lightboxSrc || panelOpen || noteTarget) return;
+    const onSel = () => captureSelection();
+    document.addEventListener("selectionchange", onSel);
+    return () => document.removeEventListener("selectionchange", onSel);
+  }, [captureSelection, lightboxSrc, panelOpen, noteTarget]);
+
+  const clearSelection = useCallback(() => {
+    document.getSelection()?.removeAllRanges();
+    setPendingSel(null);
+  }, []);
+
+  const flash = useCallback((annotation: Annotation) => {
+    if (flashTimer.current) clearTimeout(flashTimer.current);
+    if (annotation.type === "bookmark") {
+      setFlashPage(true);
+      setFlashId(null);
+    } else {
+      setFlashId(annotation.id);
+      setFlashPage(false);
+    }
+    flashTimer.current = setTimeout(() => {
+      setFlashId(null);
+      setFlashPage(false);
+    }, FLASH_MS);
+  }, []);
+
+  // --- annotation actions (each re-reads the returned doc into state) ---
+
+  const addHighlight = useCallback(
+    async (color: HighlightColor) => {
+      if (!pendingSel || !currentId) return;
+      const doc = await createHighlight(storage, bookId, {
+        page_id: currentId,
+        anchor: pendingSel.anchor,
+        color,
+      });
+      setAnnDoc(doc);
+      clearSelection();
+    },
+    [pendingSel, currentId, storage, bookId, clearSelection],
+  );
+
+  const startNoteFromSelection = useCallback(() => {
+    if (!pendingSel) return;
+    setNoteTarget({ mode: "create", anchor: pendingSel.anchor, color: DEFAULT_NOTE_COLOR });
+    clearSelection();
+  }, [pendingSel, clearSelection]);
+
+  const copySelection = useCallback(() => {
+    const text = pendingSel?.text ?? "";
+    void navigator.clipboard?.writeText(text);
+    clearSelection();
+  }, [pendingSel, clearSelection]);
+
+  const saveNote = useCallback(
+    async (text: string) => {
+      if (!noteTarget || !currentId) return;
+      const doc =
+        noteTarget.mode === "create"
+          ? await createNote(storage, bookId, {
+              page_id: currentId,
+              anchor: noteTarget.anchor,
+              color: noteTarget.color,
+              text,
+            })
+          : await updateAnnotation(storage, bookId, noteTarget.id, { text });
+      setAnnDoc(doc);
+      setNoteTarget(null);
+    },
+    [noteTarget, currentId, storage, bookId],
+  );
+
+  const onHighlightClick = useCallback((id: string, rect: DOMRect) => {
+    // A plain click on a highlight (no active selection) opens its actions; a click that is part of a
+    // selection is left to the floating bar.
+    if (!(document.getSelection()?.isCollapsed ?? true)) return;
+    setHlMenu({ id, rect });
+  }, []);
+
+  const recolor = useCallback(
+    async (color: HighlightColor) => {
+      if (!hlMenu) return;
+      const doc = await updateAnnotation(storage, bookId, hlMenu.id, { color });
+      setAnnDoc(doc);
+      setHlMenu(null);
+    },
+    [hlMenu, storage, bookId],
+  );
+
+  const editNoteFromMenu = useCallback(() => {
+    if (!hlMenu || !annDoc) return;
+    const target = annDoc.annotations.find((a) => a.id === hlMenu.id);
+    setNoteTarget({ mode: "edit", id: hlMenu.id, initial: target?.text ?? "" });
+    setHlMenu(null);
+  }, [hlMenu, annDoc]);
+
+  const removeAnnotation = useCallback(
+    async (id: string) => {
+      const doc = await deleteAnnotation(storage, bookId, id);
+      setAnnDoc(doc);
+      setHlMenu((m) => (m?.id === id ? null : m));
+    },
+    [storage, bookId],
+  );
+
+  const onToggleBookmark = useCallback(async () => {
+    if (!currentId) return;
+    const doc = await toggleBookmark(storage, bookId, currentId);
+    setAnnDoc(doc);
+  }, [currentId, storage, bookId]);
+
+  const jumpTo = useCallback(
+    (annotation: Annotation) => {
+      const idx = pageIds.indexOf(annotation.page_id);
+      if (idx >= 0) setIndex(idx);
+      setPanelOpen(false);
+      flash(annotation);
+    },
+    [pageIds, flash],
+  );
 
   if (error) {
     return (
@@ -213,7 +444,6 @@ export function Reader({
     );
   }
 
-  const currentId = pageIds[index];
   const chapterTitle = currentId ? (titleByFirstPage.get(currentId) ?? null) : null;
   const plateRelPath =
     currentId && platePages.has(currentId) ? `${PLATE_DIR}/${currentId}.webp` : null;
@@ -227,9 +457,32 @@ export function Reader({
         <span className="reader-progress">
           {pageIds.length ? `${index + 1} / ${pageIds.length}` : ""}
         </span>
+        <div className="reader-bar-actions">
+          <button
+            type="button"
+            className={`reader-bookmark${bookmarked ? " on" : ""}`}
+            aria-pressed={bookmarked}
+            aria-label={bookmarked ? "Remove bookmark" : "Add bookmark"}
+            onClick={onToggleBookmark}
+          >
+            {bookmarked ? "★" : "☆"}
+          </button>
+          <button
+            type="button"
+            className="reader-notes-btn"
+            aria-label="Annotations"
+            onClick={() => setPanelOpen(true)}
+          >
+            Notes
+          </button>
+        </div>
       </div>
 
-      <div className="reader-scroll" ref={scrollRef} onScroll={() => persistScroll()}>
+      <div
+        className={`reader-scroll${flashPage ? " flash-page" : ""}`}
+        ref={scrollRef}
+        onScroll={() => persistScroll()}
+      >
         {pageDoc && (
           <Page
             page={pageDoc}
@@ -237,26 +490,13 @@ export function Reader({
             chapterTitle={chapterTitle}
             plateRelPath={plateRelPath}
             onOpenLightbox={setLightboxSrc}
+            annotations={pageSpans}
+            flashId={flashId}
+            onHighlightClick={onHighlightClick}
           />
         )}
       </div>
 
-      {/* Edge tap-zones (touch) — narrow strips outside the text column so they don't block future
-          text selection (R2). Buttons cover desktop + accessibility. */}
-      <button
-        type="button"
-        className="tap-zone tap-prev"
-        aria-label="Previous page"
-        disabled={index === 0}
-        onClick={() => go(-1)}
-      />
-      <button
-        type="button"
-        className="tap-zone tap-next"
-        aria-label="Next page"
-        disabled={index >= pageIds.length - 1}
-        onClick={() => go(1)}
-      />
       <div className="reader-nav">
         <button type="button" onClick={() => go(-1)} disabled={index === 0}>
           Prev
@@ -265,6 +505,59 @@ export function Reader({
           Next
         </button>
       </div>
+
+      {pendingSel && !noteTarget && (
+        <SelectionBar
+          rect={pendingSel.rect}
+          onColor={addHighlight}
+          onNote={startNoteFromSelection}
+          onCopy={copySelection}
+        />
+      )}
+
+      {noteTarget && (
+        <NoteSheet
+          initial={noteTarget.mode === "edit" ? noteTarget.initial : ""}
+          onSave={saveNote}
+          onCancel={() => setNoteTarget(null)}
+        />
+      )}
+
+      {hlMenu && (
+        <div
+          className="hl-menu"
+          role="menu"
+          style={{ top: hlMenu.rect.bottom, left: hlMenu.rect.left }}
+        >
+          {(["yellow", "blue", "green", "pink"] as HighlightColor[]).map((c) => (
+            <button
+              key={c}
+              type="button"
+              className={`sel-swatch hl-${c}`}
+              aria-label={`Recolor ${c}`}
+              onClick={() => recolor(c)}
+            />
+          ))}
+          <button type="button" className="sel-action" onClick={editNoteFromMenu}>
+            Note
+          </button>
+          <button type="button" className="sel-action" onClick={() => removeAnnotation(hlMenu.id)}>
+            Delete
+          </button>
+          <button type="button" className="hl-menu-close" aria-label="Close" onClick={() => setHlMenu(null)}>
+            ×
+          </button>
+        </div>
+      )}
+
+      {panelOpen && annDoc && (
+        <AnnotationsPanel
+          items={liveAnnotations(annDoc)}
+          onJump={jumpTo}
+          onDelete={removeAnnotation}
+          onClose={() => setPanelOpen(false)}
+        />
+      )}
 
       {lightboxSrc && (
         <Lightbox src={lightboxSrc} alt="Plate" onClose={() => setLightboxSrc(null)} />

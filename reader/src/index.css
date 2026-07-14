@@ -120,26 +120,8 @@ body {
 .page-para {
   margin: 0 0 1rem;
 }
-/* Narrow edge tap-zones (touch) — outside the text column so they don't block selection (R2). */
-.tap-zone {
-  position: absolute;
-  top: 3rem;
-  bottom: 3rem;
-  width: 12%;
-  border: none;
-  background: transparent;
-  padding: 0;
-  cursor: pointer;
-}
-.tap-zone:disabled {
-  cursor: default;
-}
-.tap-prev {
-  left: 0;
-}
-.tap-next {
-  right: 0;
-}
+/* R2: edge tap-zone <button>s were removed (they stole drag-selection); the edge-tap page-turn now
+   lives in the touch handler (readerview/nav.ts), leaving edge text selectable. */
 .reader-nav {
   position: sticky;
   bottom: 0;
@@ -190,4 +172,220 @@ body {
   color: #fff;
   border: none;
   cursor: pointer;
+}
+
+/* Annotations (R2) — minimal skin; typography/themes land in R4. */
+.reader-bar-actions {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+}
+.reader-bookmark {
+  background: transparent;
+  border: none;
+  font-size: 1.1rem;
+  line-height: 1;
+  cursor: pointer;
+  color: inherit;
+}
+.reader-bookmark.on {
+  color: #c9962b;
+}
+.reader-notes-btn {
+  font-size: 0.8rem;
+}
+
+/* Highlight spans — the four canonical colors (DESIGN §4.5). Kept legible over light/dark text. */
+.hl {
+  border-radius: 2px;
+  padding: 0 0.02em;
+}
+.hl-yellow {
+  background: rgba(255, 226, 89, 0.5);
+}
+.hl-blue {
+  background: rgba(120, 183, 255, 0.5);
+}
+.hl-green {
+  background: rgba(133, 224, 133, 0.5);
+}
+.hl-pink {
+  background: rgba(255, 150, 200, 0.5);
+}
+span.hl {
+  cursor: pointer;
+}
+/* Flash on jump-to (annotations list). */
+.hl.flash {
+  animation: ann-flash 1.2s ease-out;
+}
+.flash-page .page {
+  animation: ann-flash 1.2s ease-out;
+}
+@keyframes ann-flash {
+  0%,
+  40% {
+    background-color: rgba(255, 226, 89, 0.85);
+  }
+  100% {
+    background-color: transparent;
+  }
+}
+
+/* Floating selection bar. */
+.sel-bar {
+  position: fixed;
+  z-index: 20;
+  transform: translate(-50%, calc(-100% - 6px));
+  display: flex;
+  gap: 0.3rem;
+  align-items: center;
+  padding: 0.3rem 0.4rem;
+  border: 1px solid currentColor;
+  border-radius: 6px;
+  background: Canvas;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
+}
+.sel-swatch {
+  width: 1.1rem;
+  height: 1.1rem;
+  border: 1px solid rgba(0, 0, 0, 0.3);
+  border-radius: 50%;
+  padding: 0;
+  cursor: pointer;
+}
+.sel-action {
+  font-size: 0.8rem;
+  cursor: pointer;
+}
+
+/* Note sheet + highlight actions popover. */
+.note-sheet {
+  position: fixed;
+  z-index: 25;
+  left: 50%;
+  bottom: 1rem;
+  transform: translateX(-50%);
+  width: min(32rem, 92vw);
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding: 0.75rem;
+  border: 1px solid currentColor;
+  border-radius: 8px;
+  background: Canvas;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.3);
+}
+.note-input {
+  width: 100%;
+  min-height: 5rem;
+  resize: vertical;
+  font: inherit;
+  box-sizing: border-box;
+}
+.note-actions {
+  display: flex;
+  gap: 0.5rem;
+  justify-content: flex-end;
+}
+.hl-menu {
+  position: fixed;
+  z-index: 22;
+  display: flex;
+  gap: 0.3rem;
+  align-items: center;
+  padding: 0.3rem 0.4rem;
+  border: 1px solid currentColor;
+  border-radius: 6px;
+  background: Canvas;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
+}
+.hl-menu-close,
+.ann-close {
+  background: transparent;
+  border: none;
+  font-size: 1.1rem;
+  line-height: 1;
+  cursor: pointer;
+  color: inherit;
+}
+
+/* Annotations list panel. */
+.ann-panel {
+  position: fixed;
+  z-index: 30;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: min(24rem, 92vw);
+  display: flex;
+  flex-direction: column;
+  border-left: 1px solid currentColor;
+  background: Canvas;
+  box-shadow: -2px 0 12px rgba(0, 0, 0, 0.25);
+}
+.ann-panel-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.6rem 0.75rem;
+  border-bottom: 1px solid currentColor;
+}
+.ann-filters {
+  display: flex;
+  gap: 0.75rem;
+  padding: 0.5rem 0.75rem;
+  font-size: 0.8rem;
+  border-bottom: 1px solid currentColor;
+}
+.ann-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  overflow-y: auto;
+  flex: 1;
+}
+.ann-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 0.75rem;
+  border-bottom: 1px solid rgba(128, 128, 128, 0.25);
+}
+.ann-jump {
+  flex: 1;
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  text-align: left;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  color: inherit;
+  font: inherit;
+  min-width: 0;
+}
+.ann-badge {
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  border-radius: 3px;
+  padding: 0.05rem 0.3rem;
+}
+.ann-loc {
+  font-size: 0.75rem;
+  opacity: 0.7;
+}
+.ann-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ann-del {
+  font-size: 0.75rem;
+  cursor: pointer;
+}
+.ann-empty {
+  padding: 1rem 0.75rem;
+  opacity: 0.7;
+  font-size: 0.85rem;
 }

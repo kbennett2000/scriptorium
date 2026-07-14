@@ -672,3 +672,45 @@ in `dispose()`. `Reader.tsx` calls `dispose()` on unmount. Any future surface th
 `StorageBundleReader` (search result previews, cast portraits in R4) must do the same or it leaks blob
 URLs. Blob MIME is hardcoded webp (correct for `images/web/**`/`images/thumbs/**`); if the `.png`
 originals are ever served, derive the type from the extension.
+
+## From R2 (reader: annotations)
+
+### Anchors reuse `pagetext.ts` — the offset math stays single-sourced
+`annotations/anchors.ts` computes canonical UTF-16 offsets by reusing `splitParagraphs`/`paragraphStarts`/
+`paragraphIndexForChar` — no forked paragraph math. Intra-paragraph offset = `Range.toString().length` of
+a boundary range from the paragraph start to the point (DOM-spec-uniform over text-node and element
+boundaries; walks all descendant text), so it works whether a `.page-para` is one text node or has been
+subdivided into highlight `<span>`s by `segments.ts`. R4 search-result highlighting and any future
+selection surface must go through these two functions, not a bespoke walker. Note: the canonical `"\n\n"`
+between paragraphs is structural and NOT in the DOM — a cross-paragraph anchor's `text.slice` includes
+the join chars but the DOM range's `.toString()` does not; the round-trip is stated over DOM ranges
+(reconstruct-then-reselect is character-identical), which is what the property test asserts.
+
+### Annotations are local-only, in the `{user}/{book}` wire shape — R3 owns sync + the real user
+`annotations/store.ts` writes `annotations/{user}/{bookId}.json` (outside `books/`, so Remove keeps it)
+using a single hardcoded `DEV_USER_ID = "default"`. R3's profile picker replaces that constant and its
+sync client should read these files straight into the S12 `merge_annotations` — the on-disk shape is the
+wire shape (uuid `id`, ISO `created`/`modified`, `deleted` tombstones, `book_id`/`user_id` in-doc). Two
+follow-ups for R3: (1) **positions are still un-namespaced** (`positions/{bookId}.json`, no `{user}/`) —
+migrate them under `{user}/` alongside annotations when the picker lands; (2) whole-file writes are fine
+at current volumes but if annotation counts grow, consider append/compaction.
+
+### Tap-zones were removed; edge-tap page-turn is now `readerview/nav.ts#edgeTapAction`
+The R1b transparent `.tap-zone` `<button>`s stole drag-selection at the page edges (they captured the
+pointer over the text column on narrow viewports). **Resolution:** deleted the buttons + their CSS; the
+edge-tap gesture now derives from the existing `.reader` touch handler via the pure `edgeTapAction`
+(clean tap in the outer 12%, quick, only when the selection is collapsed). Additionally, every page-turn
+(`go`) early-returns while a non-collapsed selection is live, so arrows/buttons/swipe also defer to
+selection. If R4 adds its own gestures, keep the "collapsed-selection only" guard.
+
+### Highlight overlap is later-on-top by array order (creation order)
+`segments.paintParagraph` resolves a contested run to the LAST covering highlight in the doc's array
+order. Since the store appends on create, that's newest-on-top. If R3's merge ever reorders the array
+(it sorts by `id`), the visual top-of-stack could change; if stable stacking matters, sort by `created`
+before painting. The byte-faithful guarantee (`runs.join("") === paraText`) is order-independent.
+
+### jsdom gaps the tests work around (for future component tests)
+`Range.getBoundingClientRect` is not implemented in jsdom — `Reader.captureSelection` guards it (falls
+back to a zero rect). Selection/Range construction and `Range.toString()` DO work, so the anchor round-
+trip and the "highlight survives reload" component test run headless; visual bar positioning and the
+real-OPFS reload are the browser-only parts (the manual walk).

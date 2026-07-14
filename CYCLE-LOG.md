@@ -326,6 +326,48 @@ cast.json; resume skips done pages; P1 503 → waiting_gpu → resume; P2 503 �
 `cast_running`; canonicalize 422 → `failed_units` + null major, phase completes; mentions 400
 → job `failed`), `test_job_states` updated for `cast_running`. reader/admin-ui untouched.
 
+## R2 — Reader: annotations (highlights, notes, bookmarks) (2026-07-14) — shipped
+
+Highlights/notes/bookmarks with byte-solid anchors. The fiddliest client cycle: anchors are UTF-16
+code-unit offsets into the immutable canonical page text (dumb integers, safe forever because published
+text never changes), and the anchor round-trip gets the deepest test in the repo. All writes are already
+R3-mergeable (wire shape, uuid ids, ISO `modified`, tombstones); sync/merge itself is R3. No schema
+change, no server change.
+
+**Shipped**
+- **`annotations/anchors.ts`** — pure DOM↔offset mapping, reusing `readerview/pagetext.ts` verbatim (no
+  forked math): `domRangeToAnchor(range, container, pageText)` and `anchorToDomRange(anchor, …)`. Intra-
+  paragraph offsets come from a boundary-`Range.toString().length` (the DOM spec handles text-node and
+  element boundaries uniformly, and walks all descendant text), so both directions survive a paragraph
+  segmented into highlight `<span>`s. Collapsed/inverted ranges and endpoints outside `.page-para` →
+  `null`; offsets clamped into their paragraph so a stale anchor never throws.
+- **`annotations/segments.ts`** — pure `paintParagraph(paraText, paraStart, highlights)` → contiguous
+  runs; overlap painting is **later-on-top** by array order; `runs.join("") === paraText` always (the
+  byte-faithful invariant holds under highlights, verse `\n` included).
+- **`annotations/store.ts`** — local persistence at **`annotations/{user}/{bookId}.json`** (outside
+  `books/`, so shelf Remove keeps it; §14 `{user}/{book}` namespacing with a single `DEV_USER_ID`
+  `"default"` until R3's picker). `createHighlight`/`createNote`/`updateAnnotation`/`deleteAnnotation`
+  (tombstone: `deleted:true` + `modified` bump)/`toggleBookmark` (`{0,0}` page-level). `crypto.randomUUID`
+  ids, ISO times via an injectable `now` (mirrors `position.ts`); whole-file writes.
+- **UX** (`SelectionBar`/`NoteSheet`/`AnnotationsPanel` + `Reader.tsx` wiring): select → floating bar
+  (4 colors, Note→sheet, Copy via `navigator.clipboard`); bookmark toggle in the toolbar; annotations
+  panel (filter by type/color, tap→jump to page + flash); tap a highlight → recolor/note/delete popover.
+  `Page.tsx` renders each paragraph through `paintParagraph` (colored run → `<span class="hl hl-{color}">`,
+  bare text stays a raw node; R1b-identical DOM when nothing is highlighted).
+- **Tap-zone ↔ selection fix** (R1b-flagged): the transparent `.tap-zone` `<button>`s stole drag-select
+  near the edges — **removed entirely**. Edge-tap page-turn now derives from the touch handler via a pure
+  `readerview/nav.ts#edgeTapAction` (clean tap in outer 12%, only while the selection is collapsed); all
+  page-turns early-return during a live selection. Text under the edges is now selectable.
+
+**Verification** — reader **93 vitest** (was 60): the anchor round-trip property test reconstructs
+**597 random selections character-identically, 461 of them cross-paragraph** (seed `0x1a2b3c4d`), plus
+named astral (surrogate-pair), verse-`\n`, collapsed-reject, outside-text-reject, and segmented-DOM
+consistency cases; `segments`/`store`/`nav` units; component tests (bookmark persist/restore across
+remount, highlight survives reload rendering over the same chars, live selection blocks page-turn).
+Lint + tsc + build clean; fixture-mode build inlines the fixture. Server **279 passed / 5 deselected**
+(untouched). No type drift (no schema change). **Manual reload-survival check is human-pending** (OPFS,
+browser-only): highlight → reload → same characters; network idle. See NOTES "From R2".
+
 ## R1b — Reader: the reading surface (2026-07-14) — shipped
 
 R1's second half: makes a Resident bundle readable, fully offline. Filled the empty `readerview/`
