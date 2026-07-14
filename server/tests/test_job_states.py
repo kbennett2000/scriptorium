@@ -31,7 +31,8 @@ LEGAL = [
     (JobState.LEDGER_DONE, JobState.SELECTED),
     (JobState.PROMPTS_DRAFT, JobState.IN_REVIEW),
     (JobState.APPROVED, JobState.RENDERING),
-    (JobState.RENDERING, JobState.PUBLISHED),
+    (JobState.RENDERING, JobState.RENDERED),  # S10a: P7 render then publish
+    (JobState.RENDERED, JobState.PUBLISHED),
     # cross-cutting
     (JobState.MENTIONS_RUNNING, JobState.WAITING_GPU),
     (JobState.CAST_RUNNING, JobState.WAITING_GPU),  # P2 canonicalize parks (S5 deviation)

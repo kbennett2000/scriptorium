@@ -26,8 +26,10 @@ from scriptorium.app import BAKE_PIPELINE
 from scriptorium.bake import job as jobmod
 from scriptorium.bake.api import BakeBody, CreateBookBody, SourceBody, run_p0
 from scriptorium.bake.job import JobState
+from scriptorium.bake.phases.p7_render import Render
 from scriptorium.bake.runner import Runner
 from scriptorium.config import Config
+from scriptorium.render.imagegen import FakeImagegen
 
 TTS = "http://tts.test:8712"
 
@@ -173,3 +175,90 @@ def test_p0_to_p5_produces_all_valid_artifacts(tmp_path) -> None:
     assert cover["page_id"] == "cover"
     assert "frontispiece for the book 'The Winter Quay' by A. Fixture" in \
         cover["final_subject_prompt"]
+
+
+def _register_tts_mocks() -> None:
+    """Register the generic schema-valid TTS transform mocks (+ the P7 unload) on respx."""
+    respx.post(f"{TTS}/v1/transform/cast-mentions").mock(
+        return_value=httpx.Response(200, json=_GENERIC_MENTIONS))
+    respx.post(f"{TTS}/v1/transform/cast-canonicalize").mock(
+        return_value=httpx.Response(200, json=_GENERIC_CANON))
+    respx.post(f"{TTS}/v1/transform/scene-update").mock(side_effect=_scene_handler([0]))
+    respx.post(f"{TTS}/v1/transform/illustration-prompt").mock(
+        return_value=httpx.Response(200, json=_GENERIC_PROMPT))
+    respx.post(f"{TTS}/v1/models/unload").mock(return_value=httpx.Response(200, json={}))
+
+
+def _approve(cfg: Config, book_id: str) -> None:
+    """Mimic the review gate's approve: selected plates → approved, job → approved."""
+    sel_path = cfg.work_dir / book_id / "selection.json"
+    sel = json.loads(sel_path.read_text("utf-8"))
+    for plate in sel["plates"]:
+        if plate["status"] == "selected":
+            plate["status"] = "approved"
+    sel_path.write_text(json.dumps(sel), encoding="utf-8")
+    job = jobmod.load(cfg, book_id)
+    job.transition(JobState.IN_REVIEW)
+    job.transition(JobState.APPROVED)
+    job.save(cfg)
+
+
+@respx.mock
+def test_p0_to_p7_renders_a_valid_bundle(tmp_path) -> None:
+    """S10a anchor: P0->P7 with FakeImagegen reaches rendered, all artifacts valid."""
+    cfg = _cfg(tmp_path)
+    body = CreateBookBody(
+        source=SourceBody(kind="text", text=_SOURCE_TEXT, filename="synthetic.txt",
+                          title="The Winter Quay", author="A. Fixture"),
+        bake=BakeBody(style_id="engraving", density_preset="classic",
+                      era="an imagined coastal town", portraits_enabled=True,
+                      title="The Winter Quay", author="A. Fixture"),
+    )
+    job = run_p0(cfg, body)
+    book_id = job.book_id
+    job.started = True
+    job.save(cfg)
+    _register_tts_mocks()
+
+    # Real pipeline, but the render phase renders FakeImagegen placeholders (no GPU/imagegen).
+    pipeline = [p for p in BAKE_PIPELINE if getattr(p, "name", None) != "p7_render"]
+    pipeline.append(Render(client=FakeImagegen()))
+    runner = Runner(cfg, pipeline, sleep=_noop_sleep, wake=lambda _c: None, gpu_gate=_gate_up)
+
+    # P1→P5 to prompts_draft, approve, then P7 to rendered.
+    for _ in range(40):
+        asyncio.run(runner.tick())
+        job = jobmod.load(cfg, book_id)
+        if job.state in (JobState.PROMPTS_DRAFT, JobState.FAILED):
+            break
+    assert job.state == JobState.PROMPTS_DRAFT, f"stuck at {job.state}"
+
+    _approve(cfg, book_id)
+    for _ in range(40):
+        asyncio.run(runner.tick())
+        job = jobmod.load(cfg, book_id)
+        if job.state in (JobState.RENDERED, JobState.FAILED):
+            break
+    assert job.state == JobState.RENDERED, f"stuck at {job.state}"
+
+    # Every schema-bound artifact still validates (prompts now carry render provenance).
+    counts = _validate_tree(cfg, book_id)
+    assert counts["prompt"] >= 2  # at least a page plate + cover
+
+    book = cfg.work_dir / book_id
+    # Each approved page plate rendered to PNG + web + thumb, and its prompt has render provenance.
+    sel = json.loads((book / "selection.json").read_text("utf-8"))
+    approved_pages = [p["page_id"] for p in sel["plates"]]
+    assert approved_pages, "expected at least one plate"
+    for pid in approved_pages:
+        assert (book / "images" / "plates" / f"{pid}.png").is_file(), pid
+        assert (book / "images" / "web" / "plates" / f"{pid}.webp").is_file(), pid
+        assert (book / "images" / "thumbs" / "plates" / f"{pid}.webp").is_file(), pid
+        assert {p["page_id"]: p["status"] for p in sel["plates"]}[pid] == "rendered"
+        doc = json.loads((book / "prompts" / f"{pid}.json").read_text("utf-8"))
+        assert doc["wrapped_prompt"] and doc["negative_prompt"]
+        assert doc["render"]["attempts"] == 1
+
+    # The cover pseudo-plate rendered to the §4.2 cover path.
+    assert (book / "images" / "cover.png").is_file()
+    assert (book / "images" / "web" / "cover.webp").is_file()

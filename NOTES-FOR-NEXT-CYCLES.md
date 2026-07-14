@@ -411,3 +411,48 @@ statuses to `selected`). When S10 regenerates the bundle prompts (From S8), the 
 The server does not `StaticFiles`-mount the built admin UI; dev relies on the Vite proxy. If you
 want the i5 server to serve `/admin` in production, add the mount in `app.py` (a server change,
 deliberately out of S9b's UI-only scope). `admin-ui/dist/` is gitignored.
+
+## From S10a
+
+### S10b is the rest of S10 (publish + verify) — the binding scope
+Build `bake/phases/p8_publish.py` (`rendered → published`): assemble `library/{id}` from `work/`
+(copy PNGs + derivatives + `retired` plate files), write `manifest.json` (sha256 every file +
+`reader_required` globs per §4.3), the **publish integrity guard** (§4.4 — existing published
+`pages/*.json` must be byte-identical or refuse), revision bump, and `meta.bake` pinning (TTS
+`/v1/transforms` versions, model tags from TTS `/health`, `git describe`). Add `Config.library_dir`
+(does not exist yet). Plus `tools/verify_bundle.py` (all schemas / all hashes / `reader_required`
+present / selection↔prompts↔images cross-refs / retired files present / nonzero exit) and extend
+`test_pipeline_e2e` to **P0→P8** with the integrity-guard-refusal + cross-publish-idempotency boxes.
+The §4.2 bundle layout P7 already writes (`images/plates|cover|portraits` + `web`/`thumbs`) is
+publish-ready — P8 is largely a validated copy + manifest.
+
+### Regen is split across S10a/S10b by design
+S10a's `POST …/plates/{id}/regen` handles the **pre-publish** case only (re-render into `work/`, new
+seed, `render` provenance bump; **409 if published**). S10b adds the **post-publish additive** path:
+write a new `…-rN.png` file, update `prompts/{id}.render` + the selection entry, bump the manifest
+revision — never mutating a published file (§4.4). Reuse `render_plate()` (already factored).
+
+### The render GPU gate is in-phase, not runner-level (possible refactor)
+The runner's `default_gpu_gate` probes **TTS** `/health` for every `is_gpu` phase; P7 also needs
+imagegen. S10a handles this inside the phase (the `__unload__` unit does TTS-unload + imagegen
+`health()`, raising `GpuUnavailable` to park). Fine as-is, but if more render-only gating is wanted,
+consider making `gpu_gate` phase-aware (pass the phase) so it can probe imagegen for `p7_render`.
+
+### imagegen-service size PR must be merged + deployed before real 832×1216
+`RealImagegenClient` sends `width`/`height`, but only imagegen-service **PR #13** (add width/height,
+default 1024²) makes the service honour them. Until it is merged and the service redeployed on the
+GPU box, a real render silently returns 1024² — the gpu-marked `test_render_live` asserts 832×1216,
+so it will catch a stale deployment. FakeImagegen (all offline tests) honours the sizes regardless.
+
+### admin-UI Regen + `rendered`-state wiring is deferred to S10b
+S9b's `PostRender.tsx` gates on `state ∈ {rendering, published}` and disables Regen. With the new
+`rendered` state and the live regen endpoint, S10b should: include `rendered` in that gate, enable
+the Regen button (`POST …/plates/{id}/regen`), and drop the placeholder banner (gate it on
+`job.render_stub`, which real render now leaves False). Out of S10a's server-only scope.
+
+### Live checkpoint still pending (TTS degraded)
+The S5-era live checkpoint + the S10 gpu-marked render test remain unrun: on this box TTS answered
+`/health` but reported `degraded`/`ollama_reachable:false` (no transforms possible), and imagegen is
+on the GPU box (unreachable from here). When TTS/ollama is healthy on the LAN with imagegen up, run
+`capture_tts_fixtures.py` + `uv run pytest -m gpu` (cast/ledger/prompts/**render** live) and paste
+summaries into CYCLE-LOG.

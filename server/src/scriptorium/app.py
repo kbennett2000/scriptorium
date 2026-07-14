@@ -23,20 +23,20 @@ from .bake.phases.p2_cast import CastCanonicalize, CastReduce
 from .bake.phases.p3_ledger import LedgerEnter, LedgerScenes
 from .bake.phases.p4_select import P4Select
 from .bake.phases.p5_prompts import PromptsDerive, PromptsEnter
-from .bake.phases.p7_render_stub import RenderStub
+from .bake.phases.p7_render import Render, RenderEnter
 from .bake.review_api import router as review_router
 from .bake.runner import Runner
 from .config import Config, load_config
 
 # The bake pipeline, keyed by ``from_state`` inside the runner. S5 registered P1 (mentions)
 # and P2 (reduce + canonicalize); S6 appends P3 (scene ledger); S7 appends P4 (selection);
-# S8 appends P5 (prompt derivation). ``MentionsEnter`` / ``CastReduce`` / ``LedgerEnter`` /
-# ``PromptsEnter`` are the CPU steps that move a job onto the ``*_running`` GPU states P1/P2b/
-# P3/P5 sit on; ``P4Select`` is the one pure rest→rest CPU phase (``ledger_done → selected``),
-# so it needs no such enter step. A job rests at ``prompts_draft`` for human review; the review
-# gate's ``approve`` endpoint (S9a) advances it to ``approved``. ``RenderStub`` (S9a) is the demo
-# P7: it renders FakeImagegen placeholders (``approved → rendering``) and the job rests at
-# ``rendering`` — S10 replaces it with the real GPU render + publish.
+# S8 appends P5 (prompt derivation); S10a appends the real P7 (``RenderEnter`` + ``Render``).
+# ``MentionsEnter`` / ``CastReduce`` / ``LedgerEnter`` / ``PromptsEnter`` / ``RenderEnter`` are the
+# CPU steps that move a job onto the ``*_running``/``rendering`` GPU states P1/P2b/P3/P5/P7 sit on;
+# ``P4Select`` is the one pure rest-to-rest CPU phase (``ledger_done -> selected``), so it needs no
+# such enter step. A job rests at ``prompts_draft`` for human review; the review gate's ``approve``
+# (S9a) advances it to ``approved``, then P7 unloads TTS and renders every approved plate with the
+# real imagegen client, resting at ``rendered``. Publish (``rendered -> published``) is S10b.
 BAKE_PIPELINE = [
     MentionsEnter(),
     CastMentions(),
@@ -47,7 +47,8 @@ BAKE_PIPELINE = [
     P4Select(),
     PromptsEnter(),
     PromptsDerive(),
-    RenderStub(),
+    RenderEnter(),
+    Render(),
 ]
 
 _PROBE_TIMEOUT_S = 2.0
@@ -60,9 +61,9 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     Exactly one :class:`Runner` task runs — this is what makes the single-worker /
     GPU-exclusivity guarantee structural. The pipeline runs P0 (inline in the admin
     endpoint) then P1→P2→P3→P4→P5 here; a started job rests at ``prompts_draft`` for human
-    review. The review gate's ``approve`` (S9a) advances it to ``approved``, then the P7
-    ``RenderStub`` renders FakeImagegen placeholders and the job rests at ``rendering`` (publish
-    is S10). Plain ``TestClient(app)`` (no context manager) does not trigger lifespan, so
+    review. The review gate's ``approve`` (S9a) advances it to ``approved``, then P7 unloads TTS
+    and renders every approved plate (real imagegen client), resting at ``rendered`` (publish is
+    S10b). Plain ``TestClient(app)`` (no context manager) does not trigger lifespan, so
     endpoint tests never spin the worker.
     """
     runner = Runner(load_config(), pipeline=BAKE_PIPELINE)

@@ -13,6 +13,7 @@ before persisting. Nothing here renders, publishes, or wraps prompts with style 
 from __future__ import annotations
 
 import json
+import secrets
 from pathlib import Path
 
 import httpx
@@ -21,12 +22,15 @@ from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
 from .. import schemas
-from ..config import load_config
+from ..config import Config, load_config
+from ..render.imagegen import ImagegenClient, RealImagegenClient
 from ..selection.engine import PRESETS, PageScore, select
 from ..selection.reselect import reselect
 from ..styles import load_styles
 from . import job as jobmod
 from .job import Job, JobState
+from .phases.base import GpuUnavailable
+from .phases.p7_render import render_plate
 
 router = APIRouter(prefix="/api/admin")
 
@@ -102,6 +106,11 @@ def _page_salience(book_id: str, page_id: str) -> float:
     if not path.is_file():
         return 0.0
     return float((_read_json(path).get("ledger") or {}).get("visual_salience", 0.0))
+
+
+def _imagegen_client(cfg: Config) -> ImagegenClient:
+    """The imagegen client for the regen endpoint. Indirected so tests inject a fake."""
+    return RealImagegenClient(cfg)
 
 
 def _text_download_url(formats: dict) -> str | None:
@@ -347,6 +356,36 @@ def do_reselect(book_id: str, body: ReselectBody) -> dict:
     job.prev_state = None
     job.save(cfg)
     return doc
+
+
+@router.post("/books/{book_id}/plates/{page_id}/regen")
+async def regen_plate(book_id: str, page_id: str) -> dict:
+    """Re-render a single plate with a fresh seed (DESIGN §11.1).
+
+    S10a supports the **pre-publish** case only: the job must have rendered (``rendering``/
+    ``rendered``) so a prompt + style exist, and the re-render overwrites the work-dir PNG +
+    derivatives and bumps the plate's ``render`` provenance in place. The **post-publish** additive
+    ``…-rN.png`` path (new file + revision bump) needs the published library and lands in S10b, so a
+    published job is refused here.
+    """
+    cfg = load_config()
+    job = _require(book_id)
+    if job.state == JobState.PUBLISHED:
+        raise HTTPException(status_code=409, detail="post-publish regen (-rN) is not yet supported")
+    if job.state not in (JobState.RENDERING, JobState.RENDERED):
+        raise HTTPException(status_code=409, detail=f"cannot regen from {job.state} (render first)")
+    prompt_path = cfg.work_dir / book_id / "prompts" / f"{page_id}.json"
+    if not prompt_path.is_file():
+        raise HTTPException(status_code=404, detail=f"no prompt for {page_id!r}")
+
+    # A fresh seed so the re-render differs from the original (DESIGN §10 "new seed").
+    new_seed = secrets.randbelow(2**31)
+    try:
+        await render_plate(cfg, job, page_id, _imagegen_client(cfg), seed=new_seed)
+    except GpuUnavailable as exc:
+        raise HTTPException(status_code=503, detail=f"imagegen unavailable: {exc}") from exc
+    job.save(cfg)
+    return _read_json(prompt_path)
 
 
 @router.get("/books/{book_id}/plate-image/{page_id}.png")
