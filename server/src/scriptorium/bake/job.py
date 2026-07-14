@@ -144,6 +144,9 @@ class Job:
     # Per-page TTS ``meta.warnings`` from prompt derivation (P5), keyed by page_id. Surfaced by
     # the review gate (S9). Schema-free runtime state, like the rest of the job record.
     prompt_warnings: dict[str, list[str]] = field(default_factory=dict)
+    # Set True by the S9 demo render stub (P7) when it writes FakeImagegen placeholder pixels, so
+    # S10's real render (and the post-render UI) know the plates are placeholders, not final art.
+    render_stub: bool = False
     failed_units: list[dict] = field(default_factory=list)
     prev_state: str | None = None
     started: bool = False

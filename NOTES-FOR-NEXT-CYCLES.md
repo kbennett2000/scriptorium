@@ -326,3 +326,50 @@ It runs real P0 (`run_p0` on a committed inline synthetic book) + the whole regi
 `work/`. Any phase that breaks its artifact contract fails here. Extend it (not replace it) as
 P6/P7 land — add the manifest/positions/rendered-prompt artifacts to `_validate_tree` when they
 appear.
+
+## From S9a
+
+### S9b (the admin UI) is next and fully unblocked
+S9a shipped the server; the follow-up cycle builds `admin-ui/` per DESIGN §11.3 against these
+endpoints. A ready spec lives at the bottom of the S9a plan file (`kickoff-scriptorium-sorted-
+hennessy.md`, "Deferred to S9b"). Blank slate: no router/data-lib/CSS/test-runner in `admin-ui`
+yet. Decisions already made for S9b: **Vitest + RTL + jsdom, stubbed `fetch`** for the smoke test
+(Playwright deferred); hand-write API-payload TS interfaces (only the *bundle* shapes come from
+`@scriptorium/shared`; the Job/review-payload shapes are not schema'd); add a Vite dev
+`server.proxy` `/api`+`/health` → `:8720` (none exists); commit **placeholder** style swatches
+(inline SVG is simplest — real rendered samples deferred to M1); optionally static-mount
+`admin-ui/dist` at `/admin` (the server does **not** serve it today). The **frontend-design skill
+was absent** in the S9a environment — load it in S9b if present, else apply density/restraint
+principles directly.
+
+### S10 replaces `p7_render_stub.py` wholesale (and clears `render_stub`)
+`bake/phases/p7_render_stub.py` is a **demo** phase — `is_gpu=False`, renders `FakeImagegen`
+placeholders, no style wrap, no derivatives, rests at `rendering`. S10 **deletes it** and lands the
+real `p7_render.py`: `is_gpu=True` with an enter-split (`approved → rendering` CPU claim, then a GPU
+phase), a mandatory pre-phase **TTS unload** (ADR-0009), §10 `wrapped_prompt`/`negative_prompt`
+assembly recorded on `prompts/*.json`, the Pillow WebP derivative pipeline (`.src.sha256`
+sidecars), per-plate `render` provenance, and `rendering → published` (P8). When the real render
+runs it should **clear `Job.render_stub`** (or the UI keeps flagging placeholders). `FakeImagegen`
+in `render/imagegen.py` (deterministic Pillow PNG, prompt hash burned in) is the **shared test
+double** — keep it; S10 adds the real `ImagegenClient` per the imagegen-service API (ADR-0011).
+
+### The review endpoints assume **pre-publish** semantics
+`review_api.py` edits mutate `work/{id}/` in place and are gated to `prompts_draft`/`in_review`
+(prompt/selection/cast) or `selected`+review (reselect). None of the immutability guard applies yet
+(nothing is published). S10/S11 own the **post-publish** flows the DESIGN table hints at (prompt PUT
+"post-publish allowed for regen", reselect's revision bump, the `plates/{id}/regen` endpoint) — do
+**not** widen the S9a guards to those states without the additive-revision machinery.
+
+### Manual-added review plates have no prompt until a re-derive
+`PUT …/review/selection {add:[page_id]}` writes a `reason:"manual"` selection entry but does **not**
+derive its prompt (P5 already ran). So `approve` will refuse a manual add whose page never had a
+prompt — that is the intended box-#2 behaviour, and it is how the refusal test is built. To realise
+prompts for genuinely-new manual plates, `reselect` (or a re-run) re-queues P5. If S9b wants a
+one-click "add + derive", it should call reselect or a future targeted re-derive — not loosen
+`approve`. (Removing a plate keeps its prompt file, so include-toggles round-trip for free.)
+
+### New endpoints S9b/S10 consume: `GET /styles` and `GET …/plate-image/{page_id}.png`
+`GET /api/admin/styles` returns the `data/styles.json` catalog (via the S8 `load_styles`) — the
+wizard's only route to the style list. `GET /api/admin/books/{id}/plate-image/{page_id}.png` serves
+a work-dir plate PNG (path-traversal-guarded, admin-only, pre-publish) for the S9b post-render
+thumbs; the real reader image serving is the S11 library file server, separate from this.

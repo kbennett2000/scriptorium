@@ -326,6 +326,78 @@ cast.json; resume skips done pages; P1 503 → waiting_gpu → resume; P2 503 �
 `cast_running`; canonicalize 422 → `failed_units` + null major, phase completes; mentions 400
 → job `failed`), `test_job_states` updated for `cast_running`. reader/admin-ui untouched.
 
+## S9a — Review-gate server + demo P7 stub (2026-07-13) — shipped
+
+The server half of S9 (the review gate). Surfaces the `prompts_draft` shot list for a human, lets
+them edit prompts/cast and add/drop plates, re-turn the density knob, and **approve** — the gate
+that makes invariant #4 ("no plate rendered before approval") real. Plus a `FakeImagegen` and a
+**demo P7 render stub** so the whole wizard→review→approve→render path is demonstrable now, GPU-free.
+
+**Split decision.** S9 is a size-L cycle. Per the plan gate it was **split S9a (server) / S9b (UI)**,
+and per an explicit user choice this session is **S9a only** — the `admin-ui/` screens + a Vitest/RTL
+smoke test are deferred to S9b. Acceptance box #1 (full browser run) is an S9b deliverable; its
+refusal/persistence sub-tests (boxes #2, #3) land here. The **frontend-design skill is not installed**
+in this environment; S9b will apply its principles directly.
+
+**No state-machine / schema change.** The chain already held
+`prompts_draft → in_review → approved → rendering → published`. `approve` **walks
+`prompts_draft → in_review → approved`** in one call — `in_review` is a transient waypoint in S9a (a
+later cycle may surface it as a resting "claimed for review" state). The P7 stub runs
+`approved → rendering` and the book **rests at `rendering`** (publish is S10). The only additive
+change is a `Job.render_stub: bool` flag (schema-free runtime state, like `prompt_warnings`), set by
+the stub so S10/UI know the pixels are placeholders.
+
+**Endpoints** (`bake/review_api.py`, its own `APIRouter(prefix="/api/admin")` included in `app.py`):
+`GET /gutendex?q=` (search proxy, trims upstream, degrades to 502 — never 500); `GET /styles`
+(the catalog for the wizard picker); `GET /books/{id}/review` (selection + all prompts incl.
+pseudo-plates + cast + `prompt_warnings` + `failed_units` + per-page beats; 409 pre-P5);
+`PUT …/review/prompt/{page_id}` (persists `edited_prompt`, recomputes
+`final_subject_prompt = edited_prompt ?? derived.prompt`); `PUT …/review/selection` (manual
+add/remove — a never-rendered remove **deletes the entry but keeps `prompts/{id}.json`** so an
+include-toggle round-trips; a rendered remove retires); `PUT …/review/cast/{slug}` (sets
+`edited_by_human`); `POST …/approve` (refuses **422** with the offending `page_ids` if any
+selected/manual plate lacks a prompt, else flips plates → `approved`); `POST …/reselect`
+(§8 re-selection with the new preset, then re-queues P5); `GET …/plate-image/{page_id}.png`
+(work-dir PNG serve, path-traversal-guarded, for the S9b post-render thumbs).
+
+**Approve-refusal evidence** (acceptance box #2): `test_review_api.py::
+test_approve_refuses_when_a_selected_plate_lacks_a_prompt` manually adds page `0002` (which has no
+`prompts/0002.json`) → `POST /approve` returns **422** with `detail.page_ids == ["0002"]` and the
+job stays at `prompts_draft` (no partial transition). Box #3:
+`test_prompt_edit_persists_and_recomputes` asserts the edit lands on disk and
+`final_subject_prompt` recomputes (and reverts to `derived.prompt` when cleared).
+
+**Reselect re-queue reading.** Pre-publish, with nothing rendered and no manual plates, the §8
+merge reduces to "the merged plate set == the fresh `select()` output" (never-rendered non-chosen
+plates are dropped). The endpoint recomputes `PageScore`s from `pages/*.json`, runs
+`select` + `reselect(revision=current_max_added_in_revision)` (no revision bump pre-publish — that
+additive flow is S10), keeps prompt files, then **resets `job.state = SELECTED` directly** (a
+deliberate pipeline re-entry, not a forward edge; guarded to pre-render states) so the runner
+re-runs P5, deriving only the newcomers (P5 `unit_done` skips existing prompts).
+
+**P7 stub seam for S10.** `bake/phases/p7_render_stub.py` is `is_gpu=False` (FakeImagegen is
+pure-CPU — no gate/WoL), renders `final_subject_prompt` as-is (no style wrap / negative), writes
+`images/plates/{page_id}.png` per drafted plate (pages + `cover`/`portrait-*`), flips page plates
+`approved → rendered`, sets `render_stub`, and **rests at `rendering`** — no derivatives, no
+manifest, no publish. Its module docstring states the seam: **S10 deletes this file** and lands the
+real `p7_render.py` (`is_gpu=True`, enter-split, pre-phase TTS unload, §10 wrap/negative,
+derivatives, `rendering → published`). `FakeImagegen` (`render/imagegen.py`, deterministic Pillow
+PNG with the prompt hash burned in) is the shared fake S10 keeps.
+
+**Tooling recorded for S9b:** Vitest + React Testing Library + jsdom with a stubbed `fetch` for the
+UI smoke test (offline, no browser download); the real pipeline/endpoint flow stays covered by
+server pytest. Playwright deferred.
+
+**Verification:** `uv run ruff check .` → clean. `uv run pytest` → **214 passed, 4 deselected**
+(+25; network + three `-m gpu` live). New tests: `test_review_api.py` (payload shape + warnings +
+beats, prompt edit persist/recompute/404/409, selection remove-keeps-prompt + re-add, add rejects
+non-page-ids, cast edit sets `edited_by_human`, approve refusal + lock + 409), `test_reselect_api.py`
+(denser adds + re-queues to `selected`, sparser drops never-rendered, guard past approval, unknown
+preset), `test_gutendex_proxy.py` (respx trim + 502-not-500 degrade), `test_phases_p7_stub.py`
+(placeholders render, page plates → `rendered`, `render_stub` set, idempotent), `test_fake_imagegen.py`
+(valid PNG, requested size, determinism). No schema change (no type regen); `reader/` untouched;
+no `admin-ui/` code (S9b).
+
 ## S8 — P5 prompt derivation (2026-07-13) — shipped
 
 The GPU-LLM phase that derives one `illustration-prompt` per selected page, plus the two

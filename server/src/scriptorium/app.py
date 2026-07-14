@@ -23,6 +23,8 @@ from .bake.phases.p2_cast import CastCanonicalize, CastReduce
 from .bake.phases.p3_ledger import LedgerEnter, LedgerScenes
 from .bake.phases.p4_select import P4Select
 from .bake.phases.p5_prompts import PromptsDerive, PromptsEnter
+from .bake.phases.p7_render_stub import RenderStub
+from .bake.review_api import router as review_router
 from .bake.runner import Runner
 from .config import Config, load_config
 
@@ -31,7 +33,10 @@ from .config import Config, load_config
 # S8 appends P5 (prompt derivation). ``MentionsEnter`` / ``CastReduce`` / ``LedgerEnter`` /
 # ``PromptsEnter`` are the CPU steps that move a job onto the ``*_running`` GPU states P1/P2b/
 # P3/P5 sit on; ``P4Select`` is the one pure rest→rest CPU phase (``ledger_done → selected``),
-# so it needs no such enter step. Later cycles append P6…P7.
+# so it needs no such enter step. A job rests at ``prompts_draft`` for human review; the review
+# gate's ``approve`` endpoint (S9a) advances it to ``approved``. ``RenderStub`` (S9a) is the demo
+# P7: it renders FakeImagegen placeholders (``approved → rendering``) and the job rests at
+# ``rendering`` — S10 replaces it with the real GPU render + publish.
 BAKE_PIPELINE = [
     MentionsEnter(),
     CastMentions(),
@@ -42,6 +47,7 @@ BAKE_PIPELINE = [
     P4Select(),
     PromptsEnter(),
     PromptsDerive(),
+    RenderStub(),
 ]
 
 _PROBE_TIMEOUT_S = 2.0
@@ -53,9 +59,11 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
     Exactly one :class:`Runner` task runs — this is what makes the single-worker /
     GPU-exclusivity guarantee structural. The pipeline runs P0 (inline in the admin
-    endpoint) then P1→P2→P3→P4→P5 here; a started job advances to ``prompts_draft`` and rests
-    there until the review gate lands. Plain ``TestClient(app)`` (no context manager) does not
-    trigger lifespan, so endpoint tests never spin the worker.
+    endpoint) then P1→P2→P3→P4→P5 here; a started job rests at ``prompts_draft`` for human
+    review. The review gate's ``approve`` (S9a) advances it to ``approved``, then the P7
+    ``RenderStub`` renders FakeImagegen placeholders and the job rests at ``rendering`` (publish
+    is S10). Plain ``TestClient(app)`` (no context manager) does not trigger lifespan, so
+    endpoint tests never spin the worker.
     """
     runner = Runner(load_config(), pipeline=BAKE_PIPELINE)
     app.state.runner = runner
@@ -71,6 +79,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
 app = FastAPI(title="scriptorium", version="0.1.0", lifespan=lifespan)
 app.include_router(admin_router)
+app.include_router(review_router)
 
 
 async def _probe(url: str | None) -> dict[str, bool]:
