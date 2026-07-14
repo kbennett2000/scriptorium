@@ -876,3 +876,37 @@ Capacitor 7 + JDK 17 + compile/target SDK 35. `just android-build` = vite build 
 `VITE_SERVER_URL=http://<host>:8720` and put that host in the NSC. `android/`+`ios/` are committed but
 their build outputs / Pods / `cap sync`-generated `assets/public` copies are git-ignored — always
 `cap sync` after `npm install` on a fresh clone. iOS is scaffolded but macOS-only (deferred, DESIGN §2).
+
+## From M1 (first full bake — The Time Machine, pg-35, on G434, 2026-07-14)
+
+The bake ran clean end-to-end (`failed_units=0` across P1–P8; `verify_bundle` EXIT 0; §7.4 TTS-unload-before-render observed; plates 832×1216). These are the discoveries M1 surfaced. Nothing here was fixed in the proving run except the four content-coupled test assertions (see CYCLE-LOG M1).
+
+### A retired plate leaks into the published bundle (real defect; reader-invisible) — HEADLINE
+Retiring plate `0025` at the review gate removed it from `selection.json` (→ 18 plates, correct), but the **published immutable bundle still shipped `prompts/0025.json` + the full `images/{plates,web,thumbs}/0025.*` trio (2.3 MB)**, and `0025` was actually rendered (image mtime inside the render window). Root cause: `p7_render.py:85-88` builds render targets by globbing `prompts/*.json` on disk — **not** the retired-filtered selection — and retire-at-review never deletes `prompts/{id}.json`; then `p8_publish.py:264-266` copies `prompts/*` + `images/**` by wholesale glob. **No reader impact / no spoiler** (the reader renders plates from `selection.json`, so an unreferenced image is never shown), but a human's explicit removal still shipped (hidden) into an immutable bundle. Fix (a bake-fix cycle): retire must delete/exclude `prompts/{id}.json`, or P7 render only non-retired selection plates and P8 copy only prompts/images referenced by a live selection entry.
+
+### `verify_bundle` is blind to orphaned plate images/prompts
+`tools/verify_bundle.py` returned EXIT 0 with the `0025` orphan present. It checks that *selected* plates have their image trio and that files are listed in the manifest, but never the reverse — a plate image/prompt with **no live (non-retired) selection entry**. Add that cross-check so the integrity guard catches the leak above.
+
+### P5 "depicted not in cast" warning is over-sensitive
+Of 12 `prompt_warnings`, several fire on the **Time Traveller himself** (e.g. `0007`, `0017`) — the depicted string ("The Time Traveller") doesn't string-match the cast entry (article/case/format). Advisory noise, not wrong plates, but it makes the review gate's warning panel cry wolf. Normalize the depicted-vs-cast comparison (case/article/alias-fold).
+
+### `tools/capture_tts_fixtures.py` doesn't retry a cold-model 503
+First run right after a heavy TTS session hit `503` on the first `cast-mentions` call (Ollama keep-alive had expired; model reloading). The tool aborts on any non-2xx. The bake *runner* handles this (503 → `waiting_gpu` → retry), but the standalone capture script doesn't — add a warmup ping or a small retry/backoff. Workaround used at M1: warm the model, re-run.
+
+### Gutenberg source is still not archived (provenance gap, §5.1) — confirmed live
+`api.py:116-120` catches the `ValueError` from `read_source` for gutenberg specs and passes, so the fetched PG text is never written to `work/{id}/source/`. Published `meta.json` records `source.gutenberg_id` + `retrieved_at` but not the bytes. Archive the fetched text inside the gutenberg flow so pg- books have the same provenance as user uploads. (Carried from S4; now exercised.)
+
+### Published `meta.bake` provenance is incomplete
+`library/pg-35/meta.json` shipped `bake.models = {llm:"unknown", imagegen:"unknown"}` and `bake.transform_service.transforms = {}`. The runner doesn't capture which model versions actually produced the bundle. Populate from TTS/imagegen `/health` (TTS reports `model`/`transform_version` per response; imagegen reports loras) at render time. (Related to S10b "meta.bake pinning is best-effort".)
+
+### No `scriptorium.service` systemd unit yet
+`server/deploy/` now has the ADR-0007 backup script + README but **no server unit**. The server is run by hand (`uv run uvicorn …`). M1's A6 kill-test therefore used `kill -9` (which proved the disk-based resume invariant just as well). Author `server/deploy/scriptorium.service` (+ a backup `.timer`) in a deploy cycle.
+
+### No pre-publish disk-space guard
+Nothing checks free space before a bundle publish (grep found no `disk_usage`/`statvfs`). Fine at 478 GB free, but a full disk mid-publish would fail messily. Cheap guard worth adding.
+
+### ADR-0007 backup: payload currently empty; target is same-host removable media
+The M1 backup captured `library/` + `work/` but `sync/` was empty and `users.json` absent (no reader had connected). Re-run `server/deploy/backup-data.sh` after B3 to capture the first real annotations. Also the M1 target (Phison USB `/run/media/kb/TV`, vfat) is removable but same-host — a true LAN/off-site restic target is the follow-up for full ADR-0007 intent.
+
+### `pipeline_version` git tag still not created
+`meta.bake.pipeline_version` fell back to the commit short-sha (`ea8a7b5`) — meaningful, but the annotated tag NOTES From S1 asked for still doesn't exist (the render auto-started on approve before a tag step). Create the first `pipeline-vN` tag in a release cycle.

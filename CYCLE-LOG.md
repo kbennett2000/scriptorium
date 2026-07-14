@@ -1241,3 +1241,73 @@ summary at the next live checkpoint.
 predecessor, ≤1 lost); gap rule (page 3 422 → inherited page-2 ledger + annotation, pages 4–6
 real, page 4 generated from page 2); 503 → `waiting_gpu` on `ledger_running` → resume.
 reader/admin-ui untouched.
+
+---
+
+## M1 — First Full Bake (The Time Machine, pg-35) — 2026-07-14 — proving run (NOT complete; B2/B3 human-pending)
+
+First real end-to-end run on real hardware (G434, all services local: TTS :8712, imagegen :8189
+fronting ComfyUI :8188, Ollama). **PG #35 in via the real Gutendex path → an illuminated,
+immutable, schema-valid bundle out, `failed_units=0` throughout.** This is the milestone landing.
+Not marking M1 complete — that's the product owner's call after B2 (blind plate read) and B3
+(phone walk) close.
+
+**Config:** engraving / classic / era "1890s England" / portraits on. `SCRIPTORIUM_DATA=~/scriptorium-data`,
+`RUNNER_TICK_S=5` for the bake.
+
+**A0 — imagegen stale deploy (S10b) confirmed + fixed.** The running imagegen (started 07-12,
+pre-PR#13) returned **1024²** for a `{832,1216}` request — reproduced live. `sudo systemctl restart
+imagegen-service` (Kris) picked up the on-disk fix (`cf0f0a6`, `setNodeSize`). Confirmed **832×1216**
+from actual rendered plate PNGs at scale (folded the `test_render_live` check into the real render to
+avoid GPU collision). S10b render box CLOSED.
+
+**A0b — carried live boxes closed.** `test_cast_live` / `test_ledger_live` / `test_prompts_live`
+(`-m gpu`) ran against real TTS: **3 passed (33:47)**. Cast majors sane; ledger location carries
+(study→lab→drawing-room); salience climbs 0.45→0.95 into the model demonstration. S5/S6/S8 live boxes
+CLOSED. T13 KV binding already applied on the Ollama unit (`OLLAMA_FLASH_ATTENTION=1`,
+`OLLAMA_KV_CACHE_TYPE=q8_0`).
+
+**A2 — real TTS fixtures (carried since S5).** `tools/capture_tts_fixtures.py` (after a warm-up;
+see NOTES on its cold-model 503) overwrote the hand-written fixtures with genuine captures. All shapes
+matched schema. **Design-assumption check:** the real first-6 pages are entirely the Victorian frame
+(study→laboratory), not the far-future arc the hand-written fixtures invented — so `cast-canonicalize`
+captured `time-traveller`+`filby` (Weena is far-future; `weena.json` retained as a spare). This exposed
+**four latent test assertions coupled to exact LLM content** (specific aliases, which page holds
+`scene_changed`, which page holds a warning) — a violation of "never assert exact LLM content" and of
+the fixtures README's own "a re-capture stays green" promise. Per owner decision, relaxed all four to
+schema/shape/cross-ref checks. Offline suite **290 passed**, ruff clean. Commit `ea8a7b5`.
+
+**A3/A4 — the bake.** Gutendex ingest (P0 inline ~1s): 58 pages, **16 chapters (I–XVI)**, 0 warnings.
+P1 mentions ~28 min, P2 cast ~3 min, P3 ledger ~36 min, P5 prompts ~11 min → rest at `prompts_draft`,
+**`failed_units=0`**. 19 plates selected (classic: 15 chapter_open, 3 scene_boundary, 1 fill), 8 majors
+canonicalized, cover + 8 portraits. **Ledger tracked the set pieces**: time jump 0010–0011 (0.98),
+far-future beach 0052/0054 (0.98), Morlock woods fire 0044–0050 (0.92–0.95), model demo 0004; 17 scene
+changes, location carries. (Survived an IDE crash mid-bake untouched — the server runs independently.)
+
+**B1 (human).** Kris edited a prompt, **retired plate 0025**, approved.
+
+**A5 — render → publish.** Auto-advanced on approval. §7.4 observed: TTS unloaded before SDXL,
+`models_loaded:[]` post-render. Render ~91s for the batch, `failed_units=0`. **`tools/verify_bundle.py`
+EXIT 0.** Bundle: 62 MB on disk, `total_bytes_reader` 5.48 MB, 58 pages, **18 plates** + cover + 8
+portraits (native/web/thumb trios), plates 832×1216.
+**HEADLINE FINDING:** the retired plate **0025 still shipped** into the published bundle (its prompt +
+2.3 MB image trio) — P7 renders `prompts/*.json` (glob), not the selection, and retire never deletes the
+prompt file; `verify_bundle` is blind to the orphan. Reader-invisible (reader renders from
+`selection.json`), but a real defect — filed with fix locations (NOTES From M1). Not fixed (proving run).
+
+**A6 — kill-test (resumability, only real-hardware test).** Second bake (pg-1065, The Raven, 2 pp).
+`kill -9` both uvicorn PIDs mid-mentions with page 0001 persisted + 0002 in-flight. Restart → runner
+resumed from disk: **0001 mtime unchanged (skipped, not re-run)**, 0002 re-ran, phase reached
+`mentions_done`, `failed_units=[]`. **Lost 0 completed units** — invariant #6 / §7.3 holds live.
+
+**A7 — ADR-0007 backup.** `server/deploy/backup-data.sh` (rsync, fstype-aware, refuses empty
+src/unmounted dest) + `README.md`. Backed up `SCRIPTORIUM_DATA` → Phison USB `/run/media/kb/TV`
+(536 files, 129 MB). **Restore proven**: manifest.json sha256-identical + a plate PNG `cmp`-identical.
+Commit `2f1a65c`. Caveats (NOTES): `sync/` empty until readers connect; USB is same-host removable
+(LAN/off-site restic is the follow-up).
+
+**Done-state:** ruff clean (server); offline suite 290 passed; schemas/types unchanged. Commits
+`ea8a7b5`, `2f1a65c`. Findings filed in NOTES From M1. **§16 checklist:** ingest/chapters ✓, P1–P5
+`failed_units=0` ✓, review-gate edit+toggle+approve ✓, render + plate count + cover/portraits ✓,
+publish + `verify_bundle` ✓, kill-test ≤1 unit ✓, ADR-0007 backup ✓; **device checkout/offline/merge
+(B3) and blind plate read (B2) human-pending.** M1 not declared complete.
