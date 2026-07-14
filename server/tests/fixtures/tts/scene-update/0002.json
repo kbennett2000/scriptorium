@@ -1,24 +1,28 @@
 {
   "output": {
-    "location": "the Time Traveller's laboratory, Richmond",
+    "location": "The Time Traveller's study",
     "time_of_day": "evening",
-    "atmosphere": "cluttered, charged with anticipation",
+    "atmosphere": "warm, intellectual, after-dinner",
     "present": [
-      "the Time Traveller"
+      "the Time Traveller",
+      "Filby",
+      "the Psychologist",
+      "the Provincial Mayor",
+      "the Medical Man"
     ],
     "scene_changed": false,
-    "visual_salience": 0.71,
-    "best_visual_beat": "The full-sized machine stands half-finished among tools and brass, ivory and quartz glinting under the lamp.",
-    "carry_notes": "The Traveller shows the full-sized machine in his laboratory and prepares to depart alone."
+    "visual_salience": 0.72,
+    "best_visual_beat": "The Time Traveller traces a rising barometer line with his finger while explaining that time is merely another dimension of space.",
+    "carry_notes": ""
   },
   "meta": {
     "transform": "scene-update",
     "transform_version": "0.1.0",
-    "model": "qwen3:8b",
-    "input_tokens_est": 780,
+    "model": "qwen3.5:9b",
+    "input_tokens_est": 837,
     "truncated": false,
     "attempts": 1,
-    "latency_ms": 4050,
+    "latency_ms": 29238,
     "queued_ms": 0
   }
 }

@@ -1,27 +1,27 @@
 {
   "output": {
-    "location": "the Time Traveller's smoking-room, Richmond",
+    "location": "The Time Traveller's study",
     "time_of_day": "evening",
-    "atmosphere": "lamplit, expectant, tobacco smoke",
+    "atmosphere": "warm, intellectual, after-dinner",
     "present": [
       "the Time Traveller",
       "Filby",
       "the Psychologist",
-      "the Medical Man"
+      "the Provincial Mayor"
     ],
     "scene_changed": false,
-    "visual_salience": 0.82,
-    "best_visual_beat": "The tiny model machine blurs, becomes indistinct, and vanishes from the table before the gathered guests.",
-    "carry_notes": "The Traveller has just demonstrated a working model time machine to sceptical dinner guests."
+    "visual_salience": 0.65,
+    "best_visual_beat": "The fire burns brightly while the Time Traveller leans forward with a lean forefinger to mark points on his paradoxical argument.",
+    "carry_notes": ""
   },
   "meta": {
     "transform": "scene-update",
     "transform_version": "0.1.0",
-    "model": "qwen3:8b",
-    "input_tokens_est": 760,
+    "model": "qwen3.5:9b",
+    "input_tokens_est": 924,
     "truncated": false,
     "attempts": 1,
-    "latency_ms": 3900,
+    "latency_ms": 37815,
     "queued_ms": 0
   }
 }

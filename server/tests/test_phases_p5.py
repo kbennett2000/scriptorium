@@ -197,8 +197,14 @@ def test_meta_warnings_recorded_on_job(tmp_path) -> None:
 
     _drive(cfg, _runner(cfg), stop={JobState.PROMPTS_DRAFT})
     job = jobmod.load(cfg, "b")
-    # Only 0003's fixture carries meta.warnings.
-    assert job.prompt_warnings == {"0003": ["input truncated to fit the generation budget"]}
+    # meta.warnings on a selected page's fixture are recorded onto the job, keyed by page id
+    # (shape/cross-ref only — which page carries the warning, and its wording, vary with the
+    # capture; never assert exact LLM content).
+    assert isinstance(job.prompt_warnings, dict) and job.prompt_warnings
+    for pid, warns in job.prompt_warnings.items():
+        assert isinstance(pid, str) and pid.isdigit()  # keyed by a page id
+        assert isinstance(warns, list) and warns
+        assert all(isinstance(w, str) for w in warns)
 
 
 # --- cover + portrait pseudo-plates (DESIGN §10) ----------------------------

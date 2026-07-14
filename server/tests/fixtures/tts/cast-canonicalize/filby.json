@@ -1,0 +1,20 @@
+{
+  "output": {
+    "visual_description": "A young to middle-aged man with red hair and an argumentative expression sits while looking over his shoulder.",
+    "one_line": "Red-haired, argumentative-looking person sitting behind another figure.",
+    "tags": [
+      "red hair",
+      "argumentative face"
+    ]
+  },
+  "meta": {
+    "transform": "cast-canonicalize",
+    "transform_version": "0.1.0",
+    "model": "qwen3.5:9b",
+    "input_tokens_est": 0,
+    "truncated": false,
+    "attempts": 1,
+    "latency_ms": 15490,
+    "queued_ms": 0
+  }
+}

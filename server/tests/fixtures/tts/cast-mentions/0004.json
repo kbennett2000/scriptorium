@@ -4,25 +4,63 @@
       {
         "name": "the Time Traveller",
         "aliases": [],
-        "descriptors": [],
+        "descriptors": [
+          "The thing the Time Traveller held in his hand was a glittering metallic framework"
+        ],
         "is_person": true
       },
       {
-        "name": "the Eloi",
+        "name": "I",
         "aliases": [
-          "Eloi"
+          ""
         ],
         "descriptors": [
-          "frail creatures",
-          "about four feet high"
+          "sat in a low arm-chair nearest the fire"
         ],
-        "is_person": false
+        "is_person": true
       },
       {
-        "name": "Weena",
+        "name": "Filby",
         "aliases": [],
         "descriptors": [
-          "a little woman"
+          "sat behind him, looking over his shoulder"
+        ],
+        "is_person": true
+      },
+      {
+        "name": "the Medical Man",
+        "aliases": [
+          ""
+        ],
+        "descriptors": [
+          "watched him in profile from the right"
+        ],
+        "is_person": true
+      },
+      {
+        "name": "the Provincial Mayor",
+        "aliases": [],
+        "descriptors": [
+          "watched him in profile from the right"
+        ],
+        "is_person": true
+      },
+      {
+        "name": "the Psychologist",
+        "aliases": [
+          ""
+        ],
+        "descriptors": [
+          "sat down. The only other object on the table was a small shaded lamp, the bright light of which fell full upon the model.",
+          "stood behind the Psychologist"
+        ],
+        "is_person": true
+      },
+      {
+        "name": "the Very Young Man",
+        "aliases": [],
+        "descriptors": [
+          "stood behind the Psychologist"
         ],
         "is_person": true
       }
@@ -30,12 +68,12 @@
   },
   "meta": {
     "transform": "cast-mentions",
-    "transform_version": "1",
-    "model": "qwen3:8b",
-    "input_tokens_est": 800,
+    "transform_version": "0.1.0",
+    "model": "qwen3.5:9b",
+    "input_tokens_est": 840,
     "truncated": false,
     "attempts": 1,
-    "latency_ms": 4200,
+    "latency_ms": 67258,
     "queued_ms": 0
   }
 }

@@ -1,19 +1,23 @@
 {
   "output": {
-    "prompt": "A cluttered laboratory at night, the same inventor seated in the saddle of a larger machine of quartz bars, nickel and glass, one hand on a starting lever, his face lit from below as the apparatus begins to blur at its edges",
-    "depicted": ["the Time Traveller"],
-    "shot": "medium",
-    "avoid": ["color", "modern machinery", "text"]
+    "prompt": "wide shot of a warm, intellectual evening in the Time Traveller's study with gleaming grey eyes flush cheeks leaning on trouser pockets holding metal frame smiling faintly at red-haired argumentative-looking person sitting behind another figure Psychologist Medical Man Provincial Mayor Very Young Man and narrator before he walks slowly out with hands deep in trousers pockets as slippers shuffle down long passage to laboratory avoiding modern clothing crowds up-to-date furniture",
+    "depicted": [
+      "the Time Traveller",
+      "Filby",
+      "the Psychologist",
+      "the Medical Man"
+    ],
+    "shot": "wide",
+    "avoid": []
   },
   "meta": {
     "transform": "illustration-prompt",
     "transform_version": "0.1.0",
-    "model": "qwen3:8b",
-    "input_tokens_est": 640,
-    "truncated": true,
-    "attempts": 2,
-    "latency_ms": 1580,
-    "queued_ms": 0,
-    "warnings": ["input truncated to fit the generation budget"]
+    "model": "qwen3.5:9b",
+    "input_tokens_est": 509,
+    "truncated": false,
+    "attempts": 1,
+    "latency_ms": 32678,
+    "queued_ms": 0
   }
 }

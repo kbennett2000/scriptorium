@@ -1,26 +1,28 @@
 {
   "output": {
-    "location": "a rushing river in the world of 802,701",
-    "time_of_day": "afternoon",
-    "atmosphere": "sunlit, then suddenly urgent",
+    "location": "The Time Traveller's laboratory",
+    "time_of_day": "evening",
+    "atmosphere": "incredulous wonder and fascination with mechanical complexity",
     "present": [
       "the Time Traveller",
-      "Weena",
-      "the Eloi"
+      "Filby",
+      "the Psychologist",
+      "the Provincial Mayor",
+      "the Medical Man"
     ],
-    "scene_changed": false,
-    "visual_salience": 0.79,
-    "best_visual_beat": "The Traveller wades into the river and drags a drowning Eloi woman to the bank as the others watch, indifferent.",
-    "carry_notes": "The Traveller rescues Weena from drowning; she attaches herself to him in gratitude."
+    "scene_changed": true,
+    "visual_salience": 0.92,
+    "best_visual_beat": "The Time Traveller leads the group down a draughty corridor under flickering light to reveal a larger machine of nickel and rock crystal with unfinished crystalline bars lying beside sheets of drawings.",
+    "carry_notes": ""
   },
   "meta": {
     "transform": "scene-update",
     "transform_version": "0.1.0",
-    "model": "qwen3:8b",
-    "input_tokens_est": 795,
+    "model": "qwen3.5:9b",
+    "input_tokens_est": 864,
     "truncated": false,
     "attempts": 1,
-    "latency_ms": 4110,
+    "latency_ms": 35661,
     "queued_ms": 0
   }
 }

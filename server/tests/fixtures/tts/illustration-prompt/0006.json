@@ -1,0 +1,24 @@
+{
+  "output": {
+    "prompt": "evening laboratory, wide shot: The Time Traveller with gleaming grey eyes and flush cheeks leans on trouser pockets holding a metal frame while lifting a lamp high above his head to illuminate the great machine; Filby sits behind another figure winking solemnly at him; tense disbelief and solemn gravity permeate the space",
+    "depicted": [
+      "The Time Traveller",
+      "Filby",
+      "the Medical Man"
+    ],
+    "shot": "wide"
+  },
+  "meta": {
+    "transform": "illustration-prompt",
+    "transform_version": "0.1.0",
+    "model": "qwen3.5:9b",
+    "input_tokens_est": 102,
+    "truncated": false,
+    "attempts": 1,
+    "latency_ms": 28924,
+    "queued_ms": 0,
+    "warnings": [
+      "depicted not in cast: ['The Time Traveller']"
+    ]
+  }
+}

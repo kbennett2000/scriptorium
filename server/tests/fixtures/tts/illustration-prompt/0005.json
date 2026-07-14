@@ -1,0 +1,20 @@
+{
+  "output": {
+    "prompt": "Evening wide shot of the Time Traveller’s laboratory: a man with gleaming grey eyes and flush cheeks leans on trouser pockets holding a metal frame, leading Filby (red-haired, argumentative-looking) seated behind another figure through flickering light down a draughty corridor into a room dominated by a larger machine of nickel and rock crystal; unfinished crystalline bars lie beside sheets of drawings under an atmosphere of incredulous wonder and fascination with mechanical complexity.",
+    "depicted": [
+      "the Time Traveller",
+      "Filby"
+    ],
+    "shot": "wide"
+  },
+  "meta": {
+    "transform": "illustration-prompt",
+    "transform_version": "0.1.0",
+    "model": "qwen3.5:9b",
+    "input_tokens_est": 864,
+    "truncated": false,
+    "attempts": 1,
+    "latency_ms": 25723,
+    "queued_ms": 0
+  }
+}

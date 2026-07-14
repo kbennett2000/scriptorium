@@ -1,23 +1,21 @@
 {
   "output": {
-    "visual_description": "A lean Victorian gentleman in his late thirties with pale grey eyes and a usually pale, worn face, dressed in a stained and dusty smoking jacket over a slender frame.",
-    "one_line": "A pale, lean Victorian inventor in a dusty jacket",
+    "visual_description": "A man with grey eyes that shine and twinkle, his usually pale face now flushed and animated. He has a lean forefinger and keeps his hands deep in his trousers pockets while holding a glittering metallic framework.",
+    "one_line": "Man with gleaming grey eyes, flush cheeks, leaning on trouser pockets holding metal frame.",
     "tags": [
-      "victorian",
-      "gentleman",
-      "pale",
-      "lean",
-      "inventor"
+      "grey eyes",
+      "flushed face",
+      "trousers pockets"
     ]
   },
   "meta": {
     "transform": "cast-canonicalize",
-    "transform_version": "1",
-    "model": "qwen3:8b",
-    "input_tokens_est": 800,
+    "transform_version": "0.1.0",
+    "model": "qwen3.5:9b",
+    "input_tokens_est": 0,
     "truncated": false,
     "attempts": 1,
-    "latency_ms": 4200,
+    "latency_ms": 29620,
     "queued_ms": 0
   }
 }

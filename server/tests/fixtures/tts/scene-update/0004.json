@@ -1,25 +1,28 @@
 {
   "output": {
-    "location": "a green sunlit lawn beneath a colossal white sphinx, year 802,701",
-    "time_of_day": "afternoon",
-    "atmosphere": "warm, verdant, strangely hushed",
+    "location": "The Time Traveller's study",
+    "time_of_day": "evening",
+    "atmosphere": "anticipatory suspense transitioning to wondrous disbelief and mystery",
     "present": [
       "the Time Traveller",
-      "the Eloi"
+      "Filby",
+      "the Psychologist",
+      "the Provincial Mayor",
+      "the Medical Man"
     ],
-    "scene_changed": true,
-    "visual_salience": 0.88,
-    "best_visual_beat": "The machine halts on a lawn before a huge weathered sphinx of white marble, and small graceful figures approach through the flowers.",
-    "carry_notes": "The Traveller has arrived in 802,701 AD; the gentle Eloi gather around him and the sphinx."
+    "scene_changed": false,
+    "visual_salience": 0.95,
+    "best_visual_beat": "The little machine suddenly swings round and becomes indistinct as an eddy of faintly glittering brass and ivory before vanishing from the table.",
+    "carry_notes": ""
   },
   "meta": {
     "transform": "scene-update",
     "transform_version": "0.1.0",
-    "model": "qwen3:8b",
-    "input_tokens_est": 810,
+    "model": "qwen3.5:9b",
+    "input_tokens_est": 840,
     "truncated": false,
     "attempts": 1,
-    "latency_ms": 4300,
+    "latency_ms": 30520,
     "queued_ms": 0
   }
 }

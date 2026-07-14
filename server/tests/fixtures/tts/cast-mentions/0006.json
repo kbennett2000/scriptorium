@@ -2,18 +2,7 @@
   "output": {
     "mentions": [
       {
-        "name": "the Morlocks",
-        "aliases": [
-          "Morlocks"
-        ],
-        "descriptors": [
-          "bleached",
-          "apelike"
-        ],
-        "is_person": false
-      },
-      {
-        "name": "Weena",
+        "name": "the Medical Man",
         "aliases": [],
         "descriptors": [],
         "is_person": true
@@ -21,19 +10,29 @@
       {
         "name": "the Time Traveller",
         "aliases": [],
-        "descriptors": [],
+        "descriptors": [
+          "never more serious in my life"
+        ],
+        "is_person": true
+      },
+      {
+        "name": "Filby",
+        "aliases": [],
+        "descriptors": [
+          ""
+        ],
         "is_person": true
       }
     ]
   },
   "meta": {
     "transform": "cast-mentions",
-    "transform_version": "1",
-    "model": "qwen3:8b",
-    "input_tokens_est": 800,
+    "transform_version": "0.1.0",
+    "model": "qwen3.5:9b",
+    "input_tokens_est": 102,
     "truncated": false,
     "attempts": 1,
-    "latency_ms": 4200,
+    "latency_ms": 24728,
     "queued_ms": 0
   }
 }

@@ -1,18 +1,21 @@
 {
   "output": {
-    "prompt": "A vast twilit garden of the far future, colossal ruined buildings and a white sphinx-like statue on a bronze pedestal above overgrown rhododendron thickets, a small solitary figure standing bewildered on the turf beneath an enormous fading sky",
-    "depicted": ["the Time Traveller"],
-    "shot": "wide",
-    "avoid": ["people in crowds", "modern city", "bright color", "signage"]
+    "prompt": "Evening study, anticipatory suspense: wide shot of a fire-lit room where the Time Traveller with gleaming grey eyes and flush cheeks leans on trouser pockets holding a metal frame; behind him sits red-haired Filby looking over his shoulder while The Medical Man and Provincial Mayor watch from the right and the Psychologist stands to the left as the small metallic framework suddenly swings round, becoming an indistinct eddy of faintly glittering brass and ivory before vanishing from the table.",
+    "depicted": [
+      "the Time Traveller",
+      "Filby",
+      "the Psychologist"
+    ],
+    "shot": "wide"
   },
   "meta": {
     "transform": "illustration-prompt",
     "transform_version": "0.1.0",
-    "model": "qwen3:8b",
-    "input_tokens_est": 720,
+    "model": "qwen3.5:9b",
+    "input_tokens_est": 840,
     "truncated": false,
     "attempts": 1,
-    "latency_ms": 1210,
-    "queued_ms": 5
+    "latency_ms": 24228,
+    "queued_ms": 0
   }
 }

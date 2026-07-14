@@ -11,26 +11,39 @@ is the full TTS response envelope `{ "output": {...}, "meta": {...} }` — exact
 - `scene-update/{page_id}.json` — one per page, consecutive; `output` = the page ledger
   `{ "location", "time_of_day", "atmosphere", "present", "scene_changed", "visual_salience",
   "best_visual_beat", "carry_notes" }` (TTS §7.4). Threaded: each page's ledger is what the
-  next page's call receives as `prior_ledger`. `0004` carries `scene_changed: true` (the jump
-  into 802,701 AD).
+  next page's call receives as `prior_ledger`. In the real captures the frame story stays in
+  the Time Traveller's study through `0004` (the model-demonstration beat, the salience peak at
+  `0.95`); `0005` carries `scene_changed: true` at the move into the laboratory.
 - `illustration-prompt/{page_id}.json` — one per selected page; `output` =
   `{ "prompt", "depicted", "shot", "avoid" }` (TTS §7.5). Stored verbatim as the prompt
-  record's `derived` (P5). `0003` carries a `meta.warnings` entry to exercise P5's
-  per-page warning capture onto `job.prompt_warnings`.
+  record's `derived` (P5). `0001` and `0006` carry a `meta.warnings` entry ("depicted not in
+  cast") that exercises P5's per-page warning capture onto `job.prompt_warnings`.
 
 ## Provenance
 
-**Hand-written at cycle S5** (`cast-*`), **S6** (`scene-update`), **and S8**
-(`illustration-prompt`). TTS (on the RTX 5070) was **not reachable** from the authoring box
-(`TTS_URL` unset / LAN-only), so these were written by hand to the TTS output schemas — not
-captured from a live model. They are schema-shaped and internally consistent (a Time Machine
-run: the Time Traveller, Weena, the Eloi/Morlocks, the dinner guests), and include a
-first-person `"I"` mention on page 0001 to exercise the reducer's pronoun-drop rule. The
-`scene-update/*` ledgers form one continuous, threadable scene sequence (smoking-room →
-laboratory → time-jump → 802,701 AD → river → sphinx at dusk); the `illustration-prompt/*`
-subjects follow the same beats.
+**Real captures — M1, 2026-07-14, on G434** (TTS `:8712`, Ollama `qwen3.5:9b`). These files
+were regenerated from the live text-transform-service via `tools/capture_tts_fixtures.py`,
+replacing the hand-written S5/S6/S8 originals. They are the genuine model outputs over the
+first six *real* paginated pages of `sources/pg35.txt` — which are entirely the Victorian
+dinner-party frame (the Time Traveller's study → laboratory). Note the narrative reality vs.
+the old hand-written assumption: the time-jump, 802,701 AD, the Eloi/Morlocks, and Weena do
+**not** appear this early, so the captured cast majors are the dinner guests (Time Traveller,
+Filby, the Psychologist, the Provincial Mayor, the Medical Man) and the two captured
+canonicalizations are `time-traveller` and `filby`. Tests assert schema/shape/cross-references
+only, so this re-capture stays green (four latent content-coupled assertions were relaxed to
+shape checks in the same change — see CYCLE-LOG "M1").
 
-**Replace with real captures at the first opportunity:** on the LAN, with TTS T5 up, run
+`cast-canonicalize/weena.json` is a **retained hand-written** fixture from S5: Weena is a
+far-future character outside the six-page capture window, so the capture tool does not produce
+her canonicalization. No test loads it by name (the cast phase test resolves canonicalize
+fixtures by computed slug), so it is kept as a spare far-future example rather than deleted.
+
+Originals were **hand-written at cycle S5** (`cast-*`), **S6** (`scene-update`), **and S8**
+(`illustration-prompt`) because TTS was not reachable from the authoring box; a first-person
+`"I"` mention on page 0001 still exercises the reducer's pronoun-drop rule.
+
+**To re-capture** (on the LAN with TTS up — warm the model first; the tool does not retry a
+cold-start `503`):
 
 ```
 cd server && TTS_URL=http://<5070-host>:8712 uv run python ../tools/capture_tts_fixtures.py

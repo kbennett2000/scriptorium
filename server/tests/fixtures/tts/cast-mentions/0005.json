@@ -2,38 +2,51 @@
   "output": {
     "mentions": [
       {
-        "name": "Weena",
-        "aliases": [
-          "little Weena"
-        ],
+        "name": "Filby",
+        "aliases": [],
+        "descriptors": [],
+        "is_person": true
+      },
+      {
+        "name": "the Psychologist",
+        "aliases": [],
         "descriptors": [
-          "exactly like a child",
-          "clung to me"
+          "unhinged"
         ],
         "is_person": true
       },
       {
-        "name": "the Eloi",
-        "aliases": [],
+        "name": "the Time Traveller",
+        "aliases": [
+          "I"
+        ],
         "descriptors": [],
-        "is_person": false
+        "is_person": true
       },
       {
-        "name": "the Time Traveller",
+        "name": "the Medical Man",
         "aliases": [],
         "descriptors": [],
+        "is_person": true
+      },
+      {
+        "name": "the Provincial Mayor",
+        "aliases": [],
+        "descriptors": [
+          "with an air of impartiality"
+        ],
         "is_person": true
       }
     ]
   },
   "meta": {
     "transform": "cast-mentions",
-    "transform_version": "1",
-    "model": "qwen3:8b",
-    "input_tokens_est": 800,
+    "transform_version": "0.1.0",
+    "model": "qwen3.5:9b",
+    "input_tokens_est": 864,
     "truncated": false,
     "attempts": 1,
-    "latency_ms": 4200,
+    "latency_ms": 44358,
     "queued_ms": 0
   }
 }

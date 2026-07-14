@@ -161,8 +161,10 @@ def test_merge_writes_schema_valid_page_ledgers(tmp_path) -> None:
         assert "ledger" in page
         schemas.validate("page", page)
         assert page["ledger"] == _ledger_fixture(pid)  # verbatim, no gaps
-    # The scene_changed:true fixture (the jump into 802,701) survives the round-trip.
-    assert _page_ledger(cfg, "0004")["scene_changed"] is True
+    # A scene_changed:true ledger survives the round-trip. Per-page verbatim equality above
+    # already proves fidelity; this asserts the True value appears somewhere in the sequence
+    # (page-independent — which page turns the scene varies with the capture).
+    assert any(_page_ledger(cfg, pid)["scene_changed"] is True for pid in _PAGE_IDS)
 
 
 # --- contiguity resume: skip done ledgers, thread from stored predecessor ---

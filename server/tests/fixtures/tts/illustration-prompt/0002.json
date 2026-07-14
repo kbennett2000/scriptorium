@@ -1,0 +1,22 @@
+{
+  "output": {
+    "prompt": "wide shot of the Time Traveller's study at evening with warm intellectual after-dinner atmosphere, featuring a man with gleaming grey eyes and flush cheeks leaning on trouser pockets holding metal frame tracing a rising barometer line with his finger while explaining time as another dimension, surrounded by red-haired argumentative-looking Filby sitting behind another figure, the Psychologist observing intently, the Medical Man staring hard at a coal in the fire, and the Provincial Mayor knitting brows in introspection near a fireplace, no modern clothing or crowds",
+    "depicted": [
+      "the Time Traveller",
+      "Filby",
+      "the Psychologist",
+      "the Medical Man"
+    ],
+    "shot": "wide"
+  },
+  "meta": {
+    "transform": "illustration-prompt",
+    "transform_version": "0.1.0",
+    "model": "qwen3.5:9b",
+    "input_tokens_est": 837,
+    "truncated": false,
+    "attempts": 1,
+    "latency_ms": 30762,
+    "queued_ms": 0
+  }
+}

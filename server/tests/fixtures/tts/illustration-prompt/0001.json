@@ -1,18 +1,25 @@
 {
   "output": {
-    "prompt": "A lamplit Victorian smoking-room at evening, a lean inventor gestures toward a small brass-and-ivory model machine on the table while several seated gentlemen in frock coats lean in, sceptical and intent, tobacco smoke hanging in the warm light",
-    "depicted": ["the Time Traveller", "Filby", "the Psychologist"],
+    "prompt": "wide shot of The Time Traveller's study in the evening with warm, intellectual after-dinner atmosphere; a brightly burning fire illuminates the room where gleaming grey-eyed Man with flush cheeks leaning on trouser pockets holds metal frame and leans forward marking points with lean forefinger while Red-haired argumentative-looking person sits behind another figure listening to Psychologist and young Provincial Mayor who makes spasmodic efforts to relight cigar over lamp; soft radiance of incandescent lights in silver lilies catches bubbles flashing in glasses",
+    "depicted": [
+      "the Time Traveller",
+      "Filby",
+      "a very young man"
+    ],
     "shot": "wide",
-    "avoid": ["modern dress", "electric light", "photographic realism"]
+    "avoid": []
   },
   "meta": {
     "transform": "illustration-prompt",
     "transform_version": "0.1.0",
-    "model": "qwen3:8b",
-    "input_tokens_est": 812,
+    "model": "qwen3.5:9b",
+    "input_tokens_est": 924,
     "truncated": false,
     "attempts": 1,
-    "latency_ms": 1043,
-    "queued_ms": 12
+    "latency_ms": 39288,
+    "queued_ms": 0,
+    "warnings": [
+      "depicted not in cast: ['a very young man']"
+    ]
   }
 }

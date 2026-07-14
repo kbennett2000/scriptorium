@@ -1,25 +1,26 @@
 {
   "output": {
-    "location": "the pedestal of the White Sphinx at dusk",
+    "location": "The Time Traveller's laboratory",
     "time_of_day": "evening",
-    "atmosphere": "uneasy, shadows lengthening, first dread of the Morlocks",
+    "atmosphere": "tense disbelief and solemn gravity",
     "present": [
       "the Time Traveller",
-      "Weena"
+      "Filby",
+      "the Medical Man"
     ],
     "scene_changed": false,
-    "visual_salience": 0.74,
-    "best_visual_beat": "In the failing light the Traveller finds the bronze doors of the sphinx open and the machine gone from where he left it.",
-    "carry_notes": "The machine has vanished into the sphinx's pedestal; the Traveller suspects the subterranean Morlocks. Weena stays close."
+    "visual_salience": 0.65,
+    "best_visual_beat": "The Time Traveller lifts a lamp high above his head to illuminate the great machine while Filby winks solemnly from behind the Medical Man.",
+    "carry_notes": ""
   },
   "meta": {
     "transform": "scene-update",
     "transform_version": "0.1.0",
-    "model": "qwen3:8b",
-    "input_tokens_est": 805,
+    "model": "qwen3.5:9b",
+    "input_tokens_est": 102,
     "truncated": false,
     "attempts": 1,
-    "latency_ms": 4180,
+    "latency_ms": 28131,
     "queued_ms": 0
   }
 }

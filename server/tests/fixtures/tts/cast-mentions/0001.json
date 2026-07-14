@@ -3,20 +3,20 @@
     "mentions": [
       {
         "name": "the Time Traveller",
-        "aliases": [
-          "the Traveller"
-        ],
+        "aliases": [],
         "descriptors": [
-          "pale grey eyes",
-          "usually pale face"
+          "His grey eyes shone and twinkled, and his usually pale face was flushed and animated.",
+          "his lean forefinger"
         ],
         "is_person": true
       },
       {
         "name": "Filby",
-        "aliases": [],
+        "aliases": [
+          ""
+        ],
         "descriptors": [
-          "an argumentative person with red hair"
+          "an argumentative person with red hair."
         ],
         "is_person": true
       },
@@ -25,37 +25,17 @@
         "aliases": [],
         "descriptors": [],
         "is_person": true
-      },
-      {
-        "name": "the Medical Man",
-        "aliases": [],
-        "descriptors": [],
-        "is_person": true
-      },
-      {
-        "name": "the Provincial Mayor",
-        "aliases": [],
-        "descriptors": [],
-        "is_person": true
-      },
-      {
-        "name": "I",
-        "aliases": [],
-        "descriptors": [
-          "the narrator, one of the dinner guests"
-        ],
-        "is_person": true
       }
     ]
   },
   "meta": {
     "transform": "cast-mentions",
-    "transform_version": "1",
-    "model": "qwen3:8b",
-    "input_tokens_est": 800,
+    "transform_version": "0.1.0",
+    "model": "qwen3.5:9b",
+    "input_tokens_est": 924,
     "truncated": false,
     "attempts": 1,
-    "latency_ms": 4200,
+    "latency_ms": 32590,
     "queued_ms": 0
   }
 }
