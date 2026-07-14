@@ -833,3 +833,46 @@ render) and pulses the whole page via the existing `flash-page` class/timer — 
 byte-faithful render is untouched. The jump carries the match's char offset computed in `SearchPanel`
 via `firstMatchIndex(result.text, terms)`. If a future cycle wants per-term highlighting of the match
 (not just a page pulse), that's a new `Page` render mode — keep `runs.join("") === paraText`.
+
+## From R5 (Capacitor Android + persistence hardening)
+
+### CapacitorStorage passes the SAME Storage contract three ways
+The contract assertions live in `shell/storage-contract.ts#runStorageContract(make)` (framework-free —
+plain throws). It runs against MemoryStorage (`storage-contract.test.ts`), a mocked
+`@capacitor/filesystem` (`capacitor.test.ts`, pins path-walk + base64 in CI with no emulator), and the
+real backend on-device (Settings → "Run storage self-test", native-only). **Key gotcha:** the runner
+does NOT assume `make()` isolates — MemoryStorage is fresh per call, but CapacitorStorage (and the real
+device FS) share one backing store, so each scenario wipes its namespace (`await s.delete("books")`)
+first. Any new backend added later just needs to pass `runStorageContract`; wire it into all three.
+
+### Three separate gates block a WebView → plain-HTTP-LAN request (all in capacitor.config.ts / NSC)
+Reaching the cleartext bakery from the packaged app needs ALL of: (1) `network_security_config.xml`
+allowlisting the host (Android denies cleartext by default; NSC can't do CIDR, so list the build-time
+`VITE_SERVER_URL` host — keep them in sync); (2) `server.androidScheme: 'http'` (an https WebView blocks
+http as Mixed Content); (3) `plugins.CapacitorHttp.enabled: true` (a cross-origin browser fetch to the
+no-CORS bakery is CORS-blocked; native requests aren't). The server stays CORS-free/untouched. If M1's
+device box fails to reach the bakery, check these three first (`adb logcat | grep -iE 'Mixed Content|CORS|ERR_CLEARTEXT'`).
+
+### The offline shelf must enumerate resident books from storage, not the server
+`Shelf.load()` used to `return` early when unreachable, leaving the list empty — so a kill/relaunch with
+no network hid every downloaded book (the whole point of "book in your pocket"). Fixed with
+`shelf/checkout.ts#residentEntries` (reads `books/*/manifest.local.json` + local `meta.json`). Any future
+shelf feature (badges, delta prompts, sort) must keep working offline off the local list. The reader
+route `#/read/{id}` already opens a resident book with no server; the WebView does NOT restore the URL
+hash across a cold start, so the shelf is the offline re-entry point.
+
+### Native concerns stay behind shell/native.ts + shell/back.ts (no-ops on web)
+Every Capacitor plugin call (App backButton, StatusBar, minimizeApp) lives in `shell/native.ts`, guarded
+by `Capacitor.isNativePlatform()`, so the PWA + Playwright paths are unchanged and the ESLint network
+fence (which covers `shell/`) is satisfied — plugin calls are the native bridge, not fetch/XHR/WS. Back
+navigation is a LIFO handler stack (`useBackHandler`); the currently-mounted top view (Reader or
+Settings) owns one handler. Android 15+ is edge-to-edge and ignores `setOverlaysWebView`, so system-bar
+clearance is CSS `env(safe-area-inset-top/bottom)` (needs `viewport-fit=cover`, already set) — reader
+scroll height subtracts both insets so the bottom nav stays visible.
+
+### Android build essentials (see reader/BUILDING.md)
+Capacitor 7 + JDK 17 + compile/target SDK 35. `just android-build` = vite build → `cap sync android` →
+`gradlew assembleDebug` (debug keystore; APK ~4.2 MB). Build for a target host with
+`VITE_SERVER_URL=http://<host>:8720` and put that host in the NSC. `android/`+`ios/` are committed but
+their build outputs / Pods / `cap sync`-generated `assets/public` copies are git-ignored — always
+`cap sync` after `npm install` on a fresh clone. iOS is scaffolded but macOS-only (deferred, DESIGN §2).

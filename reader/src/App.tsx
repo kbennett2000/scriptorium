@@ -5,7 +5,7 @@ import type { Manifest, Users } from "@scriptorium/shared";
 import { ProfilePicker, migrateDefaultTo, readActiveProfile, readUsersCache, writeActiveProfile } from "./profiles";
 import { Reader, StorageBundleReader, type BundleReader } from "./readerview";
 import { Settings, usePrefs } from "./settings";
-import { getStorage } from "./shell";
+import { applyStatusBarForTheme, getStorage, initNativeShell } from "./shell";
 import type { Storage } from "./shell";
 import { Shelf } from "./shelf/Shelf";
 import { HttpSyncClient, SyncStatusBadge, useSync, type SyncStatus } from "./sync";
@@ -145,6 +145,10 @@ export function App() {
   const syncStatus = useSync(storage, profile ?? null);
   // Reader display prefs (theme / font size / typeface) applied at the root; per-device, not synced.
   const { prefs, update: updatePrefs } = usePrefs(storage);
+
+  // Wire the native (Android/iOS) shell once: hardware Back routing + status-bar theming. No-op on web.
+  useEffect(() => initNativeShell(), []);
+  useEffect(() => applyStatusBarForTheme(prefs.theme), [prefs.theme]);
 
   // Load the persisted active profile once.
   useEffect(() => {

@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { getPlatform, getStorage } from "../shell";
 import type { BookState, CheckoutProgress, LibraryEntry } from "./index";
-import { HttpLibraryClient, bookState, checkout, remove } from "./index";
+import { HttpLibraryClient, bookState, checkout, remove, residentEntries } from "./index";
 
 // The shelf screen (DESIGN §13). Reachability-guarded library listing with Resident/Available cards,
 // download-with-progress, and remove-keeps-annotations. Deliberately minimal/dense — the designed
@@ -37,14 +37,15 @@ export function Shelf() {
     try {
       const up = await client.reachable();
       setOnline(up);
-      if (!up) return;
-      const lib = await client.fetchLibrary();
+      // Offline: list locally-resident books from storage so owned books stay openable with no server
+      // (DESIGN §13 offline-first — this is the "book in your pocket" path after a kill/relaunch).
+      const lib = up ? await client.fetchLibrary() : await residentEntries(storage);
       setEntries(lib);
       await Promise.all(lib.map((e) => refreshState(e.id)));
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     }
-  }, [client, refreshState]);
+  }, [client, storage, refreshState]);
 
   useEffect(() => {
     void load();

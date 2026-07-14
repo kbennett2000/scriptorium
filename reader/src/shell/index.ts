@@ -7,22 +7,28 @@ export type { Platform } from "./platform";
 export { MemoryStorage } from "./memory";
 export { OpfsStorage } from "./opfs";
 export { CapacitorStorage } from "./capacitor";
-export { BrowserPlatform } from "./platform";
+export { BrowserPlatform, CapacitorPlatform } from "./platform";
+export { useBackHandler } from "./back";
+export { initNativeShell, applyStatusBarForTheme } from "./native";
+export { runStorageContract } from "./storage-contract";
+
+import { Capacitor } from "@capacitor/core";
 
 import type { Storage } from "./storage";
 import type { Platform } from "./platform";
 import { OpfsStorage } from "./opfs";
-import { BrowserPlatform } from "./platform";
+import { CapacitorStorage } from "./capacitor";
+import { BrowserPlatform, CapacitorPlatform } from "./platform";
 
 /**
- * The `Storage` backend for the current host. v1 desktop PWA → OPFS; the Capacitor backend
- * (Android/iOS) is selected here in R5. Falls back to OPFS, which surfaces a clear error if the
- * host truly lacks it rather than silently doing nothing.
+ * The `Storage` backend for the current host: the Capacitor filesystem on a native (Android/iOS)
+ * build, OPFS in the desktop PWA. `isNativePlatform()` is false in the browser and under tests, so
+ * the web/e2e path is unchanged (ADR-0006 — swapping backends is a shell swap, nothing above cares).
  */
 export function getStorage(): Storage {
-  return new OpfsStorage();
+  return Capacitor.isNativePlatform() ? new CapacitorStorage() : new OpfsStorage();
 }
 
 export function getPlatform(): Platform {
-  return new BrowserPlatform();
+  return Capacitor.isNativePlatform() ? new CapacitorPlatform() : new BrowserPlatform();
 }

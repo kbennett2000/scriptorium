@@ -1,7 +1,8 @@
+import { Capacitor } from "@capacitor/core";
 import { useEffect, useState } from "react";
 
 import { ProfilePicker } from "../profiles";
-import type { Storage } from "../shell";
+import { CapacitorStorage, runStorageContract, useBackHandler, type Storage } from "../shell";
 import type { SyncClient, SyncStatus } from "../sync";
 import { SyncStatusBadge } from "../sync";
 import { FONT_STEPS, type Prefs, type Theme, type Typeface } from "./prefs";
@@ -37,12 +38,38 @@ export function Settings({
 }) {
   const [switching, setSwitching] = useState(false);
   const [persisted, setPersisted] = useState<boolean | null>(null);
+  const [selftest, setSelftest] = useState<string>("not run");
+  const native = Capacitor.isNativePlatform();
   const activeName = users.find((u) => u.id === user)?.name ?? user;
 
+  // Android/iOS: app-private storage is durable (CapacitorPlatform.persistHint), so report protected.
+  // Desktop: query the browser's persisted() grant.
   useEffect(() => {
+    if (native) {
+      setPersisted(true);
+      return;
+    }
     if (!navigator.storage?.persisted) return;
     void navigator.storage.persisted().then(setPersisted);
-  }, []);
+  }, [native]);
+
+  // Back closes the profile-switch sub-view first, then Settings itself (Android hardware back).
+  useBackHandler(() => {
+    if (switching) setSwitching(false);
+    else onClose();
+    return true;
+  });
+
+  // On-device evidence that the real CapacitorStorage backend satisfies the Storage contract (R5).
+  async function runSelfTest() {
+    setSelftest("running…");
+    try {
+      await runStorageContract(() => new CapacitorStorage());
+      setSelftest("PASS");
+    } catch (e) {
+      setSelftest(`FAIL: ${e instanceof Error ? e.message : String(e)}`);
+    }
+  }
 
   if (switching) {
     return (
@@ -153,6 +180,16 @@ export function Settings({
           {persisted === null ? "unknown" : persisted ? "protected" : "not protected"}
         </span>
       </div>
+
+      {native && (
+        <div className="settings-row">
+          <span className="settings-label">Storage self-test</span>
+          <span className="settings-value settings-selftest">{selftest}</span>
+          <button type="button" onClick={() => void runSelfTest()}>
+            Run
+          </button>
+        </div>
+      )}
     </section>
   );
 }

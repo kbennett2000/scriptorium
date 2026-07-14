@@ -20,3 +20,14 @@ export class BrowserPlatform implements Platform {
     }
   }
 }
+
+// Android/iOS host (R5). Capacitor stores our bundles under `Directory.Data` — the app-private data
+// directory — which the OS does NOT evict under storage pressure the way a browser evicts OPFS; it
+// persists until the app is uninstalled or its data is explicitly cleared. There is therefore no
+// `navigator.storage.persist()` analogue to request: storage is already durable, so `persistHint`
+// reports the granted-equivalent `true`. Surfaced by Settings' "storage protected" row.
+export class CapacitorPlatform implements Platform {
+  async persistHint(): Promise<boolean> {
+    return true;
+  }
+}

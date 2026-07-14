@@ -1,10 +1,10 @@
-import type { Manifest } from "@scriptorium/shared";
+import type { Manifest, Meta } from "@scriptorium/shared";
 
 import { buildAndPersistIndexFromStorage } from "../search";
 import type { Storage } from "../shell";
 import type { Platform } from "../shell/platform";
-import type { LibraryClient } from "./client";
-import { resolveReaderFiles } from "./resolve";
+import type { LibraryEntry, LibraryClient } from "./client";
+import { resolveReaderFiles, resolvedTotalBytes } from "./resolve";
 
 // The checkout state machine (DESIGN §13, §4.4). A checkout downloads a bundle's resolved
 // reader-required files (highest `-rN` per plate), sha256-verifies each, and — only once every file
@@ -136,6 +136,42 @@ export async function bookState(storage: Storage, bookId: string): Promise<BookS
     if (!(await storage.exists(filePath(bookId, entry.path)))) return "incomplete";
   }
   return "resident";
+}
+
+/**
+ * Locally-resident (and in-progress) books as `LibraryEntry` rows, read entirely from storage — so the
+ * shelf can list owned books with the server unreachable (DESIGN §13 offline-first). Enumerates
+ * `books/{id}/manifest.local.json`, taking title/author from the resident `meta.json` and
+ * revision/size from the local manifest. Best-effort: a book whose meta can't be read still lists
+ * (title falls back to its id) so it stays openable.
+ */
+export async function residentEntries(storage: Storage): Promise<LibraryEntry[]> {
+  const paths = await storage.list("books");
+  const ids = paths.filter((p) => p.endsWith("/manifest.local.json")).map((p) => p.split("/")[1]);
+  const entries: LibraryEntry[] = [];
+  for (const id of ids) {
+    const local = await readLocalManifest(storage, id);
+    if (!local) continue;
+    let title = id;
+    let author = "";
+    try {
+      const meta = JSON.parse(await storage.readText(filePath(id, "meta.json"))) as Meta;
+      title = meta.title;
+      author = meta.author;
+    } catch {
+      // meta.json unreadable (a partial checkout) — still list the book by id.
+    }
+    entries.push({
+      id,
+      title,
+      author,
+      cover_thumb_url: "", // never fetched offline; the shelf card doesn't render it
+      revision: local.revision,
+      total_bytes_reader: resolvedTotalBytes(local),
+    });
+  }
+  entries.sort((a, b) => a.title.localeCompare(b.title));
+  return entries;
 }
 
 export interface DeltaResult {
