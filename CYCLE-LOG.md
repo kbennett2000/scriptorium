@@ -326,6 +326,67 @@ cast.json; resume skips done pages; P1 503 → waiting_gpu → resume; P2 503 �
 `cast_running`; canonicalize 422 → `failed_units` + null major, phase completes; mentions 400
 → job `failed`), `test_job_states` updated for `cast_running`. reader/admin-ui untouched.
 
+## R1a — Reader: storage shell + shelf + checkout (2026-07-14) — shipped
+
+First reader cycle. R1 (size L) was split at the plan gate (user-approved): **R1a = the offline-first
+plumbing**; R1b (next) = the reading surface. The seam: R1a leaves a bundle **Resident** in local
+storage; R1b reads it. Filled the S1 reader scaffold's empty `shell/`/`shelf/` stubs.
+
+**Shipped**
+- **`shell/`** — the platform seam (DESIGN §13, ADR-0006). `Storage` interface (`readText/readBytes/
+  writeText/writeBytes/exists/delete/list`, binary+text, POSIX paths); `OpfsStorage` (real, over
+  `navigator.storage.getDirectory()`); `MemoryStorage` (tests); `CapacitorStorage` (R5 stub that
+  throws); `Platform.persistHint()` → `BrowserPlatform` (`navigator.storage.persist()`); `getStorage`/
+  `getPlatform` factories. On-device layout `books/{id}/…` + `manifest.local.json`; annotations live
+  outside `books/` so Remove keeps them.
+- **`shelf/resolve.ts`** — the **`-rN` resolution TS port** (bit-for-bit from `library/checkout.py`):
+  `matchesAny`/`variantKey`/`resolveReaderFiles`/`resolvedTotalBytes`, highest-`-rN`-wins, JSON passes
+  through, manifest order preserved.
+- **`shelf/client.ts`** — the reader's only network module (besides `sync/`, R3). `HttpLibraryClient`:
+  `reachable()` (2 s `/health` ping, 60 s cache), `fetchLibrary`/`fetchManifest`/`fetchFileBytes`;
+  `ApiError`; base URL same-origin, `VITE_SERVER_URL` dev override.
+- **`shelf/checkout.ts`** — the checkout state machine. `sha256Hex` (WebCrypto); `checkout` (fetch
+  manifest → `resolveReaderFiles` → skip-if-resident-and-valid, else fetch → sha256-verify → write;
+  **retry only the failing file**; write `manifest.local.json` last → Resident; `persistHint` on first
+  checkout); `bookState` (Available/Resident/Incomplete, incl. partial-download detection); `delta`
+  (fetch changed/new resolved files by path+sha256, prune superseded); `remove` (delete `books/{id}`,
+  keep annotations).
+- **ESLint network-boundary rule** (`eslint.config.js`) — bans `fetch`/`XMLHttpRequest`/`WebSocket`/
+  `navigator.sendBeacon` in `src/**` except `src/shelf/**` + `src/sync/**` (the §13 zero-online-read
+  fence, mechanically enforced).
+- Minimal shelf UI (`App.tsx`/`Shelf.tsx`/`index.css`) — dense/functional (skin is R4): reachability-
+  guarded listing, Resident/Available cards, download-with-progress, Remove-with-confirm.
+- **Test stack** mirrored from admin-ui (vitest 2.1 + jsdom + testing-library; `test: vitest run`).
+- Shared anti-drift vector `shared/test-vectors/rn-resolution.json` consumed by **both**
+  `reader/src/shelf/resolve.test.ts` and the new `server/tests/test_rn_vectors.py`.
+- Tests: reader **20 vitest** (storage contract; the shared `-rN` vector; checkout incl. **corrupt→
+  retry-only-that-file→complete**, incomplete→resume, delta fetch+prune, remove-keeps-annotations;
+  **ESLint boundary fires outside shelf/sync, passes inside**). server **279 passed** (+6 vector cases).
+
+**Decisions**
+- **`-rN` drift guard is a shared JSON vector, not a duplicated assertion.** One file drives the
+  Python and TS suites; divergence reddens one of them. (NOTES From S11 asked for exactly this.)
+- **OpfsStorage is unit-tested only via the Memory contract** — jsdom has no OPFS, so the interface
+  semantics are pinned against `MemoryStorage`; real OPFS is exercised in R1b's browser offline run.
+- **Checkout is resumable by construction** — verify-and-skip means an interrupted/corrupt download
+  leaves the book Incomplete and a re-run fetches only what's missing/wrong; `manifest.local.json`
+  written last is the atomic Resident marker.
+- **Split executed:** `VITE_FIXTURE_BUNDLE` zero-server dev mode + the reading surface + byte-faithful
+  render + plates + position tracking + full offline acceptance are **R1b** (this cycle has no reading
+  surface yet — a Resident book shows "Resident ✓").
+
+**Verification** — reader `npm run lint`/`typecheck`/`test`/`build` all green (20 tests); server ruff
+clean, `uv run pytest` **279 passed / 5 deselected**; `node shared/gen-types.mjs && git diff
+--exit-code shared/types` → no drift (the new vector lives under `shared/test-vectors/`, not
+`shared/schemas/`). **Live smoke** (real `uvicorn` over the seeded fixture): the reader's three client
+targets all answer — `/health` 200, `/api/library` lists "The Winter Quay" (`total_bytes_reader`
+41812), manifest carries the `reader_required` globs, file serving returns `image/webp` + a sha256
+ETag. The in-browser OPFS `Download → Resident` needs a real browser (OPFS is browser-only) → left as
+a manual step for R1b's browser session; the vitest checkout suite covers the algorithm end-to-end.
+Note: TypeScript resolved to 5.9.3 (from `^5.6.3`), whose `Uint8Array<ArrayBufferLike>` generics
+required copying bytes into a fresh `ArrayBuffer` before WebCrypto/OPFS writes, and a local
+`entries()` narrowing for `FileSystemDirectoryHandle`.
+
 ## S12 — Sync API (annotations, positions, backups) (2026-07-13) — shipped
 
 The mutable layer: the DESIGN §12 sync surface that the reader syncs annotations and reading
