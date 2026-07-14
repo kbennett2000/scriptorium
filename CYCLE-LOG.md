@@ -326,6 +326,65 @@ cast.json; resume skips done pages; P1 503 → waiting_gpu → resume; P2 503 �
 `cast_running`; canonicalize 422 → `failed_units` + null major, phase completes; mentions 400
 → job `failed`), `test_job_states` updated for `cast_running`. reader/admin-ui untouched.
 
+## R1b — Reader: the reading surface (2026-07-14) — shipped
+
+R1's second half: makes a Resident bundle readable, fully offline. Filled the empty `readerview/`
+stub. The load-bearing constraint is byte-faithful rendering — R2's annotation anchors are UTF-16
+offsets into exactly this DOM — so the split/join round-trip is locked by test.
+
+**Shipped**
+- **`readerview/pagetext.ts`** — pure, DOM-free offset substrate (R2 reuses it verbatim):
+  `splitParagraphs`/`joinParagraphs` (exact inverse on the `"\n\n"` delimiter, verse `\n` preserved),
+  `paragraphStarts` (`start[i] = Σ len(p_j<i) + 2·i`, UTF-16 code units), `paragraphIndexForChar`
+  (restore), `topVisibleChar` (pure, layout-free — ties break to the first paragraph so an all-zero
+  jsdom layout → char 0), `throttle`.
+- **`readerview/BundleReader.ts`** — the source-agnostic read seam. `StorageBundleReader` (over OPFS
+  `Storage`: JSON via `readText`, images via `readBytes` → `Blob({type:image/webp})` → object URL,
+  cached + revoked in `dispose()`; maps the logical `images/web/plates/{id}.webp` to the current `-rN`
+  on disk by reusing `resolveReaderFiles`/`variantKey`). `FixtureBundleReader` (its own module,
+  dynamically imported) inlines the **canonical server fixture** via `import.meta.glob` (`?raw` JSON,
+  `?inline` images) — no scriptorium backend, no `fetch` (fence not tripped).
+- **Components** (`Reader`/`Page`/`Plate`/`Lightbox`): one logical page = one scrolled unit (ADR-0004);
+  chapter-open pages show the chapter title from `structure.json`; **byte-faithful `<p>` per `\n\n`**
+  with `white-space: pre-line`; plate at page top → lightbox (Esc/backdrop close, click-zoom); nav via
+  ←/→ keys + Prev/Next buttons + swipe + narrow edge tap-zones; **retired plates filtered**
+  (`status !== "retired"`). Position `{page_seq, char}` persisted to `positions/{bookId}.json`
+  (**outside** `books/`, so Remove keeps it), written on turn / throttled scroll / unmount, restored on
+  open.
+- **App wiring** — minimal hash route (`#/` shelf, `#/read/{id}` reader, so reload reopens + restores);
+  a Resident card gains **Open**; `VITE_FIXTURE_BUNDLE=1` opens the fixture directly; unobtrusive
+  "storage protected: yes/no" badge. `vite.config` `server.fs.allow` for the cross-package fixture;
+  `VITE_FIXTURE_BUNDLE` declared on `ImportMetaEnv`.
+- **Offline-acceptance harness** `reader/scripts/offline-acceptance.sh` — seeds the fixture into a temp
+  `library/`, starts the real server, prints the 2-minute human walk.
+- Tests: reader **60 vitest** (was 20; +40) — the **rendering-lock** (`join(split)===text` over fixture
+  pages + synthetic verse/edge strings, `paragraphStarts` vs `text.slice`, astral-char UTF-16 sanity,
+  `topVisibleChar` boundaries, `throttle`); `StorageBundleReader` (`-rN` resolution, object-URL cache +
+  revoke, null-for-missing) + `FixtureBundleReader` glob smoke; `Reader` (chapter header, paragraph
+  count, **retired-plate hidden**, keyboard/button nav, **only `images/web/**` ever requested**,
+  position persist→restore round-trip).
+
+**Decisions**
+- **Position is paragraph-granular** (`char` = start of the top-visible paragraph), not intra-paragraph
+  interpolated: needs only paragraph tops (testable, reflow-stable, can't bisect a surrogate pair), and
+  the schema documents `char` as approximate. Documented in code.
+- **All offsets are UTF-16 code units** (`.length`/`.slice`) — no code-point iteration anywhere on the
+  offset path, matching the R2 anchor contract (astral chars legitimately count as 2, consistently).
+- **Fixture mode reads the canonical server fixture** via glob + one `fs.allow` entry rather than a
+  reader-side copy — one source of truth, no drift. `FixtureBundleReader` is dynamically imported so the
+  eager glob stays out of the prod bundle (it code-splits to its own 40 KB chunk).
+- **Retired-plate note closed:** the plate layer cross-checks `selection.plates[].status`.
+
+**Verification** — reader `npm run lint`/`typecheck`/`test`/`build` all green (**60 vitest**); server
+untouched, ruff clean + `uv run pytest` **279 passed / 5 deselected**; `node shared/gen-types.mjs && git
+diff --exit-code shared/types` → **no drift** (no schema change). **Fixture-mode smoke:**
+`VITE_FIXTURE_BUNDLE=1 vite build` inlines the fixture (JSON into the chunk, webp as local assets); the
+dev server serves root, transforms `FixtureBundleReader` (glob resolves pages/structure/images), and
+serves the cross-package fixture image via `/@fs` (200, `fs.allow` working). **Offline acceptance
+(human-pending, browser-only):** run `reader/scripts/offline-acceptance.sh`, then Download → kill server
+→ Open → page-turn across the chapter boundary → plate + lightbox → reload → position restored, network
+tab idle. Evidence/screenshots to be pasted here after the human walk.
+
 ## R1a — Reader: storage shell + shelf + checkout (2026-07-14) — shipped
 
 First reader cycle. R1 (size L) was split at the plan gate (user-approved): **R1a = the offline-first

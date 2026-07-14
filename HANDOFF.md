@@ -1,26 +1,33 @@
 # Handoff
 
 ## Current state
-- **R1a complete** (PR open, awaiting human merge) — **first reader cycle.** R1 (size L) was split at
-  the plan gate (user-approved): R1a = offline-first plumbing; **R1b = the reading surface (next).**
-  Filled the reader scaffold's empty `shell/`/`shelf/` stubs. **`shell/`**: `Storage` interface +
-  `OpfsStorage` (real, OPFS) / `MemoryStorage` (tests) / `CapacitorStorage` (R5 stub) + `Platform.
-  persistHint` + factories; device layout `books/{id}/…` (annotations live outside → Remove keeps
-  them). **`shelf/`**: `resolve.ts` (the **`-rN` TS port** of `library/checkout.py`), `client.ts`
-  (`HttpLibraryClient` — `reachable()` 2 s ping/60 s cache, library/manifest/file fetch; the reader's
-  only network module besides `sync/`), `checkout.ts` (state machine: fetch→`-rN` resolve→sha256-
-  verify→`manifest.local.json`→Resident, **retry only the failing file**, `delta` fetch+prune,
-  `remove`, `bookState`). **ESLint network-boundary rule** bans `fetch`/XHR/WebSocket/sendBeacon
-  outside `shelf/`+`sync/` (a lint test proves it fires). Minimal shelf UI. Test stack (vitest+jsdom+
-  testing-library) mirrored from admin-ui. Anti-drift **`shared/test-vectors/rn-resolution.json`** used
-  by both `reader/src/shelf/resolve.test.ts` and new `server/tests/test_rn_vectors.py`. Reader **20
-  vitest** green (storage contract; `-rN` vector; checkout corrupt-retry/resume/delta/remove; ESLint
-  fence); lint/typecheck/build clean. Server **279 passed** (+6 vector cases); no type drift. Live
-  smoke: the reader's client targets all answer over real HTTP (health/library/manifest/file+ETag).
-  In-browser OPFS `Download→Resident` needs a real browser → manual step folded into R1b's offline
-  acceptance. Reader TypeScript floated to 5.9.3 (ArrayBuffer copies for WebCrypto/OPFS). See NOTES
-  "From R1a". **Next up: R1b** (reading surface: byte-faithful render, plates/lightbox, navigation,
-  position tracking, `VITE_FIXTURE_BUNDLE`, offline acceptance), then R2→R5.
+- **R1b complete** (PR open, awaiting human merge) — **the reading surface.** R1's second half: a
+  Resident bundle is now readable, fully offline. Filled the empty `readerview/` stub.
+  **`readerview/pagetext.ts`** (pure, DOM-free, R2's anchor substrate): `splitParagraphs`/
+  `joinParagraphs` (exact inverse on `"\n\n"`, verse `\n` preserved), `paragraphStarts`
+  (`Σ len + 2·i`, UTF-16 units), `paragraphIndexForChar`, `topVisibleChar` (pure, layout-free),
+  `throttle`. **`readerview/BundleReader.ts`**: `StorageBundleReader` (OPFS JSON + images as Blob
+  object URLs, cached/revoked, `-rN`-resolved via `shelf/resolve`) + `FixtureBundleReader` (own module,
+  dynamically imported, inlines the canonical server fixture via `import.meta.glob`). **Components**
+  `Reader`/`Page`/`Plate`/`Lightbox`: one logical page = one scrolled unit (ADR-0004); chapter-title
+  headers from `structure.json`; **byte-faithful `<p>` per `\n\n`** (`white-space: pre-line`);
+  plate-at-top → lightbox; nav via ←/→ keys + Prev/Next + swipe + edge tap-zones; **retired plates
+  filtered** (`status !== "retired"`); position `{page_seq, char}` persisted to `positions/{bookId}.json`
+  (outside `books/`, so Remove keeps it) and restored on open. **App**: minimal hash route (`#/read/{id}`
+  reopens + restores on reload), Resident-card **Open** button, `VITE_FIXTURE_BUNDLE=1` opens the fixture
+  with no backend, "storage protected" badge; `vite.config` `server.fs.allow` for the cross-package
+  fixture. **`reader/scripts/offline-acceptance.sh`** seeds + serves the fixture for the human walk.
+  Reader **60 vitest** green (was 20; the rendering-lock, BundleReader `-rN`/dispose, Reader nav/
+  retired-plate/position round-trip); lint/typecheck/build clean. Server untouched (**279 passed**), no
+  type drift. Fixture-mode smoke green (build inlines; dev serves + `fs.allow` works). **Offline
+  acceptance is human-pending (browser-only)** — run the script, Download → kill server → read → reload,
+  confirm position restored + network idle. See NOTES "From R1b". **Next up: R2** (annotations — the
+  anchor-math cycle), then R3→R5.
+- **R1a complete** (merged) — the offline-first plumbing: `shell/` (`Storage`/`OpfsStorage`/
+  `MemoryStorage`/`CapacitorStorage`-stub + `Platform.persistHint`), `shelf/` (`resolve.ts` `-rN` port,
+  `client.ts` reachability+fetch, `checkout.ts` verify/retry/delta/remove state machine), the ESLint
+  network-boundary fence + lint test, the shared `-rN` vector, and the vitest stack. A Resident book
+  showed only "Resident ✓" (R1b makes it readable). See NOTES "From R1a".
 - **S12 complete** (merged) — **the server is now feature-complete for M1;
   everything after is reader work.** The DESIGN §12 sync API — the mutable layer the reader syncs to.
   New **`sync/merge.py`** (pure): `merge_annotations` (union by `id`, LWW by `modified` string-compare,
@@ -164,16 +171,20 @@
   `npm run test:unit` → **36 pass**, `tsc` clean.
 
 ## Next up
-**Server done (S1–S12). Reader in progress: R1a shipped; R1b next, then R2–R5.**
-- **R1b** — reader reading surface (the other half of R1). Byte-faithful `<p>`-per-`\n\n` render
-  (verse `\n` preserved — lock with a rendering test; R2 anchors depend on it); plate-at-page-top +
-  lightbox (page_id→`images/web/plates/{id}.webp` via `selection.json`, honoring `-rN`); page-turn
-  nav (swipe/tap-zones/←→); chapter headers; position tracking (page_seq + approx top char, document
-  the approximation); `VITE_FIXTURE_BUNDLE` zero-server dev; **offline acceptance** (checkout fixture
-  in a browser, kill server, read + view plates + position survives + network idle). Opens a Resident
-  book (R1a leaves it Resident). See NOTES "From R1a".
+**Server done (S1–S12). Reader in progress: R1a + R1b shipped; R2 next, then R3–R5.**
+- **Human-pending (R1b):** run `reader/scripts/offline-acceptance.sh` and do the 2-minute browser walk
+  (Download fixture → Resident → kill server → Open → page-turn across the chapter boundary → plate +
+  lightbox → reload → position restored, "storage protected" visible, **network tab idle**). Paste
+  evidence/screenshots into the R1b CYCLE-LOG entry. This also exercises real OpfsStorage in a browser
+  (the one path jsdom can't cover).
+- **R2** — annotations: the anchor-math cycle (the fiddliest client code). Selection/Range → UTF-16
+  anchors over the R1b DOM. **Reuse `readerview/pagetext.ts`** (`paragraphStarts`/`splitParagraphs`) —
+  paragraph i's `<p>` starts at `paragraphStarts[i]`, `"\n\n"` join = 2 units between paragraphs; do
+  NOT reinvent the offset math (NOTES From R1b). Highlight (4 colors)/note/bookmark, tombstones,
+  per-book list. Watch the edge tap-zone vs selection collision (NOTES From R1b).
 - **R3** — sync client + profile picker: consumes the S12 API. Its TS merge must mirror
-  `server/src/scriptorium/sync/merge.py` **including the tie-breaks** (NOTES From S12).
+  `server/src/scriptorium/sync/merge.py` **including the tie-breaks** (NOTES From S12). R1b already
+  writes `positions/{bookId}.json` in the wire shape — feed it straight into the merge (NOTES From R1b).
 - **Ops (not a cycle):** restart `imagegen-service` on the GPU box so PR #13 (width/height) is live,
   then re-run `pytest -m gpu tests/test_render_live.py` to close the gpu-marked box (832×1216).
 

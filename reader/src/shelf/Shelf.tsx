@@ -105,6 +105,15 @@ export function Shelf() {
               <div className="shelf-card-actions">
                 {state === "resident" ? (
                   <>
+                    <button
+                      type="button"
+                      className="shelf-open"
+                      onClick={() => {
+                        window.location.hash = `#/read/${encodeURIComponent(e.id)}`;
+                      }}
+                    >
+                      Open
+                    </button>
                     <span className="shelf-resident">Resident ✓</span>
                     <button type="button" onClick={() => void removeBook(e.id)}>
                       Remove
