@@ -25,6 +25,10 @@ admin-dev:
 admin-build:
     cd admin-ui && npm run build
 
+# Build the reader and assert the dist vendors its fonts with no CDN references (R4 zero-online guard).
+reader-build-check:
+    cd reader && npm run build:check
+
 # --- generation ---
 
 # Regenerate shared TypeScript types from the JSON Schemas (deterministic).

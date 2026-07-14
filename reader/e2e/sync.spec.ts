@@ -29,8 +29,13 @@ async function readOpfs(page: Page, path: string): Promise<string | null> {
 async function boot(page: Page): Promise<void> {
   await page.goto("/");
   await page.getByRole("button", { name: /Kris/ }).click();
-  await expect(page.getByText("The Winter Quay")).toBeVisible();
   await expect(page.locator(".reader-progress")).toHaveText("1 / 6");
+  // R4: the dramatis-personae interstitial auto-opens on a fresh book — dismiss it to reach the reader.
+  const cast = page.locator(".cast-page");
+  await expect(cast).toBeVisible();
+  await cast.getByRole("button", { name: "Done" }).click();
+  await expect(cast).toHaveCount(0);
+  await expect(page.getByRole("heading", { name: "The Winter Quay" })).toBeVisible();
 }
 
 /** Select a character range in the first paragraph and surface the selection bar. */

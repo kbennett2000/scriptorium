@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
-import type { Annotations, Page as PageDoc, Positions, Selection, Structure } from "@scriptorium/shared";
+import type { Annotations, Cast, Page as PageDoc, Positions, Selection, Structure } from "@scriptorium/shared";
 
+import { CastPage } from "../cast";
+import { SearchPanel } from "../search/SearchPanel";
 import {
   AnnotationsPanel,
   DEV_USER_ID,
@@ -57,6 +59,7 @@ export function Reader({
   bookId,
   user = DEV_USER_ID,
   syncStatus,
+  onOpenSettings,
   onExit,
 }: {
   reader: BundleReader;
@@ -64,14 +67,22 @@ export function Reader({
   bookId: string;
   user?: string;
   syncStatus?: SyncStatus;
+  onOpenSettings?: () => void;
   onExit: () => void;
 }) {
   const [structure, setStructure] = useState<Structure | null>(null);
   const [selection, setSelection] = useState<Selection | null>(null);
+  const [cast, setCast] = useState<Cast | null>(null);
   const [annDoc, setAnnDoc] = useState<Annotations | null>(null);
   const [savedPos, setSavedPos] = useState<Positions | null>(null);
   const [chipDismissed, setChipDismissed] = useState(false);
   const [index, setIndex] = useState(0);
+  // Furthest page reached this session (1-based seq). Seeds the cast filter live as the reader advances,
+  // combined with any synced furthest from `savedPos`. See `furthestSeq` below.
+  const [maxSeq, setMaxSeq] = useState(1);
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [castOpen, setCastOpen] = useState(false);
+  const autoCastShown = useRef(false);
   const [pageDoc, setPageDoc] = useState<PageDoc | null>(null);
   const [lightboxSrc, setLightboxSrc] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -136,9 +147,10 @@ export function Reader({
     let live = true;
     void (async () => {
       try {
-        const [st, sel] = await Promise.all([
+        const [st, sel, castDoc] = await Promise.all([
           reader.readJson<Structure>("structure.json"),
           reader.readJson<Selection>("selection.json"),
+          reader.readJson<Cast>("cast.json").catch(() => null),
         ]);
         deviceRef.current = await deviceId(storage);
         const saved = await readPosition(storage, user, bookId);
@@ -146,13 +158,20 @@ export function Reader({
         if (!live) return;
         setStructure(st);
         setSelection(sel);
+        setCast(castDoc);
         setAnnDoc(anns);
         setSavedPos(saved);
         if (saved) {
           // page_seq is 1-based book-wide reading order, contiguous — so index = seq - 1 (clamped).
           const order = st.chapters.flatMap((c) => c.page_ids);
           setIndex(Math.min(Math.max(saved.current.page_seq - 1, 0), Math.max(order.length - 1, 0)));
+          setMaxSeq(saved.furthest.page_seq);
           pendingRestoreChar.current = saved.current.char;
+        } else if (castDoc && castDoc.characters.some((c) => c.major)) {
+          // Fresh open (no saved position): show the dramatis-personae interstitial before chapter 1
+          // (DESIGN §13), once. The furthest-read filter still applies (only page-1 cast is revealed).
+          autoCastShown.current = true;
+          setCastOpen(true);
         }
       } catch (e) {
         if (live) setError(e instanceof Error ? e.message : String(e));
@@ -205,6 +224,11 @@ export function Reader({
       live = false;
     };
   }, [reader, pageIds, index]);
+
+  // Track the furthest page reached this session (drives the cast filter live, alongside synced furthest).
+  useEffect(() => {
+    if (pageDoc) setMaxSeq((m) => Math.max(m, pageDoc.seq));
+  }, [pageDoc]);
 
   // Measure each rendered paragraph's top relative to the scroll content (nesting-independent).
   const paragraphTops = useCallback((): number[] => {
@@ -491,6 +515,30 @@ export function Reader({
     setChipDismissed(true);
   }, [savedPos, pageIds.length]);
 
+  // Furthest-read page seq for the cast filter (ADR-0008): the max of a possibly-synced furthest and
+  // the furthest reached this session, so newly-passed characters appear when the cast page reopens.
+  const furthestSeq = Math.max(savedPos?.furthest.page_seq ?? 0, maxSeq, 1);
+
+  // Briefly pulse the whole page after a search jump (the match's paragraph is scrolled into view via
+  // pendingRestoreChar). Reuses the annotation flash-page mechanism / timer.
+  const flashPageOnce = useCallback(() => {
+    if (flashTimer.current) clearTimeout(flashTimer.current);
+    setFlashId(null);
+    setFlashPage(true);
+    flashTimer.current = setTimeout(() => setFlashPage(false), FLASH_MS);
+  }, []);
+
+  const jumpToSearchHit = useCallback(
+    (seq: number, char: number) => {
+      const idx = Math.min(Math.max(seq - 1, 0), Math.max(pageIds.length - 1, 0));
+      pendingRestoreChar.current = char;
+      setIndex(idx);
+      setSearchOpen(false);
+      flashPageOnce();
+    },
+    [pageIds.length, flashPageOnce],
+  );
+
   if (error) {
     return (
       <section className="reader">
@@ -519,6 +567,24 @@ export function Reader({
           {syncStatus && <SyncStatusBadge status={syncStatus} />}
           <button
             type="button"
+            className="reader-search-btn"
+            aria-label="Search"
+            onClick={() => setSearchOpen(true)}
+          >
+            Search
+          </button>
+          {cast && (
+            <button
+              type="button"
+              className="reader-cast-btn"
+              aria-label="Cast"
+              onClick={() => setCastOpen(true)}
+            >
+              Cast
+            </button>
+          )}
+          <button
+            type="button"
             className={`reader-bookmark${bookmarked ? " on" : ""}`}
             aria-pressed={bookmarked}
             aria-label={bookmarked ? "Remove bookmark" : "Add bookmark"}
@@ -534,6 +600,16 @@ export function Reader({
           >
             Notes
           </button>
+          {onOpenSettings && (
+            <button
+              type="button"
+              className="reader-settings-btn"
+              aria-label="Settings"
+              onClick={onOpenSettings}
+            >
+              ⚙
+            </button>
+          )}
         </div>
       </div>
 
@@ -626,6 +702,26 @@ export function Reader({
 
       {lightboxSrc && (
         <Lightbox src={lightboxSrc} alt="Plate" onClose={() => setLightboxSrc(null)} />
+      )}
+
+      {searchOpen && (
+        <SearchPanel
+          reader={reader}
+          storage={storage}
+          bookId={bookId}
+          pageIds={pageIds}
+          onJump={jumpToSearchHit}
+          onClose={() => setSearchOpen(false)}
+        />
+      )}
+
+      {castOpen && cast && (
+        <CastPage
+          reader={reader}
+          cast={cast}
+          furthestSeq={furthestSeq}
+          onClose={() => setCastOpen(false)}
+        />
       )}
     </section>
   );

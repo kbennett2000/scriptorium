@@ -4,7 +4,7 @@ import type { Manifest, Users } from "@scriptorium/shared";
 
 import { ProfilePicker, migrateDefaultTo, readActiveProfile, readUsersCache, writeActiveProfile } from "./profiles";
 import { Reader, StorageBundleReader, type BundleReader } from "./readerview";
-import { Settings } from "./settings";
+import { Settings, usePrefs } from "./settings";
 import { getStorage } from "./shell";
 import type { Storage } from "./shell";
 import { Shelf } from "./shelf/Shelf";
@@ -41,11 +41,13 @@ function BookReaderView({
   storage,
   user,
   syncStatus,
+  onOpenSettings,
 }: {
   bookId: string;
   storage: Storage;
   user: string;
   syncStatus: SyncStatus;
+  onOpenSettings: () => void;
 }) {
   const [reader, setReader] = useState<BundleReader | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -81,7 +83,15 @@ function BookReaderView({
   }
   if (!reader) return <p className="reader-loading">Opening…</p>;
   return (
-    <Reader reader={reader} storage={storage} bookId={bookId} user={user} syncStatus={syncStatus} onExit={exit} />
+    <Reader
+      reader={reader}
+      storage={storage}
+      bookId={bookId}
+      user={user}
+      syncStatus={syncStatus}
+      onOpenSettings={onOpenSettings}
+      onExit={exit}
+    />
   );
 }
 
@@ -90,10 +100,12 @@ function FixtureReaderView({
   storage,
   user,
   syncStatus,
+  onOpenSettings,
 }: {
   storage: Storage;
   user: string;
   syncStatus: SyncStatus;
+  onOpenSettings: () => void;
 }) {
   const [state, setState] = useState<{ reader: BundleReader; bookId: string } | null>(null);
   useEffect(() => {
@@ -113,6 +125,7 @@ function FixtureReaderView({
       bookId={state.bookId}
       user={user}
       syncStatus={syncStatus}
+      onOpenSettings={onOpenSettings}
       onExit={() => window.location.reload()}
     />
   );
@@ -130,6 +143,8 @@ export function App() {
   const [settingsOpen, setSettingsOpen] = useState(false);
 
   const syncStatus = useSync(storage, profile ?? null);
+  // Reader display prefs (theme / font size / typeface) applied at the root; per-device, not synced.
+  const { prefs, update: updatePrefs } = usePrefs(storage);
 
   // Load the persisted active profile once.
   useEffect(() => {
@@ -181,6 +196,8 @@ export function App() {
           client={client}
           storage={storage}
           status={syncStatus}
+          prefs={prefs}
+          onUpdatePrefs={updatePrefs}
           onPickProfile={(id) => void switchProfile(id)}
           onClose={() => setSettingsOpen(false)}
         />
@@ -191,7 +208,12 @@ export function App() {
   if (fixtureMode) {
     return (
       <main className="app app-reading">
-        <FixtureReaderView storage={storage} user={profile} syncStatus={syncStatus} />
+        <FixtureReaderView
+          storage={storage}
+          user={profile}
+          syncStatus={syncStatus}
+          onOpenSettings={() => setSettingsOpen(true)}
+        />
       </main>
     );
   }
@@ -199,7 +221,13 @@ export function App() {
   if (route.name === "read") {
     return (
       <main className="app app-reading">
-        <BookReaderView bookId={route.bookId} storage={storage} user={profile} syncStatus={syncStatus} />
+        <BookReaderView
+          bookId={route.bookId}
+          storage={storage}
+          user={profile}
+          syncStatus={syncStatus}
+          onOpenSettings={() => setSettingsOpen(true)}
+        />
       </main>
     );
   }

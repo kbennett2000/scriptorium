@@ -12,6 +12,13 @@ export default tseslint.config(
       globals: { ...globals.browser, ...globals.node },
     },
   },
+  // Node-only build scripts (e.g. the R4 dist font/CDN guard) — Node globals, not the browser fence.
+  {
+    files: ["scripts/**/*.mjs"],
+    languageOptions: {
+      globals: { ...globals.node },
+    },
+  },
   // Zero-online-read fence (DESIGN §13, ADR-0003): the reading path performs no network I/O. All
   // server calls live in src/shelf/ and src/sync/ ONLY; fetch/XHR/WebSocket/sendBeacon anywhere else
   // fails lint. This is the mechanical enforcement §13 asks for — do not weaken it.

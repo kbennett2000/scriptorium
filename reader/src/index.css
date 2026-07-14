@@ -1,11 +1,49 @@
-/* Minimal, dense, legible. The designed skin (typography, themes) lands in R4. */
+@import "./fonts.css";
+
+/* Minimal, dense, legible. R4 adds a small design-token layer for the reader's three display prefs
+ * (theme / font size / typeface — settings/prefs.ts#applyPrefs sets --reader-font-scale, --reader-font,
+ * and data-theme on :root). Layout is unchanged from R1b — this is a skin, not a redesign. */
 :root {
-  color-scheme: light dark;
+  --reader-font-scale: 1;
+  --reader-font: "Literata Variable", Georgia, "Times New Roman", serif;
+  /* Light is the default/fallback theme (used when no data-theme is set yet, e.g. first paint). */
+  --bg: #ffffff;
+  --fg: #1a1a1a;
+  --surface: #ffffff;
+  --muted: rgba(26, 26, 26, 0.65);
+  --hairline: rgba(26, 26, 26, 0.18);
+  color-scheme: light;
   font-family: system-ui, sans-serif;
   line-height: 1.5;
 }
+:root[data-theme="light"] {
+  --bg: #ffffff;
+  --fg: #1a1a1a;
+  --surface: #ffffff;
+  --muted: rgba(26, 26, 26, 0.65);
+  --hairline: rgba(26, 26, 26, 0.18);
+  color-scheme: light;
+}
+:root[data-theme="sepia"] {
+  --bg: #f4ecd8;
+  --fg: #40372a;
+  --surface: #efe6cf;
+  --muted: rgba(64, 55, 42, 0.7);
+  --hairline: rgba(64, 55, 42, 0.25);
+  color-scheme: light;
+}
+:root[data-theme="dark"] {
+  --bg: #14161a;
+  --fg: #d9dbe0;
+  --surface: #1b1e24;
+  --muted: rgba(217, 219, 224, 0.6);
+  --hairline: rgba(217, 219, 224, 0.2);
+  color-scheme: dark;
+}
 body {
   margin: 0;
+  background: var(--bg);
+  color: var(--fg);
 }
 .app {
   max-width: 48rem;
@@ -100,7 +138,8 @@ body {
   margin: 0 auto;
 }
 .chapter-title {
-  font-size: 1.5rem;
+  font-family: var(--reader-font);
+  font-size: calc(1.5rem * var(--reader-font-scale));
   margin: 0.5rem 0 1.25rem;
   text-align: center;
 }
@@ -114,7 +153,8 @@ body {
   cursor: zoom-in;
 }
 .page-text {
-  font-size: 1.05rem;
+  font-family: var(--reader-font);
+  font-size: calc(1.05rem * var(--reader-font-scale));
   line-height: 1.7;
 }
 .page-para {
@@ -130,7 +170,7 @@ body {
   justify-content: center;
   padding: 0.5rem;
   border-top: 1px solid currentColor;
-  background: Canvas;
+  background: var(--surface);
 }
 .persist-badge {
   position: fixed;
@@ -249,7 +289,7 @@ span.hl {
   padding: 0.3rem 0.4rem;
   border: 1px solid currentColor;
   border-radius: 6px;
-  background: Canvas;
+  background: var(--surface);
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
 }
 .sel-swatch {
@@ -279,7 +319,7 @@ span.hl {
   padding: 0.75rem;
   border: 1px solid currentColor;
   border-radius: 8px;
-  background: Canvas;
+  background: var(--surface);
   box-shadow: 0 2px 12px rgba(0, 0, 0, 0.3);
 }
 .note-input {
@@ -303,7 +343,7 @@ span.hl {
   padding: 0.3rem 0.4rem;
   border: 1px solid currentColor;
   border-radius: 6px;
-  background: Canvas;
+  background: var(--surface);
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
 }
 .hl-menu-close,
@@ -327,7 +367,7 @@ span.hl {
   display: flex;
   flex-direction: column;
   border-left: 1px solid currentColor;
-  background: Canvas;
+  background: var(--surface);
   box-shadow: -2px 0 12px rgba(0, 0, 0, 0.25);
 }
 .ann-panel-head {
@@ -474,7 +514,7 @@ span.hl {
 .jump-furthest-chip {
   align-self: center;
   margin: 0.35rem auto;
-  background: Canvas;
+  background: var(--surface);
   border: 1px solid currentColor;
   border-radius: 1rem;
   padding: 0.2rem 0.8rem;
@@ -504,4 +544,192 @@ span.hl {
 }
 .settings-value {
   font-weight: 600;
+}
+.settings-choices {
+  display: flex;
+  gap: 0.4rem;
+  flex-wrap: wrap;
+}
+.settings-choice {
+  border: 1px solid var(--hairline);
+  border-radius: 1rem;
+  padding: 0.2rem 0.7rem;
+  font-size: 0.85rem;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+}
+.settings-choice[aria-pressed="true"] {
+  border-color: currentColor;
+  font-weight: 600;
+}
+.settings-fontsize {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+.settings-fontsize button {
+  cursor: pointer;
+}
+
+/* Search (R4) — full-height slide-over. */
+.search-panel {
+  position: fixed;
+  z-index: 30;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: min(28rem, 96vw);
+  display: flex;
+  flex-direction: column;
+  border-left: 1px solid var(--hairline);
+  background: var(--surface);
+  box-shadow: -2px 0 12px rgba(0, 0, 0, 0.25);
+}
+.search-bar {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.6rem 0.75rem;
+  border-bottom: 1px solid var(--hairline);
+}
+.search-input {
+  flex: 1;
+  font: inherit;
+  padding: 0.35rem 0.5rem;
+  border: 1px solid var(--hairline);
+  border-radius: 4px;
+  background: var(--bg);
+  color: inherit;
+}
+.search-close {
+  background: transparent;
+  border: none;
+  font-size: 1.3rem;
+  line-height: 1;
+  cursor: pointer;
+  color: inherit;
+}
+.search-count {
+  margin: 0;
+  padding: 0.4rem 0.75rem;
+  font-size: 0.75rem;
+  color: var(--muted);
+}
+.search-results {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  overflow-y: auto;
+  flex: 1;
+}
+.search-result {
+  display: flex;
+  gap: 0.6rem;
+  width: 100%;
+  text-align: left;
+  padding: 0.55rem 0.75rem;
+  border: none;
+  border-bottom: 1px solid var(--hairline);
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+.search-result-page {
+  flex: 0 0 auto;
+  font-size: 0.75rem;
+  color: var(--muted);
+  padding-top: 0.1rem;
+}
+.search-result-snippet {
+  min-width: 0;
+  font-size: 0.85rem;
+  line-height: 1.5;
+}
+.search-result mark {
+  background: rgba(255, 226, 89, 0.6);
+  color: inherit;
+}
+
+/* Dramatis personae (R4) — full-screen overlay. */
+.cast-page {
+  position: fixed;
+  inset: 0;
+  z-index: 30;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg);
+  color: var(--fg);
+  overflow-y: auto;
+}
+.cast-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.6rem 0.9rem;
+  border-bottom: 1px solid var(--hairline);
+}
+.cast-bar h2 {
+  margin: 0;
+  font-size: 1.1rem;
+}
+.cast-bar button {
+  cursor: pointer;
+}
+.cast-list {
+  list-style: none;
+  margin: 0;
+  padding: 0.5rem 0.9rem 2rem;
+  max-width: 40rem;
+}
+.cast-entry {
+  display: flex;
+  align-items: center;
+  gap: 0.9rem;
+  padding: 0.7rem 0;
+  border-bottom: 1px solid var(--hairline);
+}
+.cast-portrait {
+  flex: 0 0 auto;
+  width: 3.2rem;
+  height: 3.2rem;
+  border-radius: 50%;
+  object-fit: cover;
+  background: var(--surface);
+}
+.cast-initial {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.3rem;
+  font-weight: 600;
+  color: var(--muted);
+  border: 1px solid var(--hairline);
+}
+.cast-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  min-width: 0;
+}
+.cast-name {
+  font-weight: 600;
+}
+.cast-oneline {
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+.cast-empty {
+  padding: 1.5rem 0.9rem;
+  color: var(--muted);
+}
+.reader-search-btn,
+.reader-cast-btn,
+.reader-settings-btn {
+  font-size: 0.8rem;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  color: inherit;
 }

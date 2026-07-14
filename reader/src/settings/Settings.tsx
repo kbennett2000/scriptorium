@@ -4,11 +4,15 @@ import { ProfilePicker } from "../profiles";
 import type { Storage } from "../shell";
 import type { SyncClient, SyncStatus } from "../sync";
 import { SyncStatusBadge } from "../sync";
+import { FONT_STEPS, type Prefs, type Theme, type Typeface } from "./prefs";
 
-// A minimal Settings surface (DESIGN §13). The full designed screen (font size, theme, typeface) is
-// R4 — this stub carries only R3's concerns: the active profile + switcher, a manual Sync now button,
-// last-synced + storage status. Profile switching just changes the active profile (no migration —
-// that is a one-time first-run step); each profile's data is already namespaced.
+// The full Settings screen (DESIGN §13): reading display (typeface, font size, theme) + the R3 concerns
+// (profile switcher, manual sync + last-synced, storage status). Display prefs apply instantly via the
+// App-level usePrefs controller (persisted per device); profile switching just repoints the active
+// profile (no migration — that is a one-time first-run step). Everything here is local.
+
+const THEME_LABELS: Record<Theme, string> = { light: "Light", sepia: "Sepia", dark: "Dark" };
+const TYPEFACE_LABELS: Record<Typeface, string> = { literata: "Literata", inter: "Inter" };
 
 export function Settings({
   user,
@@ -16,6 +20,8 @@ export function Settings({
   client,
   storage,
   status,
+  prefs,
+  onUpdatePrefs,
   onPickProfile,
   onClose,
 }: {
@@ -24,6 +30,8 @@ export function Settings({
   client: SyncClient;
   storage: Storage;
   status: SyncStatus;
+  prefs: Prefs;
+  onUpdatePrefs: (patch: Partial<Prefs>) => void;
   onPickProfile: (id: string) => void;
   onClose: () => void;
 }) {
@@ -62,6 +70,65 @@ export function Settings({
         <button type="button" onClick={onClose}>
           Done
         </button>
+      </div>
+
+      <div className="settings-row">
+        <span className="settings-label">Typeface</span>
+        <div className="settings-choices">
+          {(["literata", "inter"] as Typeface[]).map((t) => (
+            <button
+              key={t}
+              type="button"
+              className="settings-choice"
+              aria-pressed={prefs.typeface === t}
+              onClick={() => onUpdatePrefs({ typeface: t })}
+            >
+              {TYPEFACE_LABELS[t]}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div className="settings-row">
+        <span className="settings-label">Font size</span>
+        <div className="settings-fontsize">
+          <button
+            type="button"
+            aria-label="Smaller text"
+            disabled={prefs.fontStep <= 0}
+            onClick={() => onUpdatePrefs({ fontStep: prefs.fontStep - 1 })}
+          >
+            A−
+          </button>
+          <span className="settings-value" aria-label="Font size step">
+            {prefs.fontStep + 1} / {FONT_STEPS}
+          </span>
+          <button
+            type="button"
+            aria-label="Larger text"
+            disabled={prefs.fontStep >= FONT_STEPS - 1}
+            onClick={() => onUpdatePrefs({ fontStep: prefs.fontStep + 1 })}
+          >
+            A+
+          </button>
+        </div>
+      </div>
+
+      <div className="settings-row">
+        <span className="settings-label">Theme</span>
+        <div className="settings-choices">
+          {(["light", "sepia", "dark"] as Theme[]).map((t) => (
+            <button
+              key={t}
+              type="button"
+              className="settings-choice"
+              aria-pressed={prefs.theme === t}
+              onClick={() => onUpdatePrefs({ theme: t })}
+            >
+              {THEME_LABELS[t]}
+            </button>
+          ))}
+        </div>
       </div>
 
       <div className="settings-row">

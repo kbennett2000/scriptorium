@@ -771,3 +771,65 @@ outside Playwright's actionability viewport — `dispatchEvent("click")` them. B
 reading OPFS directly in the page (`navigator.storage.getDirectory()`), no prod backdoor. `@playwright/
 test` was added as a reader devDep; browsers install via `npx playwright install chromium`. Needs a fresh
 data dir each run or accumulated server state skews the furthest/convergence assertions.
+
+## From R4 (reader: search, dramatis personae, settings/typography)
+
+### Search index is built at checkout but MUST tolerate build-on-first-search
+`shelf/checkout.ts` builds+persists the MiniSearch index at residency (and on `delta` when pages
+changed), but it is **best-effort** (wrapped so a build error never fails a checkout) and books that
+went Resident before R4 have no index. `search#ensureIndex` is the single entry point the UI uses: it
+loads `books/{bookId}/search-index.json` if present, else builds from the pages via the `BundleReader`
+and persists. R5 (Capacitor) uses a different Storage backend but the same paths — the index is just
+another file under `books/{bookId}/`, wiped by shelf `remove` with the rest. If a future cycle changes
+the persisted shape or MiniSearch options (`search/index.ts` `OPTIONS`), bump/version the file or old
+persisted indexes will `loadJSON` wrong — `ensureIndex` currently rebuilds only on a *throw*, not on a
+silent option mismatch.
+
+### The cast page is an OVERLAY, never a page in `pageIds`
+Injecting a dramatis-personae "page" before chapter 1 would shift every `page_seq`/index and break
+positions + byte-stable anchors. It's a full-screen overlay in `Reader` instead, filtered by
+`furthestSeq = max(savedPos.furthest, session max seq, 1)`. The auto-interstitial fires once on a fresh
+open (no saved position). Any new pre-chapter surface (a title page, a map) should follow the same
+overlay pattern — do not touch the reading order.
+
+### ADR-0008 is tested at the unit + component level, not against the fixture
+The fixture bundle has one character (the wanderer, mentioned on every page) and is *pipeline-generated*
+from a single mocked `cast-mentions` response — you can't hand-add a hideable character without
+rippling into generated portrait assets, prompt fixtures, and a full `make_fixture_bundle` regen (which
+would revert a hand-edit anyway). So the named "mentioned p40 / furthest 30" test is
+`cast/filter.test.ts` (pure) + `cast/CastPage.test.tsx` (the real overlay with a synthetic cast); the
+browser test only smoke-checks the overlay on the real fixture. If R5+ ever needs a multi-character
+*browser* cast test, page-key the `cast-mentions` mock in `server/tests/_pipeline_build.py` and
+regenerate the whole bundle — don't hand-edit `cast.json`.
+
+### Fonts are vendored as files in the repo, not an npm runtime dep
+`src/assets/fonts/{literata,inter}.woff2` (+ `*-OFL.txt`) are committed copies of the
+`@fontsource-variable/*` latin variable-weight files; `src/fonts.css` `@font-face`s them by local path
+so Vite fingerprints them into `dist/assets/*.woff2`. Nothing loads from a CDN. `scripts/check-dist-fonts.mjs`
+(run via `npm run build:check` / `just reader-build-check`) fails the build if `dist/` has no `.woff2`
+or if any text asset references `fonts.googleapis`/`cdn`. To add/update a face: copy the woff2 + LICENSE
+in, add an `@font-face`, done — no dependency, no network. The check greps for the literal substring
+`cdn`; if a future dependency legitimately contains it in minified output, tighten the pattern rather
+than weakening the guard.
+
+### Display prefs are per-device and applied at the App root; they are NOT synced
+`settings/prefs.ts` + `usePrefs` persist `{theme, fontStep, typeface}` to `settings/prefs.json` and set
+`data-theme` + `--reader-font-scale` + `--reader-font` on `document.documentElement`. Theme/typeface
+tokens live in `index.css` under `:root[data-theme=…]`; popovers now use `var(--surface)` (was the
+`Canvas` system color) so they theme correctly. Writes are fire-and-forget — a test that reloads
+immediately after a change must poll the persisted file first (the R4 e2e does). If R5 adds more display
+prefs, extend `Prefs` + `applyPrefs` + the token block together; keep prefs out of the sync engine.
+
+### e2e "server down" = abort /api + /health, NOT context.setOffline
+`context.setOffline(true)` also blocks the Vite dev origin, so the app can't reload. To test the
+zero-online read path while still allowing reloads, `r4.spec.ts` does
+`context.route(/\/(api|health)(\/|$)/, r => r.abort())` — the app loads from Vite, the scriptorium API
+is unreachable. The R4 features (search/cast/settings) are all local so they pass; use this pattern for
+any future "works offline" reader test that needs a reload.
+
+### The search-jump match-flash reuses flash-page + pendingRestoreChar
+`Reader.jumpToSearchHit` sets `pendingRestoreChar` (scrolls to the match paragraph on the next page
+render) and pulses the whole page via the existing `flash-page` class/timer — no new `Page` prop, so the
+byte-faithful render is untouched. The jump carries the match's char offset computed in `SearchPanel`
+via `firstMatchIndex(result.text, terms)`. If a future cycle wants per-term highlighting of the match
+(not just a page pulse), that's a new `Page` render mode — keep `runs.join("") === paraText`.
