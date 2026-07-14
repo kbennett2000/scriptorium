@@ -1,7 +1,23 @@
 # Handoff
 
 ## Current state
-- **S8 complete** (PR open, awaiting human merge). P5 — prompt derivation.
+- **S9a complete** (PR open, awaiting human merge). The review-gate **server** (S9 was split;
+  S9a = server, **S9b = admin UI is next**). `bake/review_api.py` (its own admin router):
+  `GET /gutendex` search proxy (degrades 502, never 500), `GET /styles`, `GET …/review`
+  (selection + all prompts incl. cover/portrait pseudo-plates + cast + `prompt_warnings` +
+  `failed_units` + per-page beats), `PUT …/review/prompt/{id}` (persists `edited_prompt`,
+  recomputes `final_subject_prompt`), `PUT …/review/selection` (manual add/remove; a
+  never-rendered remove drops the entry but **keeps the prompt file** so include-toggles
+  round-trip), `PUT …/review/cast/{slug}` (`edited_by_human`), `POST …/approve` (**refuses 422**
+  if any selected/manual plate lacks a prompt, else → `approved`), `POST …/reselect` (§8
+  re-selection + re-queues P5 for newcomers by resetting state to `selected`),
+  `GET …/plate-image/{id}.png`. **No state-machine / schema change** — `approve` walks the
+  existing `prompts_draft → in_review → approved` edges; only added `Job.render_stub: bool`.
+  Plus `render/imagegen.py` (`ImagegenClient` protocol + deterministic `FakeImagegen`) and a
+  **demo** `bake/phases/p7_render_stub.py` (`is_gpu=False`, `approved → rendering`, FakeImagegen
+  placeholders, rests at `rendering`) registered in `BAKE_PIPELINE` — **S10 replaces the stub
+  wholesale**. Frontend-design skill was absent in this env.
+- **S8 complete** (merged). P5 — prompt derivation.
   `bake/phases/p5_prompts.py`: `PromptsEnter` (CPU, `selected → prompts_running`) + `PromptsDerive`
   (GPU, `prompts_running → prompts_draft`). One `illustration-prompt` per `status:"selected"` page
   (options per TTS §7.5: full ledger + present-cast `{name,one_line}` capped 4 by mention
@@ -46,16 +62,20 @@
   exceptions), `bake/api.py` (admin endpoints; P0 inline). Kill-test proves ≤1 unit lost.
 - **S3 / S2 / S1 complete** (merged): paginator + fixture bundle; ingestion adapters;
   monorepo skeleton + schemas + generated TS types + `/health`.
-- Server: `uv run pytest` → **189 passed, 4 deselected** (network + three gpu-live);
+- Server: `uv run pytest` → **214 passed, 4 deselected** (network + three gpu-live);
   `uv run ruff check .` (server + `tools/`) clean.
 
 ## Next up
-- **S9** — the review gate (DESIGN §11.1): admin endpoints to surface the `prompts_draft` +
-  `cast.json` + `selection.json` for human approval, edit prompts (`edited_prompt` → recompute
-  `final_subject_prompt`), manual plate add/remove (write `reason:"manual"` into `selection.json`,
-  where `reselect.py` finally gets wired), and the `prompts_draft → in_review → approved` gate.
-  **No render before approval** (hard rule). Surface `job.prompt_warnings[page_id]` (S8) next to
-  each plate. Admin-UI review screen likely rides along.
+- **S9b** — the admin UI (DESIGN §11.3), fully unblocked by S9a's endpoints. Screens: Books list;
+  New Book wizard (`GET /gutendex` / paste / upload → metadata + era → style picker reading
+  `GET /styles` → density → portraits → `POST /books`); Book detail (state/warnings/failed_units,
+  pre-P1 chapter editor, job controls); Review (plate table + inline-editable prompts + include
+  toggles + editable cast panel + cover/portrait pseudo-plates + Approve w/ count confirm, showing
+  `prompt_warnings`); feature-flagged Post-render view (stub thumbs via `…/plate-image`, disabled
+  Regen). Tooling: **Vitest + RTL + jsdom, stubbed `fetch`** (Playwright deferred); add a Vite dev
+  `server.proxy` → `:8720`; hand-write API-payload types. Acceptance box #1 (full browser run +
+  screenshot/recording note) completes here. Full spec at the tail of the S9a plan file + NOTES
+  "From S9a".
 - **R1** — reader shell/shelf/checkout, unblocked since S3 (build against
   `server/tests/fixtures/bundle/`). **S12** (sync API) unblocked from S1.
 
