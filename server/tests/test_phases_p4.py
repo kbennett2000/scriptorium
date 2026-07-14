@@ -177,11 +177,11 @@ def test_phase_is_idempotent_when_selection_exists(tmp_path) -> None:
 
 
 def test_fixture_pipeline_selection_is_schema_valid(tmp_path) -> None:
-    """S7 acceptance: run P4 over the S3 bundle book with the S6 scene-update ledgers merged in.
+    """S7 acceptance: run P4 over the bundle book with the S6 scene-update ledgers merged in.
 
-    Values may legitimately differ from the hand-written ``bundle/selection.json`` (whose 0003
-    scene_boundary is inconsistent with the fixture ledger, and whose 0003/0004 are adjacent —
-    a classic min_gap=2 violation). We assert schema + §8 invariants, not equality.
+    Values may legitimately differ from ``bundle/selection.json`` (this test merges the hand-written
+    scene fixtures, not the generic ones that produced the committed bundle), so we assert schema +
+    §8 invariants, not equality.
     """
     cfg = _cfg(tmp_path)
     structure = json.loads((_BUNDLE / "structure.json").read_text("utf-8"))
@@ -203,11 +203,14 @@ def test_fixture_pipeline_selection_is_schema_valid(tmp_path) -> None:
     assert ids == sorted(ids)
     assert all(b - a >= doc["params"]["min_gap"] for a, b in zip(ids, ids[1:], strict=False))
     assert all(p["reason"] in {"chapter_open", "scene_boundary", "fill"} for p in doc["plates"])
-    # Both chapter openers are selected.
-    assert {"0001", "0004"} <= {p["page_id"] for p in doc["plates"]}
+    # Every chapter opener is selected.
+    openers = {ch["page_ids"][0] for ch in structure["chapters"]}
+    assert openers <= {p["page_id"] for p in doc["plates"]}
 
-    # Document the divergence the CYCLE-LOG notes: the hand-written fixture violates min_gap.
-    hand = json.loads((_BUNDLE / "selection.json").read_text("utf-8"))
-    hand_ids = sorted(int(p["page_id"]) for p in hand["plates"])
-    hand_gap = hand["params"]["min_gap"]
-    assert any(b - a < hand_gap for a, b in zip(hand_ids, hand_ids[1:], strict=False))
+    # The committed fixture selection.json is now genuine P4 output (S10b regenerated the bundle via
+    # the real pipeline), so the S7 hand-written min_gap divergence is gone — it honours §8 too.
+    committed = json.loads((_BUNDLE / "selection.json").read_text("utf-8"))
+    schemas.validate("selection", committed)
+    c_ids = sorted(int(p["page_id"]) for p in committed["plates"])
+    c_gap = committed["params"]["min_gap"]
+    assert all(b - a >= c_gap for a, b in zip(c_ids, c_ids[1:], strict=False))

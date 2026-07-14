@@ -1,14 +1,16 @@
-import { getReview, plateImageUrl } from "../../api/client";
-import { ErrorNotice, Loading, Notice, useAsync } from "../../components/common";
+import { useState } from "react";
+
+import { getReview, plateImageUrl, regenPlate } from "../../api/client";
+import { ErrorNotice, errorText, Loading, Notice, useAsync } from "../../components/common";
 import { POSTRENDER_ENABLED } from "../../config";
 import type { ReviewPayload } from "../../api/types";
 import { navigate } from "../../routes";
 
-// Post-render review (§11.3): the same plate set, now with rendered thumbs + a per-plate Regen.
-// Feature-flagged (POSTRENDER_ENABLED) because the render path is the S9 demo stub and Regen
-// (POST …/plates/{id}/regen) is not built until S10 — the button is present but disabled.
+// Post-render review (§11.3): the same plate set, now with rendered thumbs + a per-plate Regen
+// (POST …/plates/{id}/regen). Feature-flagged (POSTRENDER_ENABLED). The "placeholder" banner shows
+// only while the render is still the S9 demo stub (review.render_stub) — real render (S10) clears it.
 export function PostRender({ id }: { id: string }) {
-  const { data, error, loading } = useAsync(() => getReview(id), [id]);
+  const { data, error, loading, reload } = useAsync(() => getReview(id), [id]);
 
   if (!POSTRENDER_ENABLED) {
     return (
@@ -24,7 +26,7 @@ export function PostRender({ id }: { id: string }) {
       <Crumbs id={id} />
       {loading && <Loading what="plates" />}
       <ErrorNotice error={error} prefix="Could not load plates" />
-      {data && <PostRenderBody id={id} review={data} />}
+      {data && <PostRenderBody id={id} review={data} reload={reload} />}
     </section>
   );
 }
@@ -38,14 +40,43 @@ function Crumbs({ id }: { id: string }) {
   );
 }
 
-function PostRenderBody({ id, review }: { id: string; review: ReviewPayload }) {
+function PostRenderBody({
+  id,
+  review,
+  reload,
+}: {
+  id: string;
+  review: ReviewPayload;
+  reload: () => void;
+}) {
   // Page plates that have pixels, plus the cover/portrait pseudo-plates (all render).
-  const pagePlates = review.selection.plates.filter((p) => p.status === "rendered" || p.status === "approved");
+  const pagePlates = review.selection.plates.filter(
+    (p) => p.status === "rendered" || p.status === "approved",
+  );
   const pseudo = review.prompts.filter((p) => !/^\d{4}$/.test(p.page_id));
   const rows: { pageId: string; label: string }[] = [
     ...pagePlates.map((p) => ({ pageId: p.page_id, label: p.reason })),
     ...pseudo.map((p) => ({ pageId: p.page_id, label: "pseudo-plate" })),
   ];
+
+  const [busy, setBusy] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<unknown>(null);
+  // Bump per-plate to cache-bust the thumb after a re-render (same URL, new bytes).
+  const [bump, setBump] = useState<Record<string, number>>({});
+
+  async function regen(pageId: string) {
+    setBusy(pageId);
+    setActionError(null);
+    try {
+      await regenPlate(id, pageId);
+      setBump((b) => ({ ...b, [pageId]: (b[pageId] ?? 0) + 1 }));
+      reload();
+    } catch (err) {
+      setActionError(err);
+    } finally {
+      setBusy(null);
+    }
+  }
 
   return (
     <>
@@ -53,10 +84,15 @@ function PostRenderBody({ id, review }: { id: string; review: ReviewPayload }) {
         <h2>Post-render — {review.book_id}</h2>
         <span className="badge state">{review.state}</span>
       </div>
-      <Notice kind="warn">
-        These are <strong>placeholder</strong> renders from the S9 demo stub (FakeImagegen), not
-        final art. Real rendering + Regen land in S10.
-      </Notice>
+      {review.render_stub && (
+        <Notice kind="warn">
+          These are <strong>placeholder</strong> renders from the demo stub (FakeImagegen), not
+          final art.
+        </Notice>
+      )}
+      {actionError != null && (
+        <Notice kind="error">Regen failed: {errorText(actionError)}</Notice>
+      )}
 
       <table>
         <thead>
@@ -70,12 +106,13 @@ function PostRenderBody({ id, review }: { id: string; review: ReviewPayload }) {
         <tbody>
           {rows.map((r) => {
             const prompt = review.prompts.find((p) => p.page_id === r.pageId);
+            const v = bump[r.pageId] ?? 0;
             return (
               <tr key={r.pageId}>
                 <td>
                   <img
                     className="plate-thumb"
-                    src={plateImageUrl(id, r.pageId)}
+                    src={`${plateImageUrl(id, r.pageId)}?v=${v}`}
                     alt={`plate ${r.pageId}`}
                     loading="lazy"
                   />
@@ -88,8 +125,12 @@ function PostRenderBody({ id, review }: { id: string; review: ReviewPayload }) {
                   {prompt?.final_subject_prompt ?? <span className="muted">—</span>}
                 </td>
                 <td>
-                  <button disabled title="Per-plate re-render lands in S10">
-                    Regen
+                  <button
+                    disabled={busy !== null}
+                    onClick={() => regen(r.pageId)}
+                    title="Re-render this plate with a fresh seed"
+                  >
+                    {busy === r.pageId ? "Regen…" : "Regen"}
                   </button>
                 </td>
               </tr>

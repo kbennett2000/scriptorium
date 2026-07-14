@@ -110,6 +110,12 @@ export const approve = (id: string) => request<Job>("POST", `/books/${id}/approv
 export const reselect = (id: string, densityPreset: DensityPreset) =>
   request<Selection>("POST", `/books/${id}/reselect`, { density_preset: densityPreset });
 
+// Re-render one plate with a fresh seed (POST …/plates/{id}/regen). Pre-publish overwrites the
+// work-dir plate in place; post-publish writes an additive -rN variant and bumps the revision. The
+// updated prompt doc (with bumped render.attempts) is returned.
+export const regenPlate = (id: string, pageId: string) =>
+  request<Prompt>("POST", `/books/${id}/plates/${pageId}/regen`);
+
 // The post-render thumb URL (served by GET /books/{id}/plate-image/{page_id}.png).
 export const plateImageUrl = (id: string, pageId: string) =>
   `${BASE}/books/${id}/plate-image/${pageId}.png`;

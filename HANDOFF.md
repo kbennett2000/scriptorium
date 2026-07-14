@@ -1,20 +1,35 @@
 # Handoff
 
 ## Current state
-- **S10a complete** (PR open, awaiting human merge). The render half of S10 (split at the plan gate;
-  **S10b = publish + verify**). Real P7: `bake/phases/p7_render.py` (`RenderEnter` `approved →
-  rendering` + `Render` `rendering → rendered`) replaces the S9 stub — a leading `__unload__` unit
-  frees TTS (`unload_models()`, require success) then gates imagegen `health()` (§7.4/ADR-0009),
-  then each approved plate style-wraps, renders at the §10 size (plate/cover 832×1216, portrait
-  1024×1024) into the §4.2 bundle layout, makes idempotent WebP derivatives, and records
+- **S10b complete** (PR open, awaiting human merge). The publish half of S10 — the bakery is now
+  complete end-to-end (P0→P8). `bake/phases/p8_publish.py`: **`Publish`** (`rendered → published`,
+  CPU rest→rest, registered after `Render()`) assembles the immutable `library/{id}` bundle from
+  `work/` — **integrity guard** (§4.4: published `pages/*` frozen byte-for-byte or refuse with
+  `PipelineBug`), copies artifacts + images (excluding `*.src.sha256` sidecars, not `ledgers/`),
+  **builds** `meta.json` (identity from `bake_config` + stats + best-effort/offline-safe `bake`
+  pinning), and writes `manifest.json` (reusable `build_manifest`). New **`Config.library_dir`**.
+  **Post-publish regen**: the S10a `POST …/plates/{id}/regen` published branch now writes an additive
+  `…/{page}-rN.png` (N = new revision) beside the untouched original, bumps `meta.revision`, rebuilds
+  the manifest in place (reuses `render_to_spec`, factored from `render_plate`). New
+  **`tools/verify_bundle.py`** (standalone + importable; schema + hashes + reader_required +
+  cross-refs, tolerates `-rN`). The **fixture bundle is regenerated via the real pipeline** (shared
+  harness `server/tests/_pipeline_build.py`, byte-reproducible; new id `usr-ce8f5ebd29d0`) — clears
+  the S7 `selection.json` min_gap + S8 stale-prompt divergences. **admin-UI**: `rendered` state added,
+  Regen button enabled → `regenPlate`, placeholder banner gated on `render_stub` (added to the review
+  payload). Offline **237 passed / 5 deselected**; ruff/eslint/tsc/vitest clean; no type drift.
+  **gpu-marked live render box PENDING** — the deployed imagegen-service predates PR #13 (returns
+  1024² for an explicit 832×1216 request); needs a `sudo systemctl restart imagegen-service` on the
+  GPU box. The live render otherwise ran end-to-end (unload-first observed). See NOTES "From S10b".
+- **S10a complete** (merged). The render half of S10 (split at the plan gate). Real P7:
+  `bake/phases/p7_render.py` (`RenderEnter` `approved → rendering` + `Render` `rendering →
+  rendered`) replaces the S9 stub — a leading `__unload__` unit frees TTS (`unload_models()`,
+  require success) then gates imagegen `health()` (§7.4/ADR-0009), then each approved plate
+  style-wraps, renders at the §10 size (plate/cover 832×1216, portrait 1024×1024) into the §4.2
+  bundle layout, makes idempotent WebP derivatives, and records
   `wrapped_prompt`/`negative_prompt`/`render` on `prompts/*.json`. New `render/imagegen.py`
-  `RealImagegenClient` (per **ADR-0011**), `render/derivatives.py`, new `JobState.RENDERED`, and a
-  pre-publish regen endpoint `POST …/plates/{id}/regen`. Client is injected (`Render(client=…)`);
-  `FakeImagegen` stays the double. **ADR-0011** records the real imagegen API + the "extend
-  imagegen-service" size decision. Separate **imagegen-service PR #13** adds optional
-  `width`/`height` to `/generate` (default 1024²). Offline **225 passed / 5 deselected**; ruff/
-  eslint/tsc/vitest clean; no type drift. Live checkpoint deferred (TTS degraded). See NOTES
-  "From S10a".
+  `RealImagegenClient` (per **ADR-0011**), `render/derivatives.py`, `JobState.RENDERED`. Client is
+  injected (`Render(client=…)`); `FakeImagegen` stays the double. **imagegen-service PR #13** (merged)
+  adds optional `width`/`height` to `/generate` (default 1024²). See NOTES "From S10a".
 - **S9b complete** (merged). The review-gate **admin UI** — `admin-ui/`
   grown from the blank scaffold into the four §11.3 screens (Books list; New Book wizard; Book
   detail; Review gate; feature-flagged Post-render), wired to the S9a endpoints. **No server
@@ -86,32 +101,35 @@
   exceptions), `bake/api.py` (admin endpoints; P0 inline). Kill-test proves ≤1 unit lost.
 - **S3 / S2 / S1 complete** (merged): paginator + fixture bundle; ingestion adapters;
   monorepo skeleton + schemas + generated TS types + `/health`.
-- Server: `uv run pytest` → **225 passed, 5 deselected** (network + four gpu-live incl. render);
-  `uv run ruff check .` (server + `tools/`) clean. admin-ui: `npm run test` (Vitest) → **1 passed**
-  (the offline smoke); eslint + tsc clean; `npm run build` OK. imagegen-service (PR #13):
-  `npm run test:unit` → **36 pass**, `tsc` clean.
+- Server: `uv run pytest` → **237 passed, 5 deselected** (network + four gpu-live incl. render);
+  `uv run ruff check . ../tools` clean. admin-ui: `npm run test` (Vitest) → **1 passed**
+  (the offline smoke); eslint + tsc clean. `tools/verify_bundle.py` exits 0 over the fixture bundle.
+  imagegen-service (PR #13, merged): `npm run test:unit` → **36 pass**, `tsc` clean.
 
 ## Next up
-- **S10b** — publish (P8) + the bundle verifier: `bake/phases/p8_publish.py` (`rendered → published`,
-  `library/{id}` assembly, `manifest.json` with sha256s + `reader_required`, the §4.4 byte-identical
-  **integrity guard**, revision bump, `meta.bake` pinning), `Config.library_dir`,
-  `tools/verify_bundle.py`, fixture-bundle regeneration, extend e2e to **P0→P8**, post-publish regen
-  `-rN`, and the admin-UI Regen/`rendered`-gate wiring. See NOTES **"From S10a"** for the full scope.
-  **Prereq:** merge imagegen-service **PR #13** and redeploy before any real 832×1216 render.
+- **S11** — library / checkout serving: the `/api/library/*` reader endpoints (§11.1 —
+  `GET /api/library`, `…/{id}/manifest`, `…/{id}/files/{path}` path-traversal-guarded, ETag =
+  sha256) over the `library/{id}` bundles P8 now produces. This is what connects a published bundle
+  to the reader. Implement the post-publish `-rN` current-variant resolution here (highest wins —
+  see NOTES From S10b). The bakery (P0→P8) is otherwise complete.
 - **R1** — reader shell/shelf/checkout, unblocked since S3 (build against
-  `server/tests/fixtures/bundle/`; the reader can copy admin-ui's test-runner/fetch-client shape but
-  keep network calls fenced to `sync/`+`shelf/`). **S12** (sync API) unblocked from S1.
-- **R1** — reader shell/shelf/checkout, unblocked since S3 (build against
-  `server/tests/fixtures/bundle/`; the reader can copy admin-ui's test-runner/fetch-client shape but
-  keep network calls fenced to `sync/`+`shelf/`). **S12** (sync API) unblocked from S1.
+  `server/tests/fixtures/bundle/` — now a **real** P8 bundle; the reader can copy admin-ui's
+  test-runner/fetch-client shape but keep network calls fenced to `sync/`+`shelf/`). **S12** (sync
+  API) unblocked from S1.
+- **Ops (not a cycle):** restart `imagegen-service` on the GPU box so PR #13 (width/height) is live,
+  then re-run `pytest -m gpu tests/test_render_live.py` to close the gpu-marked box (832×1216).
 
 ## Open questions / blocked
-- **Run the live checkpoint when convenient:** on the LAN with TTS T5/T6 up, run
-  `TTS_URL=… uv run python ../tools/capture_tts_fixtures.py` to replace the hand-written TTS
-  fixtures (cast, scene-update, **and now illustration-prompt**) with real captures, and
-  `uv run pytest -m gpu test_cast_live.py test_ledger_live.py test_prompts_live.py -s` to paste
-  real cast + ledger + prompt summaries into `CYCLE-LOG.md`. Not blocking development (fixtures
-  suffice).
+- **gpu-marked render box pending on a stale imagegen deploy (S10b):** the LAN is green and the live
+  render runs end-to-end (unload-first observed), but the deployed imagegen-service predates PR #13
+  and returns 1024² for an explicit 832×1216 request. Fix on disk (`cf0f0a6`); needs `sudo systemctl
+  restart imagegen-service` on the GPU box, then `pytest -m gpu tests/test_render_live.py`. See NOTES
+  "From S10b".
+- **Run the broader live checkpoint when convenient:** TTS/ollama are healthy now, so
+  `TTS_URL=… uv run python ../tools/capture_tts_fixtures.py` can re-capture the TTS fixtures (cast,
+  scene-update, illustration-prompt) with real output, and `uv run pytest -m gpu test_cast_live.py
+  test_ledger_live.py test_prompts_live.py -s` can paste real summaries into `CYCLE-LOG.md`. Not
+  blocking development (fixtures suffice).
 - See `NOTES-FOR-NEXT-CYCLES.md` "From S7": `reselect.py` is standalone until a revision re-bake
   wires it (and the "drop never-rendered approvals" reading to confirm); `PageScore` is the
   structural spoiler boundary (P5/P7 read the full ledger from `pages/*.json`, not via selection

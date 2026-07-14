@@ -1,157 +1,137 @@
 {
-  "book_id": "usr-ef6cf2047a5e",
+  "book_id": "usr-ce8f5ebd29d0",
   "revision": 1,
   "bundle_version": 1,
   "files": [
     {
       "path": "cast.json",
-      "sha256": "1e1b91eeece500c813cd3a314619bdeafba63ab872416ff0f3d00ad1c4448cb9",
-      "bytes": 980
+      "sha256": "6c518f04ae4172ed4ab38c7264caf62fb36a4d110a58b619abf7ae785e90272c",
+      "bytes": 569
     },
     {
       "path": "images/cover.png",
-      "sha256": "ad134f2bccc853d6e250aede8c250ff4ceb224e9ac441e71d1af1fd559d3a21b",
-      "bytes": 4709
+      "sha256": "0dff1c0c0f6caa8dd10c82eceaf8accbe2fcf5b0853f17eb35b64a325b18fc9e",
+      "bytes": 12310
     },
     {
       "path": "images/plates/0001.png",
-      "sha256": "3a8cbfc6f39198149d58cb431b475a2b07052fecd88b224187795aa8aab504ac",
-      "bytes": 4709
+      "sha256": "1679378fc3b88cf3ce6405e08a4aae2a45201248838fc5ae39d6862923fe441c",
+      "bytes": 12372
     },
     {
-      "path": "images/plates/0003.png",
-      "sha256": "6c4cfd573be70e91918af67ec43b184b64c1289b5acb81447e9ae7f9cf87bae1",
-      "bytes": 4708
+      "path": "images/plates/0006.png",
+      "sha256": "2ccbce59b6bbbd61960dd1d83ce1f90caa3fc79c4a448e2e62521c83f684b418",
+      "bytes": 12665
     },
     {
-      "path": "images/plates/0004.png",
-      "sha256": "e829e649ea7ef560566574f8d6612d9d45671c03b8fc020251e31b5ffbece847",
-      "bytes": 4708
-    },
-    {
-      "path": "images/portraits/the-clockmaker.png",
-      "sha256": "0cf76d721eb825b3eac93d39919b71f85fb087161218a44fef99af5c0dacc471",
-      "bytes": 4708
+      "path": "images/portraits/wanderer.png",
+      "sha256": "15a1dc1c78f9ce72433a34123ad04a7d9c790549a8b958e85b053eaf0f46ba5b",
+      "bytes": 11671
     },
     {
       "path": "images/thumbs/cover.webp",
-      "sha256": "7cd03a152c7bfdb15bb32306c82329c7c89e9c00c6f7a02e2da49da7dd10d9ce",
-      "bytes": 362
+      "sha256": "6158bfd3f36fd0398a853d4cddea3848e947ed5c6ecbdca6419bfe8d0ccefa9f",
+      "bytes": 918
     },
     {
       "path": "images/thumbs/plates/0001.webp",
-      "sha256": "334e3424edde560b99d500d0f1db5583e22b54518dd426503376586513f42efc",
-      "bytes": 346
+      "sha256": "2c9b4095fb16c5eb17f82daca1d66f0dac9b0bc516e9c37cdb7eaa580c49dec6",
+      "bytes": 904
     },
     {
-      "path": "images/thumbs/plates/0003.webp",
-      "sha256": "9e5124cae04abcc7000c4cc72625b8a780370dedc7f0dc1bfaf938c04c00153f",
-      "bytes": 360
+      "path": "images/thumbs/plates/0006.webp",
+      "sha256": "82df63d5cd6d3f6c011b0a726f3572acca076788c22e5c921fc3d601cfa0a56c",
+      "bytes": 884
     },
     {
-      "path": "images/thumbs/plates/0004.webp",
-      "sha256": "154da7411bdf79e333dd1e2305d9851729b8a7496072a5800bbc7826e5a91b9f",
-      "bytes": 362
-    },
-    {
-      "path": "images/thumbs/portraits/the-clockmaker.webp",
-      "sha256": "44a610abd31112f8b0031cec93a38fd9e3ced8e357b116c58f5e0ec150d46ea9",
-      "bytes": 354
+      "path": "images/thumbs/portraits/wanderer.webp",
+      "sha256": "04ec88111f11ae8d891ee5e00443e3005eff81bad55a9b197a632c8811e67f3e",
+      "bytes": 592
     },
     {
       "path": "images/web/cover.webp",
-      "sha256": "e660d18f86d0a14c4c9f56620566c98c688a469fc3e12c15fe4291ced152e21f",
-      "bytes": 3152
+      "sha256": "d2fb7c3f44b56e67ccbab748ca0a6837a1f29d9873ba4293454fa284e0a36bb2",
+      "bytes": 4938
     },
     {
       "path": "images/web/plates/0001.webp",
-      "sha256": "6e9247a809df5b9603adcb7ba2b4710d9e7deeb4b3e345d74331a5b8021fab37",
-      "bytes": 3138
+      "sha256": "19b5f3c095ff340fe937fa45b16fbd697d9ca5687044f308f501b2a8c828299e",
+      "bytes": 5024
     },
     {
-      "path": "images/web/plates/0003.webp",
-      "sha256": "05d9f9a8676030a50f2d716d3744b2c9dd7cb43d10496d7892bf43ab1bba2c29",
-      "bytes": 3150
+      "path": "images/web/plates/0006.webp",
+      "sha256": "a1d393aa1437ad2074726a06f746474098cf543e083dfe03c371d3df1468fd7c",
+      "bytes": 5036
     },
     {
-      "path": "images/web/plates/0004.webp",
-      "sha256": "4c5d2eb8f947b767e41808c6d56e4a2fc06b76f682ad108284f8a84a5928e814",
-      "bytes": 3154
-    },
-    {
-      "path": "images/web/portraits/the-clockmaker.webp",
-      "sha256": "9f467ebc1216e0ce92ce4f77cafb1642018054cf985273aefcdedd886816dc44",
-      "bytes": 3144
+      "path": "images/web/portraits/wanderer.webp",
+      "sha256": "2cb1251d92e32d33ae0c2dd2590dfe34b189beedb05b03a87071d8df51f3e297",
+      "bytes": 3096
     },
     {
       "path": "meta.json",
-      "sha256": "acf746edfed88446b8c5a373eb253cc1d79d705331717d1238f48a9f5a28b1f7",
-      "bytes": 914
+      "sha256": "a881e16fd1a0b0fd5d28c6168e9986ef11f74592ee2ef2135c7e3cb124217e9a",
+      "bytes": 919
     },
     {
       "path": "pages/0001.json",
-      "sha256": "5c617dccaf93ef7fd509be36dfd1a89ef95f13e49c15c9490ceeae1aa1b19f0a",
-      "bytes": 3836
+      "sha256": "91e6bc56a8852ff64cb3253cbda93e2f1e0fbbffa23647ab4e8ddd63339a5859",
+      "bytes": 3398
     },
     {
       "path": "pages/0002.json",
-      "sha256": "71fc4b9881383bdc13b11b5748f180f21b247757c53e48498415585bee01f0f1",
-      "bytes": 3847
+      "sha256": "2c02b29be75eb97a0fb1f1e50f21de1f8b4ba77266338990c9a73de6d18fb817",
+      "bytes": 3396
     },
     {
       "path": "pages/0003.json",
-      "sha256": "0a194ed3d2979acdbb0fc148fb7cd04565247f2e060c8c1d3567ba26804e7d26",
-      "bytes": 2904
+      "sha256": "6b5c06cf34fb16a2dbc3816468262edaea5682359bf7e02cf6989208b3044a2f",
+      "bytes": 3398
     },
     {
       "path": "pages/0004.json",
-      "sha256": "8e91eb20ca781ad5ecc71c0c4ac35765d10b261e239e5be0c8186db10ed4964e",
-      "bytes": 3836
+      "sha256": "7b1905a0939967f1aac58ff30745eef9dfcafbdffcb01640619dbce1106e652b",
+      "bytes": 3397
     },
     {
       "path": "pages/0005.json",
-      "sha256": "f513235dd4c7a04ab7978c98e98ddbdd70682efea3bf9581de6ce9521ff3b9ce",
-      "bytes": 3847
+      "sha256": "46421dd973719bd1d0bbf1d4396d1b27283eca9a389a8536f093e1b4b20d82fc",
+      "bytes": 3398
     },
     {
       "path": "pages/0006.json",
-      "sha256": "ccd46db78f2989483b2647ec8a9ef7ab2c3b6fbb142ea77c8321ea5fe95ee4fe",
-      "bytes": 2904
+      "sha256": "44461434100714396c7b284085300c9005c61b1820b63392aba9a273f912d031",
+      "bytes": 1261
     },
     {
       "path": "prompts/0001.json",
-      "sha256": "18f01428d29ee04caa4015199f0026f42c69247ffe76b11f55f55a0e3fbf2e83",
-      "bytes": 895
+      "sha256": "357b1290b9f435246181958f9bb40b66176c40b68d5d600e209aef6606d2c75b",
+      "bytes": 1109
     },
     {
-      "path": "prompts/0003.json",
-      "sha256": "e6fcdb372182fa6026c6910cee626b3111839cfb16a199c5381d03851ba68a41",
-      "bytes": 871
-    },
-    {
-      "path": "prompts/0004.json",
-      "sha256": "9058cf3077e1218792b0c998bc6f060e8cc0d9868d1be72336dfddba59ee89f0",
-      "bytes": 871
+      "path": "prompts/0006.json",
+      "sha256": "c7002114270b4f4cdd523a77c4bde3cdaff432ce5d85c4ab6af7db9b1c57b9f7",
+      "bytes": 1109
     },
     {
       "path": "prompts/cover.json",
-      "sha256": "1916fa6e88990e6b67723a5272bb2efea1ec7c485d7891d1b1f3c636e578e34e",
-      "bytes": 888
+      "sha256": "102d58e44591d1e5078a134ee5d2b65baca346dfef40d0f00aaa038a100e32a6",
+      "bytes": 1124
     },
     {
-      "path": "prompts/portrait-the-clockmaker.json",
-      "sha256": "f7bcf1f12aa6f83aa56406c103f7a1cad3913d5004326f11bffa785bc2a8e144",
-      "bytes": 922
+      "path": "prompts/portrait-wanderer.json",
+      "sha256": "073b0c1af4cc18bc3d135bd7c7d9943361847dfad8a10e286d4fa7342a321c67",
+      "bytes": 996
     },
     {
       "path": "selection.json",
-      "sha256": "cadefe69b527bd743962334cbc06729e72fb1b73ce73c681ab68e01e5289b157",
-      "bytes": 635
+      "sha256": "696bb164ba6722268639604e6733c28e97153bdbc53724ebad5944e0d62b0eea",
+      "bytes": 473
     },
     {
       "path": "structure.json",
-      "sha256": "0eba5bc5818c3a138ffb6ad38c214fd989d48cd7b42098103ff26a46826639cc",
-      "bytes": 292
+      "sha256": "2b1b0779dbf4d7f5d4d7106290d8f18e1ec1f89aa0d24f73b87391ce57ca1db3",
+      "bytes": 211
     }
   ],
   "reader_required": [
@@ -163,5 +143,5 @@
     "images/web/**",
     "images/thumbs/**"
   ],
-  "total_bytes_reader": 41517
+  "total_bytes_reader": 41812
 }

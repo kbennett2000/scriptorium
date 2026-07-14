@@ -1,0 +1,19 @@
+{
+  "page_id": "portrait-wanderer",
+  "derived": {
+    "prompt": "19th-century engraved portrait plate, bust composition, fine crosshatching, monochrome ink, A traveller who walks the winter quay, a weathered solitary figure in a long grey coat, hood drawn up"
+  },
+  "edited_prompt": null,
+  "final_subject_prompt": "19th-century engraved portrait plate, bust composition, fine crosshatching, monochrome ink, A traveller who walks the winter quay, a weathered solitary figure in a long grey coat, hood drawn up",
+  "wrapped_prompt": "19th-century engraved portrait plate, bust composition, fine crosshatching, monochrome ink, A traveller who walks the winter quay, a weathered solitary figure in a long grey coat, hood drawn up",
+  "negative_prompt": "photo, color photograph, modern, text, watermark, signature, blurry",
+  "render": {
+    "at": "2026-07-13T00:00:00+00:00",
+    "params_echo": {
+      "seed": 1838118933,
+      "width": 1024,
+      "height": 1024
+    },
+    "attempts": 1
+  }
+}

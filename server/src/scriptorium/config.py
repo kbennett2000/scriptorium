@@ -54,6 +54,11 @@ class Config:
         return self.data_dir / "work"
 
     @property
+    def library_dir(self) -> Path:
+        """Published bundles — immutable + additive (``library/{book_id}/``, §3/§4.2)."""
+        return self.data_dir / "library"
+
+    @property
     def schemas_dir(self) -> Path:
         """Directory holding the JSON Schemas (shared/schemas)."""
         return self.shared_dir / "schemas"

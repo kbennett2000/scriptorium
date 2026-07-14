@@ -20,17 +20,17 @@ const MILESTONES: { state: JobStateName; label: string }[] = [
   { state: "selected", label: "Selected (P4)" },
   { state: "prompts_draft", label: "Prompts (P5)" },
   { state: "approved", label: "Approved (review gate)" },
-  { state: "rendering", label: "Rendered (P7)" },
-  { state: "published", label: "Published" },
+  { state: "rendered", label: "Rendered (P7)" },
+  { state: "published", label: "Published (P8)" },
 ];
 const CHAIN_ORDER: JobStateName[] = [
   "created", "ingested", "mentions_running", "mentions_done", "cast_running", "cast_done",
   "ledger_running", "ledger_done", "selected", "prompts_running", "prompts_draft", "in_review",
-  "approved", "rendering", "published",
+  "approved", "rendering", "rendered", "published",
 ];
 
 const REVIEW_STATES: JobStateName[] = ["prompts_draft", "in_review", "approved"];
-const POSTRENDER_STATES: JobStateName[] = ["rendering", "published"];
+const POSTRENDER_STATES: JobStateName[] = ["rendering", "rendered", "published"];
 
 function reached(current: JobStateName, milestone: JobStateName): boolean {
   const ci = CHAIN_ORDER.indexOf(current);

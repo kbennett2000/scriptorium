@@ -172,6 +172,21 @@ def _mark_rendered(cfg: Any, job: Job, page_id: str) -> None:
     _write_json(path, doc)
 
 
+async def render_to_spec(
+    client: ImagegenClient, wrapped: str, negative: str, spec: _AssetSpec, seed: int
+) -> None:
+    """The pure render step: txt2img → write archival PNG → idempotent WebP derivatives.
+
+    Shared by P7's :func:`render_plate` (work tree) and P8's post-publish regen (library tree,
+    ``-rN`` variants). It touches only the three files in ``spec`` — no prompt/selection
+    bookkeeping.
+    """
+    png = await client.txt2img(wrapped, negative, spec.width, spec.height, seed)
+    spec.src.parent.mkdir(parents=True, exist_ok=True)
+    spec.src.write_bytes(png)
+    make_derivatives(spec.src, spec.web, spec.thumb, web_max_width=spec.web_max)
+
+
 async def render_plate(
     cfg: Any, job: Job, plate_id: str, client: ImagegenClient, *, seed: int | None = None
 ) -> None:
@@ -188,10 +203,7 @@ async def render_plate(
     if seed is None:
         seed = _default_seed(job.book_id, plate_id)
 
-    png = await client.txt2img(wrapped, negative, spec.width, spec.height, seed)
-    spec.src.parent.mkdir(parents=True, exist_ok=True)
-    spec.src.write_bytes(png)
-    make_derivatives(spec.src, spec.web, spec.thumb, web_max_width=spec.web_max)
+    await render_to_spec(client, wrapped, negative, spec, seed)
 
     prev_attempts = int((doc.get("render") or {}).get("attempts", 0))
     doc["wrapped_prompt"] = wrapped

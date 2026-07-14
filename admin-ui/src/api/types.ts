@@ -25,6 +25,7 @@ export type JobStateName =
   | "in_review"
   | "approved"
   | "rendering"
+  | "rendered"
   | "published"
   | "waiting_gpu"
   | "paused"
@@ -62,6 +63,8 @@ export interface ReviewPayload {
   prompt_warnings: Record<string, string[]>;
   failed_units: FailedUnit[];
   beats: Record<string, string>;
+  // True while the plates are S9-stub placeholders (real render clears it) — gates the banner.
+  render_stub: boolean;
 }
 
 // GET /api/admin/gutendex?q= (one trimmed result).

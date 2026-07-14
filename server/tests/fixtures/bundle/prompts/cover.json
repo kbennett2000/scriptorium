@@ -1,21 +1,18 @@
 {
   "page_id": "cover",
   "derived": {
-    "prompt": "a silvered harbour under a cold sun, a single watchful figure",
-    "avoid": "modern dress, machinery",
-    "scene": "a silvered harbour under a cold sun, a single watchful figure"
+    "prompt": "19th-century steel engraving book illustration, fine crosshatching, monochrome ink, dramatic light, frontispiece for the book 'The Winter Quay' by A. Fixture: a lone figure on the empty quay, intricate linework, aged paper tone, high detail"
   },
   "edited_prompt": null,
-  "final_subject_prompt": "a silvered harbour under a cold sun, a single watchful figure",
-  "wrapped_prompt": "19th-century steel engraving book illustration, fine crosshatching, monochrome ink, dramatic light, a silvered harbour under a cold sun, a single watchful figure, intricate linework, aged paper tone, high detail",
-  "negative_prompt": "photo, color photograph, modern, text, watermark, signature, blurry, modern dress, machinery",
+  "final_subject_prompt": "19th-century steel engraving book illustration, fine crosshatching, monochrome ink, dramatic light, frontispiece for the book 'The Winter Quay' by A. Fixture: a lone figure on the empty quay, intricate linework, aged paper tone, high detail",
+  "wrapped_prompt": "19th-century steel engraving book illustration, fine crosshatching, monochrome ink, dramatic light, frontispiece for the book 'The Winter Quay' by A. Fixture: a lone figure on the empty quay, intricate linework, aged paper tone, high detail",
+  "negative_prompt": "photo, color photograph, modern, text, watermark, signature, blurry",
   "render": {
-    "at": "2026-07-13T00:00:00Z",
+    "at": "2026-07-13T00:00:00+00:00",
     "params_echo": {
-      "seed": 1234,
+      "seed": 1661943315,
       "width": 832,
-      "height": 1216,
-      "steps": 30
+      "height": 1216
     },
     "attempts": 1
   }
