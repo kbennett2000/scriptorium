@@ -1,0 +1,24 @@
+{
+  "output": {
+    "location": "the Time Traveller's laboratory, Richmond",
+    "time_of_day": "evening",
+    "atmosphere": "cluttered, charged with anticipation",
+    "present": [
+      "the Time Traveller"
+    ],
+    "scene_changed": false,
+    "visual_salience": 0.71,
+    "best_visual_beat": "The full-sized machine stands half-finished among tools and brass, ivory and quartz glinting under the lamp.",
+    "carry_notes": "The Traveller shows the full-sized machine in his laboratory and prepares to depart alone."
+  },
+  "meta": {
+    "transform": "scene-update",
+    "transform_version": "0.1.0",
+    "model": "qwen3:8b",
+    "input_tokens_est": 780,
+    "truncated": false,
+    "attempts": 1,
+    "latency_ms": 4050,
+    "queued_ms": 0
+  }
+}

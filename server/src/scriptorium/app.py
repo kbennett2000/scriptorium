@@ -20,13 +20,22 @@ from fastapi import FastAPI
 from .bake.api import router as admin_router
 from .bake.phases.p1_mentions import CastMentions, MentionsEnter
 from .bake.phases.p2_cast import CastCanonicalize, CastReduce
+from .bake.phases.p3_ledger import LedgerEnter, LedgerScenes
 from .bake.runner import Runner
 from .config import Config, load_config
 
-# The bake pipeline, keyed by ``from_state`` inside the runner. S5 registers P1 (mentions)
-# and P2 (reduce + canonicalize); later cycles append P3…P7. ``MentionsEnter`` / ``CastReduce``
-# are the CPU steps that move a job onto the ``*_running`` GPU states P1/P2b sit on.
-BAKE_PIPELINE = [MentionsEnter(), CastMentions(), CastReduce(), CastCanonicalize()]
+# The bake pipeline, keyed by ``from_state`` inside the runner. S5 registered P1 (mentions)
+# and P2 (reduce + canonicalize); S6 appends P3 (scene ledger). ``MentionsEnter`` /
+# ``CastReduce`` / ``LedgerEnter`` are the CPU steps that move a job onto the ``*_running`` GPU
+# states P1/P2b/P3 sit on. Later cycles append P4…P7.
+BAKE_PIPELINE = [
+    MentionsEnter(),
+    CastMentions(),
+    CastReduce(),
+    CastCanonicalize(),
+    LedgerEnter(),
+    LedgerScenes(),
+]
 
 _PROBE_TIMEOUT_S = 2.0
 
@@ -37,8 +46,8 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
     Exactly one :class:`Runner` task runs — this is what makes the single-worker /
     GPU-exclusivity guarantee structural. The pipeline runs P0 (inline in the admin
-    endpoint) then P1→P2 here; a started job advances to ``cast_done`` and rests there
-    until P3 lands. Plain ``TestClient(app)`` (no context manager) does not trigger
+    endpoint) then P1→P2→P3 here; a started job advances to ``ledger_done`` and rests there
+    until P4 lands. Plain ``TestClient(app)`` (no context manager) does not trigger
     lifespan, so endpoint tests never spin the worker.
     """
     runner = Runner(load_config(), pipeline=BAKE_PIPELINE)

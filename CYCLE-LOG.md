@@ -325,3 +325,63 @@ summary on the next live checkpoint.
 cast.json; resume skips done pages; P1 503 → waiting_gpu → resume; P2 503 → waiting_gpu on
 `cast_running`; canonicalize 422 → `failed_units` + null major, phase completes; mentions 400
 → job `failed`), `test_job_states` updated for `cast_running`. reader/admin-ui untouched.
+
+## S6 — P3 scene ledger (strictly sequential) (2026-07-13) — shipped
+
+The single sequential `scene-update` pass that produces both the per-page continuity ledger
+and the selection scores P4 will consume. `bake/phases/p3_ledger.py` fills the
+`cast_done → ledger_running → ledger_done` segment, registered in `app.py`'s pipeline after
+P2. **No state-machine change:** `ledger_running`/`ledger_done` were already in the §7.3 chain
+and `ledger_running` was already in `GPU_STATES`, so all edges were legal out of the box — S6
+logs **no DESIGN deviation**.
+
+**Phase table:**
+
+| Phase (class) | from → to | is_gpu | units | effect |
+|---|---|---|---|---|
+| `LedgerEnter` | `cast_done → ledger_running` | no | — (zero) | the CPU "enter-running" claim (a GPU phase's `from_state` must be a GPU state) — mirrors `MentionsEnter`/`CastReduce` |
+| `LedgerScenes` | `ledger_running → ledger_done` | **yes** | pages in id order **+ trailing `merge` pseudo-unit** | per page → `ledgers/{id}.json` (verbatim `scene-update` output); `merge` → writes `ledger` into every `pages/*.json` with the gap rule |
+
+**Threading semantics (the load-bearing behaviour, stated explicitly):**
+- A page's `prior_ledger` is the **last *successful* stored ledger** before it (the greatest
+  earlier page-id with a `ledgers/*.json` artifact), else `null` on page 1. Contiguity resume
+  falls out for free: the runner iterates units in page order and skips done ones, so a restart
+  begins at the first missing ledger and threads from its stored predecessor.
+- **Generation never threads from an inherited gap ledger.** If page 3 permanently fails, page 4
+  is *generated* threading from page 2 (the last success); page 3's *inherited* ledger exists
+  only in the merged `pages/*.json` (provenance), produced by the merge unit.
+
+**Gap rule — applied at phase end, not unit time.** `units()` appends a trailing `merge`
+pseudo-unit; the runner reaches it only after every page unit in the pass has succeeded or
+ladder-failed, and parks on `waiting_gpu` *before* it if a page 503s. So the gap commit only
+happens when the phase genuinely completes — a late retry on an interrupted pass can still fill
+the real ledger first. `merge` (pure I/O) iterates pages carrying `prev`: a page with a stored
+ledger uses it verbatim; a permanently-failed page inherits a copy of `prev` with
+`carry_notes += " [ledger gap]"` (capped at the §7.4 200-char limit); a leading gap gets a
+neutral ledger. Each page is `schemas.validate("page", …)`-checked before write. **Why a
+trailing pseudo-unit:** the S4 runner has no phase-end hook and is outside the S6 scope fence
+(may not be modified), so a trailing unit is the only in-scope way to run a post-units merge.
+
+**`scene-update` options:** `prior_ledger` (as above), `cast_names` = canonical `name`s from
+`cast.json` (cap 40), optional `era` from `bake_config`. Failure taxonomy is unchanged (via
+`TtsClient`): 503/connection → `waiting_gpu` on `ledger_running`; 422 → `failed_units` (page
+left ledger-less, filled by the gap rule); 400/404/413 → job `failed`.
+
+**Fixtures:** `server/tests/fixtures/tts/scene-update/{0001..0006}.json` — **hand-written**
+(provenance in the fixtures README), full `{output, meta}` envelopes forming one continuous,
+threadable scene run (smoking-room → laboratory → time-jump → 802,701 AD → river → sphinx at
+dusk), with `scene_changed: true` on `0004`. `tools/capture_tts_fixtures.py` extended to thread
+`scene-update` over 6 pages so an on-LAN run overwrites them.
+
+**gpu-marked live test** (`test_ledger_live.py`, `-m gpu`, skipped offline): threads the first 8
+pg35 pages against real TTS and prints a per-page `changed/salience/location` summary. **Not yet
+run** — TTS unreachable from the authoring box; run on-LAN with `TTS_URL` set and paste the
+summary at the next live checkpoint.
+
+**Verification:** `uv run ruff check .` (+ `tools/`) → clean. `uv run pytest` → **142 passed,
+3 deselected** (network + the two `-m gpu` live tests). New `test_phases_ledger.py`: threading
+(`prior_ledger` of call N == output N−1, page 1 null); merge writes schema-valid page ledgers
+(incl. the `scene_changed:true` round-trip); contiguity resume (skips done, threads from stored
+predecessor, ≤1 lost); gap rule (page 3 422 → inherited page-2 ledger + annotation, pages 4–6
+real, page 4 generated from page 2); 503 → `waiting_gpu` on `ledger_running` → resume.
+reader/admin-ui untouched.
