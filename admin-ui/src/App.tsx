@@ -1,14 +1,32 @@
-import type { Styles } from "@scriptorium/shared";
+import "./index.css";
 
-// S1 scaffold only. The real admin workbench (New Book wizard, book detail, the
-// review gate) arrives in cycle S9. This stub proves the build, the shared-types
-// wiring, and lint/typecheck are green.
+import { BooksList } from "./features/books/BooksList";
+import { NewBookWizard } from "./features/books/NewBookWizard";
+import { BookDetail } from "./features/detail/BookDetail";
+import { PostRender } from "./features/postrender/PostRender";
+import { ReviewGate } from "./features/review/ReviewGate";
+import { navigate, useRoute } from "./routes";
+
+// The admin workbench shell: a top bar + hash-routed screen. Deliberately flat — one screen
+// component per §11.3 destination, wired to the real /api/admin endpoints via src/api.
 export function App() {
-  const styleCount: Styles["styles"] = [];
+  const route = useRoute();
   return (
-    <main>
-      <h1>Scriptorium Admin</h1>
-      <p>Admin scaffold — {styleCount.length} styles loaded.</p>
-    </main>
+    <>
+      <header className="topbar">
+        <h1>Scriptorium Admin</h1>
+        <nav>
+          <a onClick={() => navigate({ name: "list" })}>Books</a>
+          <a onClick={() => navigate({ name: "wizard" })}>New Book</a>
+        </nav>
+      </header>
+      <main>
+        {route.name === "list" && <BooksList />}
+        {route.name === "wizard" && <NewBookWizard />}
+        {route.name === "detail" && <BookDetail id={route.id} />}
+        {route.name === "review" && <ReviewGate id={route.id} />}
+        {route.name === "postrender" && <PostRender id={route.id} />}
+      </main>
+    </>
   );
 }

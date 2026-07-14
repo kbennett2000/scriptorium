@@ -1,8 +1,18 @@
 # Handoff
 
 ## Current state
-- **S9a complete** (PR open, awaiting human merge). The review-gate **server** (S9 was split;
-  S9a = server, **S9b = admin UI is next**). `bake/review_api.py` (its own admin router):
+- **S9b complete** (PR open, awaiting human merge). The review-gate **admin UI** — `admin-ui/`
+  grown from the blank scaffold into the four §11.3 screens (Books list; New Book wizard; Book
+  detail; Review gate; feature-flagged Post-render), wired to the S9a endpoints. **No server
+  changes** — every endpoint already existed. Tooling: **Vitest+RTL+jsdom** (offline smoke test,
+  stubbed fetch), a Vite dev `server.proxy` → `:8720`, a hand-rolled hash router, a typed fetch
+  client + hand-written API types. Plus `tools/seed_review_book.py` (dev helper: seeds a book at
+  `prompts_draft` from the fixture bundle for the no-GPU acceptance walk). Chapter editor is minimal
+  (no GET-chapters endpoint — see NOTES From S9b); style swatches are placeholder SVG (real samples
+  at M1); Regen disabled (S10). **Acceptance box #1 is human-pending** — the real-browser walk; run
+  steps below. Frontend-design skill absent again.
+- **S9a complete** (merged). The review-gate **server** (S9 was split; S9a = server, S9b = UI).
+  `bake/review_api.py` (its own admin router):
   `GET /gutendex` search proxy (degrades 502, never 500), `GET /styles`, `GET …/review`
   (selection + all prompts incl. cover/portrait pseudo-plates + cast + `prompt_warnings` +
   `failed_units` + per-page beats), `PUT …/review/prompt/{id}` (persists `edited_prompt`,
@@ -63,21 +73,27 @@
 - **S3 / S2 / S1 complete** (merged): paginator + fixture bundle; ingestion adapters;
   monorepo skeleton + schemas + generated TS types + `/health`.
 - Server: `uv run pytest` → **214 passed, 4 deselected** (network + three gpu-live);
-  `uv run ruff check .` (server + `tools/`) clean.
+  `uv run ruff check .` (server + `tools/`) clean. admin-ui: `npm run test` (Vitest) → **1 passed**
+  (the offline smoke); eslint + tsc clean; `npm run build` OK.
+
+## S9 acceptance box #1 — human-pending (the real-browser walk)
+Both run paths (per the S9b plan decision "Both paths"):
+- **No-GPU (works on this box):** `cd server && uv run python ../tools/seed_review_book.py`
+  (seeds `usr-seedreview01` at `prompts_draft`), then in two shells `just server-dev` (runner on)
+  and `just admin-dev`; open `http://localhost:5173/admin/`, click the seeded book → **Open Review**
+  → edit a prompt, toggle a plate, **Approve** → the P7 stub renders it to `rendering` → open
+  **Post-render** to see the placeholder thumbs. Capture a screenshot/recording.
+- **Full LAN (TTS up):** `just server-dev` + `just admin-dev` → **New Book** wizard → create →
+  Start → watch P1–P5 progress → **Open Review** → Approve → stub render.
 
 ## Next up
-- **S9b** — the admin UI (DESIGN §11.3), fully unblocked by S9a's endpoints. Screens: Books list;
-  New Book wizard (`GET /gutendex` / paste / upload → metadata + era → style picker reading
-  `GET /styles` → density → portraits → `POST /books`); Book detail (state/warnings/failed_units,
-  pre-P1 chapter editor, job controls); Review (plate table + inline-editable prompts + include
-  toggles + editable cast panel + cover/portrait pseudo-plates + Approve w/ count confirm, showing
-  `prompt_warnings`); feature-flagged Post-render view (stub thumbs via `…/plate-image`, disabled
-  Regen). Tooling: **Vitest + RTL + jsdom, stubbed `fetch`** (Playwright deferred); add a Vite dev
-  `server.proxy` → `:8720`; hand-write API-payload types. Acceptance box #1 (full browser run +
-  screenshot/recording note) completes here. Full spec at the tail of the S9a plan file + NOTES
-  "From S9a".
+- **S10** — the real render pipeline (P7 `p7_render.py` replacing the stub, TTS unload, §10
+  wrapped/negative prompts, WebP derivatives, publish P8) + the post-publish flows (regen endpoint,
+  reselect revision bump). When it lands, wire `PostRender.tsx`'s Regen button + drop the disabled
+  state, and gate the placeholder banner on `job.render_stub`. See NOTES "From S9b"/"From S9a".
 - **R1** — reader shell/shelf/checkout, unblocked since S3 (build against
-  `server/tests/fixtures/bundle/`). **S12** (sync API) unblocked from S1.
+  `server/tests/fixtures/bundle/`; the reader can copy admin-ui's test-runner/fetch-client shape but
+  keep network calls fenced to `sync/`+`shelf/`). **S12** (sync API) unblocked from S1.
 
 ## Open questions / blocked
 - **Run the live checkpoint when convenient:** on the LAN with TTS T5/T6 up, run
