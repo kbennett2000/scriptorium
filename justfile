@@ -41,6 +41,11 @@ server-test:
 admin-test:
     cd admin-ui && npm run test
 
+# Run the reader Playwright acceptance (R3 two-device sync). Spins up a fresh FastAPI server + the
+# Vite dev server (fixture mode, proxied) itself; needs Chromium (npx playwright install chromium).
+reader-e2e:
+    cd reader && npm run test:e2e
+
 # Run every test suite.
 test-all: server-test admin-test
 

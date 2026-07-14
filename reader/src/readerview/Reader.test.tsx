@@ -125,7 +125,7 @@ describe("Reader", () => {
     await waitFor(() => expect(screen.getByText("2 / 2")).toBeInTheDocument());
     // Give the post-render persist effect a tick to flush to storage.
     await waitFor(async () =>
-      expect(await storage.exists(`positions/${BOOK}.json`)).toBe(true),
+      expect(await storage.exists(`positions/default/${BOOK}.json`)).toBe(true),
     );
     unmount();
 

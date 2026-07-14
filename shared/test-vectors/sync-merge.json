@@ -1,0 +1,232 @@
+{
+  "description": "Shared anti-drift vectors for the server-authoritative sync merge (DESIGN §12). The SAME cases drive server/tests/test_sync_vectors.py (over scriptorium.sync.merge) and reader/src/sync/merge.test.ts (over the TS port in reader/src/sync/merge.ts). Each case is run in BOTH orders — merge(a,b) and merge(b,a) — and must equal `expected` (commutativity). If the port drifts from merge.py, one of the two suites goes red. The 'annotations-equal-modified-canonical-tiebreak' case pins the ensure_ascii=False canonical-JSON tiebreak: a port that escapes non-ASCII (café -> caf\\u00e9) would pick the wrong winner.",
+  "annotations": [
+    {
+      "name": "union-disjoint",
+      "a": {
+        "book_id": "usr-ce8f5ebd29d0",
+        "user_id": "kris",
+        "annotations": [
+          { "id": "id-1", "type": "highlight", "page_id": "0001", "anchor": { "start": 0, "end": 5 }, "color": "yellow", "created": "2026-07-14T10:00:00Z", "modified": "2026-07-14T10:00:00Z", "deleted": false }
+        ]
+      },
+      "b": {
+        "book_id": "usr-ce8f5ebd29d0",
+        "user_id": "kris",
+        "annotations": [
+          { "id": "id-2", "type": "note", "page_id": "0002", "anchor": { "start": 3, "end": 9 }, "text": "hello", "color": "blue", "created": "2026-07-14T10:01:00Z", "modified": "2026-07-14T10:01:00Z", "deleted": false }
+        ]
+      },
+      "expected": {
+        "book_id": "usr-ce8f5ebd29d0",
+        "user_id": "kris",
+        "annotations": [
+          { "id": "id-1", "type": "highlight", "page_id": "0001", "anchor": { "start": 0, "end": 5 }, "color": "yellow", "created": "2026-07-14T10:00:00Z", "modified": "2026-07-14T10:00:00Z", "deleted": false },
+          { "id": "id-2", "type": "note", "page_id": "0002", "anchor": { "start": 3, "end": 9 }, "text": "hello", "color": "blue", "created": "2026-07-14T10:01:00Z", "modified": "2026-07-14T10:01:00Z", "deleted": false }
+        ]
+      }
+    },
+    {
+      "name": "lww-by-modified-later-wins",
+      "a": {
+        "book_id": "usr-ce8f5ebd29d0",
+        "user_id": "kris",
+        "annotations": [
+          { "id": "id-1", "type": "highlight", "page_id": "0001", "anchor": { "start": 0, "end": 5 }, "color": "yellow", "created": "2026-07-14T10:00:00Z", "modified": "2026-07-14T10:00:00Z", "deleted": false }
+        ]
+      },
+      "b": {
+        "book_id": "usr-ce8f5ebd29d0",
+        "user_id": "kris",
+        "annotations": [
+          { "id": "id-1", "type": "highlight", "page_id": "0001", "anchor": { "start": 0, "end": 5 }, "color": "blue", "created": "2026-07-14T10:00:00Z", "modified": "2026-07-14T11:00:00Z", "deleted": false }
+        ]
+      },
+      "expected": {
+        "book_id": "usr-ce8f5ebd29d0",
+        "user_id": "kris",
+        "annotations": [
+          { "id": "id-1", "type": "highlight", "page_id": "0001", "anchor": { "start": 0, "end": 5 }, "color": "blue", "created": "2026-07-14T10:00:00Z", "modified": "2026-07-14T11:00:00Z", "deleted": false }
+        ]
+      }
+    },
+    {
+      "name": "later-tombstone-beats-earlier-edit",
+      "a": {
+        "book_id": "usr-ce8f5ebd29d0",
+        "user_id": "kris",
+        "annotations": [
+          { "id": "id-1", "type": "highlight", "page_id": "0001", "anchor": { "start": 0, "end": 5 }, "color": "green", "created": "2026-07-14T10:00:00Z", "modified": "2026-07-14T10:00:00Z", "deleted": false }
+        ]
+      },
+      "b": {
+        "book_id": "usr-ce8f5ebd29d0",
+        "user_id": "kris",
+        "annotations": [
+          { "id": "id-1", "type": "highlight", "page_id": "0001", "anchor": { "start": 0, "end": 5 }, "color": "green", "created": "2026-07-14T10:00:00Z", "modified": "2026-07-14T12:00:00Z", "deleted": true }
+        ]
+      },
+      "expected": {
+        "book_id": "usr-ce8f5ebd29d0",
+        "user_id": "kris",
+        "annotations": [
+          { "id": "id-1", "type": "highlight", "page_id": "0001", "anchor": { "start": 0, "end": 5 }, "color": "green", "created": "2026-07-14T10:00:00Z", "modified": "2026-07-14T12:00:00Z", "deleted": true }
+        ]
+      }
+    },
+    {
+      "name": "later-edit-beats-earlier-tombstone-deletion-loses",
+      "a": {
+        "book_id": "usr-ce8f5ebd29d0",
+        "user_id": "kris",
+        "annotations": [
+          { "id": "id-1", "type": "highlight", "page_id": "0001", "anchor": { "start": 0, "end": 5 }, "color": "pink", "created": "2026-07-14T10:00:00Z", "modified": "2026-07-14T10:30:00Z", "deleted": true }
+        ]
+      },
+      "b": {
+        "book_id": "usr-ce8f5ebd29d0",
+        "user_id": "kris",
+        "annotations": [
+          { "id": "id-1", "type": "highlight", "page_id": "0001", "anchor": { "start": 0, "end": 5 }, "color": "pink", "created": "2026-07-14T10:00:00Z", "modified": "2026-07-14T11:00:00Z", "deleted": false }
+        ]
+      },
+      "expected": {
+        "book_id": "usr-ce8f5ebd29d0",
+        "user_id": "kris",
+        "annotations": [
+          { "id": "id-1", "type": "highlight", "page_id": "0001", "anchor": { "start": 0, "end": 5 }, "color": "pink", "created": "2026-07-14T10:00:00Z", "modified": "2026-07-14T11:00:00Z", "deleted": false }
+        ]
+      }
+    },
+    {
+      "name": "equal-modified-canonical-tiebreak-nonascii",
+      "a": {
+        "book_id": "usr-ce8f5ebd29d0",
+        "user_id": "kris",
+        "annotations": [
+          { "id": "id-1", "type": "note", "page_id": "0001", "anchor": { "start": 0, "end": 5 }, "text": "café", "color": "yellow", "created": "2026-07-14T10:00:00Z", "modified": "2026-07-14T10:00:00Z", "deleted": false }
+        ]
+      },
+      "b": {
+        "book_id": "usr-ce8f5ebd29d0",
+        "user_id": "kris",
+        "annotations": [
+          { "id": "id-1", "type": "note", "page_id": "0001", "anchor": { "start": 0, "end": 5 }, "text": "cafz", "color": "yellow", "created": "2026-07-14T10:00:00Z", "modified": "2026-07-14T10:00:00Z", "deleted": false }
+        ]
+      },
+      "expected": {
+        "book_id": "usr-ce8f5ebd29d0",
+        "user_id": "kris",
+        "annotations": [
+          { "id": "id-1", "type": "note", "page_id": "0001", "anchor": { "start": 0, "end": 5 }, "text": "café", "color": "yellow", "created": "2026-07-14T10:00:00Z", "modified": "2026-07-14T10:00:00Z", "deleted": false }
+        ]
+      }
+    },
+    {
+      "name": "idempotent-dedup-and-sort-by-id",
+      "a": {
+        "book_id": "usr-ce8f5ebd29d0",
+        "user_id": "kris",
+        "annotations": [
+          { "id": "id-2", "type": "note", "page_id": "0002", "anchor": { "start": 3, "end": 9 }, "text": "hello", "color": "blue", "created": "2026-07-14T10:01:00Z", "modified": "2026-07-14T10:01:00Z", "deleted": false },
+          { "id": "id-1", "type": "highlight", "page_id": "0001", "anchor": { "start": 0, "end": 5 }, "color": "yellow", "created": "2026-07-14T10:00:00Z", "modified": "2026-07-14T10:00:00Z", "deleted": false }
+        ]
+      },
+      "b": {
+        "book_id": "usr-ce8f5ebd29d0",
+        "user_id": "kris",
+        "annotations": [
+          { "id": "id-1", "type": "highlight", "page_id": "0001", "anchor": { "start": 0, "end": 5 }, "color": "yellow", "created": "2026-07-14T10:00:00Z", "modified": "2026-07-14T10:00:00Z", "deleted": false }
+        ]
+      },
+      "expected": {
+        "book_id": "usr-ce8f5ebd29d0",
+        "user_id": "kris",
+        "annotations": [
+          { "id": "id-1", "type": "highlight", "page_id": "0001", "anchor": { "start": 0, "end": 5 }, "color": "yellow", "created": "2026-07-14T10:00:00Z", "modified": "2026-07-14T10:00:00Z", "deleted": false },
+          { "id": "id-2", "type": "note", "page_id": "0002", "anchor": { "start": 3, "end": 9 }, "text": "hello", "color": "blue", "created": "2026-07-14T10:01:00Z", "modified": "2026-07-14T10:01:00Z", "deleted": false }
+        ]
+      }
+    },
+    {
+      "name": "identity-falls-back-to-b-when-a-empty",
+      "a": { "book_id": "", "user_id": "", "annotations": [] },
+      "b": {
+        "book_id": "usr-ce8f5ebd29d0",
+        "user_id": "kris",
+        "annotations": [
+          { "id": "id-1", "type": "bookmark", "page_id": "0003", "anchor": { "start": 0, "end": 0 }, "created": "2026-07-14T10:00:00Z", "modified": "2026-07-14T10:00:00Z", "deleted": false }
+        ]
+      },
+      "expected": {
+        "book_id": "usr-ce8f5ebd29d0",
+        "user_id": "kris",
+        "annotations": [
+          { "id": "id-1", "type": "bookmark", "page_id": "0003", "anchor": { "start": 0, "end": 0 }, "created": "2026-07-14T10:00:00Z", "modified": "2026-07-14T10:00:00Z", "deleted": false }
+        ]
+      }
+    }
+  ],
+  "positions": [
+    {
+      "name": "furthest-ignores-time-current-is-lww",
+      "a": {
+        "furthest": { "page_seq": 5, "char": 0, "modified": "2026-07-14T10:00:00Z" },
+        "current": { "page_seq": 5, "char": 0, "modified": "2026-07-14T10:00:00Z", "device": "dev-a" }
+      },
+      "b": {
+        "furthest": { "page_seq": 3, "char": 0, "modified": "2026-07-14T11:00:00Z" },
+        "current": { "page_seq": 3, "char": 0, "modified": "2026-07-14T11:00:00Z", "device": "dev-b" }
+      },
+      "expected": {
+        "furthest": { "page_seq": 5, "char": 0, "modified": "2026-07-14T10:00:00Z" },
+        "current": { "page_seq": 3, "char": 0, "modified": "2026-07-14T11:00:00Z", "device": "dev-b" }
+      }
+    },
+    {
+      "name": "furthest-char-tiebreak-same-page",
+      "a": {
+        "furthest": { "page_seq": 2, "char": 100, "modified": "2026-07-14T10:00:00Z" },
+        "current": { "page_seq": 2, "char": 100, "modified": "2026-07-14T10:00:00Z", "device": "dev-a" }
+      },
+      "b": {
+        "furthest": { "page_seq": 2, "char": 50, "modified": "2026-07-14T11:00:00Z" },
+        "current": { "page_seq": 2, "char": 50, "modified": "2026-07-14T09:00:00Z", "device": "dev-b" }
+      },
+      "expected": {
+        "furthest": { "page_seq": 2, "char": 100, "modified": "2026-07-14T10:00:00Z" },
+        "current": { "page_seq": 2, "char": 100, "modified": "2026-07-14T10:00:00Z", "device": "dev-a" }
+      }
+    },
+    {
+      "name": "current-equal-timestamp-device-tiebreak",
+      "a": {
+        "furthest": { "page_seq": 1, "char": 0, "modified": "2026-07-14T10:00:00Z" },
+        "current": { "page_seq": 1, "char": 0, "modified": "2026-07-14T10:00:00Z", "device": "dev-a" }
+      },
+      "b": {
+        "furthest": { "page_seq": 1, "char": 0, "modified": "2026-07-14T10:00:00Z" },
+        "current": { "page_seq": 1, "char": 0, "modified": "2026-07-14T10:00:00Z", "device": "dev-b" }
+      },
+      "expected": {
+        "furthest": { "page_seq": 1, "char": 0, "modified": "2026-07-14T10:00:00Z" },
+        "current": { "page_seq": 1, "char": 0, "modified": "2026-07-14T10:00:00Z", "device": "dev-b" }
+      }
+    },
+    {
+      "name": "current-missing-device-defaults-empty",
+      "a": {
+        "furthest": { "page_seq": 4, "char": 0, "modified": "2026-07-14T10:00:00Z" },
+        "current": { "page_seq": 4, "char": 0, "modified": "2026-07-14T10:00:00Z" }
+      },
+      "b": {
+        "furthest": { "page_seq": 4, "char": 0, "modified": "2026-07-14T10:00:00Z" },
+        "current": { "page_seq": 4, "char": 0, "modified": "2026-07-14T10:00:00Z", "device": "dev-b" }
+      },
+      "expected": {
+        "furthest": { "page_seq": 4, "char": 0, "modified": "2026-07-14T10:00:00Z" },
+        "current": { "page_seq": 4, "char": 0, "modified": "2026-07-14T10:00:00Z", "device": "dev-b" }
+      }
+    }
+  ]
+}
