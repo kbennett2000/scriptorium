@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
-import type { Annotations, Page as PageDoc, Selection, Structure } from "@scriptorium/shared";
+import type { Annotations, Page as PageDoc, Positions, Selection, Structure } from "@scriptorium/shared";
 
 import {
   AnnotationsPanel,
+  DEV_USER_ID,
   NoteSheet,
   SelectionBar,
   createHighlight,
@@ -21,6 +22,7 @@ import {
   type Span,
 } from "../annotations";
 import type { Storage } from "../shell";
+import { SYNC_EVENT, SyncStatusBadge, type SyncStatus } from "../sync";
 import type { BundleReader } from "./BundleReader";
 import { Lightbox } from "./Lightbox";
 import { edgeTapAction } from "./nav";
@@ -53,16 +55,22 @@ export function Reader({
   reader,
   storage,
   bookId,
+  user = DEV_USER_ID,
+  syncStatus,
   onExit,
 }: {
   reader: BundleReader;
   storage: Storage;
   bookId: string;
+  user?: string;
+  syncStatus?: SyncStatus;
   onExit: () => void;
 }) {
   const [structure, setStructure] = useState<Structure | null>(null);
   const [selection, setSelection] = useState<Selection | null>(null);
   const [annDoc, setAnnDoc] = useState<Annotations | null>(null);
+  const [savedPos, setSavedPos] = useState<Positions | null>(null);
+  const [chipDismissed, setChipDismissed] = useState(false);
   const [index, setIndex] = useState(0);
   const [pageDoc, setPageDoc] = useState<PageDoc | null>(null);
   const [lightboxSrc, setLightboxSrc] = useState<string | null>(null);
@@ -71,7 +79,7 @@ export function Reader({
   // R2 annotation UI state.
   const [pendingSel, setPendingSel] = useState<{
     anchor: Anchor;
-    rect: { top: number; left: number; width: number };
+    rect: { top: number; bottom: number; left: number; width: number };
     text: string;
   } | null>(null);
   const [noteTarget, setNoteTarget] = useState<NoteTarget | null>(null);
@@ -133,12 +141,13 @@ export function Reader({
           reader.readJson<Selection>("selection.json"),
         ]);
         deviceRef.current = await deviceId(storage);
-        const saved = await readPosition(storage, bookId);
-        const anns = await readAnnotations(storage, bookId);
+        const saved = await readPosition(storage, user, bookId);
+        const anns = await readAnnotations(storage, bookId, user);
         if (!live) return;
         setStructure(st);
         setSelection(sel);
         setAnnDoc(anns);
+        setSavedPos(saved);
         if (saved) {
           // page_seq is 1-based book-wide reading order, contiguous — so index = seq - 1 (clamped).
           const order = st.chapters.flatMap((c) => c.page_ids);
@@ -152,7 +161,25 @@ export function Reader({
     return () => {
       live = false;
     };
-  }, [reader, storage, bookId]);
+  }, [reader, storage, bookId, user]);
+
+  // After a successful sync, re-read the merged annotations + position so another device's edits (and
+  // an advanced `furthest`) appear live without leaving the page. Read-only — never moves the reader.
+  useEffect(() => {
+    const onSynced = (e: Event) => {
+      if ((e as CustomEvent).detail?.book !== bookId) return;
+      void (async () => {
+        const [anns, pos] = await Promise.all([
+          readAnnotations(storage, bookId, user),
+          readPosition(storage, user, bookId),
+        ]);
+        setAnnDoc(anns);
+        if (pos) setSavedPos(pos);
+      })();
+    };
+    window.addEventListener(SYNC_EVENT, onSynced);
+    return () => window.removeEventListener(SYNC_EVENT, onSynced);
+  }, [storage, bookId, user]);
 
   // Release the reader's object URLs (and any pending flash timer) when the surface unmounts.
   useEffect(() => () => reader.dispose(), [reader]);
@@ -192,9 +219,9 @@ export function Reader({
   const persist = useCallback(
     async (char: number) => {
       if (!pageDoc) return;
-      await writePosition(storage, bookId, { page_seq: pageDoc.seq, char }, deviceRef.current);
+      await writePosition(storage, user, bookId, { page_seq: pageDoc.seq, char }, deviceRef.current);
     },
-    [storage, bookId, pageDoc],
+    [storage, user, bookId, pageDoc],
   );
 
   const persistScroll = useMemo(
@@ -306,8 +333,12 @@ export function Reader({
     const r =
       typeof range.getBoundingClientRect === "function"
         ? range.getBoundingClientRect()
-        : { top: 0, left: 0, width: 0 };
-    setPendingSel({ anchor, rect: { top: r.top, left: r.left, width: r.width }, text: range.toString() });
+        : { top: 0, bottom: 0, left: 0, width: 0 };
+    setPendingSel({
+      anchor,
+      rect: { top: r.top, bottom: r.bottom, left: r.left, width: r.width },
+      text: range.toString(),
+    });
   }, [pageDoc]);
 
   useEffect(() => {
@@ -343,15 +374,17 @@ export function Reader({
   const addHighlight = useCallback(
     async (color: HighlightColor) => {
       if (!pendingSel || !currentId) return;
-      const doc = await createHighlight(storage, bookId, {
-        page_id: currentId,
-        anchor: pendingSel.anchor,
-        color,
-      });
+      const doc = await createHighlight(
+        storage,
+        bookId,
+        { page_id: currentId, anchor: pendingSel.anchor, color },
+        undefined,
+        user,
+      );
       setAnnDoc(doc);
       clearSelection();
     },
-    [pendingSel, currentId, storage, bookId, clearSelection],
+    [pendingSel, currentId, storage, bookId, user, clearSelection],
   );
 
   const startNoteFromSelection = useCallback(() => {
@@ -371,17 +404,23 @@ export function Reader({
       if (!noteTarget || !currentId) return;
       const doc =
         noteTarget.mode === "create"
-          ? await createNote(storage, bookId, {
-              page_id: currentId,
-              anchor: noteTarget.anchor,
-              color: noteTarget.color,
-              text,
-            })
-          : await updateAnnotation(storage, bookId, noteTarget.id, { text });
+          ? await createNote(
+              storage,
+              bookId,
+              {
+                page_id: currentId,
+                anchor: noteTarget.anchor,
+                color: noteTarget.color,
+                text,
+              },
+              undefined,
+              user,
+            )
+          : await updateAnnotation(storage, bookId, noteTarget.id, { text }, undefined, user);
       setAnnDoc(doc);
       setNoteTarget(null);
     },
-    [noteTarget, currentId, storage, bookId],
+    [noteTarget, currentId, storage, bookId, user],
   );
 
   const onHighlightClick = useCallback((id: string, rect: DOMRect) => {
@@ -394,11 +433,11 @@ export function Reader({
   const recolor = useCallback(
     async (color: HighlightColor) => {
       if (!hlMenu) return;
-      const doc = await updateAnnotation(storage, bookId, hlMenu.id, { color });
+      const doc = await updateAnnotation(storage, bookId, hlMenu.id, { color }, undefined, user);
       setAnnDoc(doc);
       setHlMenu(null);
     },
-    [hlMenu, storage, bookId],
+    [hlMenu, storage, bookId, user],
   );
 
   const editNoteFromMenu = useCallback(() => {
@@ -410,18 +449,18 @@ export function Reader({
 
   const removeAnnotation = useCallback(
     async (id: string) => {
-      const doc = await deleteAnnotation(storage, bookId, id);
+      const doc = await deleteAnnotation(storage, bookId, id, undefined, user);
       setAnnDoc(doc);
       setHlMenu((m) => (m?.id === id ? null : m));
     },
-    [storage, bookId],
+    [storage, bookId, user],
   );
 
   const onToggleBookmark = useCallback(async () => {
     if (!currentId) return;
-    const doc = await toggleBookmark(storage, bookId, currentId);
+    const doc = await toggleBookmark(storage, bookId, currentId, undefined, user);
     setAnnDoc(doc);
-  }, [currentId, storage, bookId]);
+  }, [currentId, storage, bookId, user]);
 
   const jumpTo = useCallback(
     (annotation: Annotation) => {
@@ -432,6 +471,25 @@ export function Reader({
     },
     [pageIds, flash],
   );
+
+  // "Jump to furthest read" chip (DESIGN §12/§13): Continue opens `current`; when the household's
+  // furthest-read (possibly from another device, after sync) is ahead of it, offer a jump there.
+  const furthestAhead =
+    savedPos != null &&
+    (savedPos.furthest.page_seq > savedPos.current.page_seq ||
+      (savedPos.furthest.page_seq === savedPos.current.page_seq &&
+        savedPos.furthest.char > savedPos.current.char));
+
+  const jumpToFurthest = useCallback(() => {
+    if (!savedPos) return;
+    const idx = Math.min(
+      Math.max(savedPos.furthest.page_seq - 1, 0),
+      Math.max(pageIds.length - 1, 0),
+    );
+    pendingRestoreChar.current = savedPos.furthest.char;
+    setIndex(idx);
+    setChipDismissed(true);
+  }, [savedPos, pageIds.length]);
 
   if (error) {
     return (
@@ -458,6 +516,7 @@ export function Reader({
           {pageIds.length ? `${index + 1} / ${pageIds.length}` : ""}
         </span>
         <div className="reader-bar-actions">
+          {syncStatus && <SyncStatusBadge status={syncStatus} />}
           <button
             type="button"
             className={`reader-bookmark${bookmarked ? " on" : ""}`}
@@ -477,6 +536,12 @@ export function Reader({
           </button>
         </div>
       </div>
+
+      {furthestAhead && !chipDismissed && (
+        <button type="button" className="jump-furthest-chip" onClick={jumpToFurthest}>
+          Jump to furthest read →
+        </button>
+      )}
 
       <div
         className={`reader-scroll${flashPage ? " flash-page" : ""}`}

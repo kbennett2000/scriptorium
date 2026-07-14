@@ -20,7 +20,10 @@ import type { HighlightColor } from "./segments";
 /** A single annotation record (highlight | note | bookmark), including tombstones. */
 export type Annotation = Annotations["annotations"][number];
 
-/** The single household profile used until R3 ships the picker. A valid `users[].id` slug. */
+/**
+ * The R2 dev-default profile. R3 threads the real active profile (from the picker) through the `user`
+ * param of every store call; this constant remains only as the migration source (`profiles/migrate`).
+ */
 export const DEV_USER_ID = "default";
 
 function annotationsPath(user: string, bookId: string): string {
@@ -88,12 +91,13 @@ export async function createHighlight(
   bookId: string,
   input: { page_id: string; anchor: Anchor; color: HighlightColor },
   now: () => Date = () => new Date(),
+  user: string = DEV_USER_ID,
 ): Promise<Annotations> {
-  const doc = await readAnnotations(storage, bookId);
+  const doc = await readAnnotations(storage, bookId, user);
   doc.annotations.push(
     makeAnnotation({ type: "highlight", page_id: input.page_id, anchor: input.anchor, color: input.color }, now),
   );
-  return writeDoc(storage, bookId, DEV_USER_ID, doc);
+  return writeDoc(storage, bookId, user, doc);
 }
 
 export async function createNote(
@@ -101,15 +105,16 @@ export async function createNote(
   bookId: string,
   input: { page_id: string; anchor: Anchor; color: HighlightColor; text: string },
   now: () => Date = () => new Date(),
+  user: string = DEV_USER_ID,
 ): Promise<Annotations> {
-  const doc = await readAnnotations(storage, bookId);
+  const doc = await readAnnotations(storage, bookId, user);
   doc.annotations.push(
     makeAnnotation(
       { type: "note", page_id: input.page_id, anchor: input.anchor, color: input.color, text: input.text },
       now,
     ),
   );
-  return writeDoc(storage, bookId, DEV_USER_ID, doc);
+  return writeDoc(storage, bookId, user, doc);
 }
 
 export async function updateAnnotation(
@@ -118,15 +123,16 @@ export async function updateAnnotation(
   id: string,
   patch: { color?: HighlightColor; text?: string },
   now: () => Date = () => new Date(),
+  user: string = DEV_USER_ID,
 ): Promise<Annotations> {
-  const doc = await readAnnotations(storage, bookId);
+  const doc = await readAnnotations(storage, bookId, user);
   const target = doc.annotations.find((a) => a.id === id);
   if (target) {
     if (patch.color !== undefined) target.color = patch.color;
     if (patch.text !== undefined) target.text = patch.text;
     target.modified = now().toISOString();
   }
-  return writeDoc(storage, bookId, DEV_USER_ID, doc);
+  return writeDoc(storage, bookId, user, doc);
 }
 
 /** Tombstone an annotation: `deleted = true`, `modified` bumped. Idempotent for an already-dead record. */
@@ -135,14 +141,15 @@ export async function deleteAnnotation(
   bookId: string,
   id: string,
   now: () => Date = () => new Date(),
+  user: string = DEV_USER_ID,
 ): Promise<Annotations> {
-  const doc = await readAnnotations(storage, bookId);
+  const doc = await readAnnotations(storage, bookId, user);
   const target = doc.annotations.find((a) => a.id === id);
   if (target && !target.deleted) {
     target.deleted = true;
     target.modified = now().toISOString();
   }
-  return writeDoc(storage, bookId, DEV_USER_ID, doc);
+  return writeDoc(storage, bookId, user, doc);
 }
 
 /** Page-level bookmark toggle: create a `{start:0,end:0}` bookmark, or tombstone the live one. */
@@ -151,8 +158,9 @@ export async function toggleBookmark(
   bookId: string,
   pageId: string,
   now: () => Date = () => new Date(),
+  user: string = DEV_USER_ID,
 ): Promise<Annotations> {
-  const doc = await readAnnotations(storage, bookId);
+  const doc = await readAnnotations(storage, bookId, user);
   const existing = doc.annotations.find(
     (a) => a.type === "bookmark" && a.page_id === pageId && !a.deleted,
   );
@@ -164,5 +172,5 @@ export async function toggleBookmark(
       makeAnnotation({ type: "bookmark", page_id: pageId, anchor: { start: 0, end: 0 } }, now),
     );
   }
-  return writeDoc(storage, bookId, DEV_USER_ID, doc);
+  return writeDoc(storage, bookId, user, doc);
 }

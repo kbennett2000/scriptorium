@@ -714,3 +714,60 @@ before painting. The byte-faithful guarantee (`runs.join("") === paraText`) is o
 back to a zero rect). Selection/Range construction and `Range.toString()` DO work, so the anchor round-
 trip and the "highlight survives reload" component test run headless; visual bar positioning and the
 real-OPFS reload are the browser-only parts (the manual walk).
+
+## From R3 (reader: sync client + profile picker)
+
+### The TS merge is pinned to `sync/merge.py` by `shared/test-vectors/sync-merge.json` — extend BOTH sides together
+`reader/src/sync/merge.ts` and `server/src/scriptorium/sync/merge.py` are pinned against one vector
+file, consumed by `reader/src/sync/merge.test.ts` and `server/tests/test_sync_vectors.py` (each case run
+in both orders for commutativity). If the merge rule ever changes (e.g. tombstone compaction lands, or a
+new tiebreak), change the vector and BOTH suites move together — that's the point (same pattern as
+`rn-resolution.json`). The subtle bit is `canonicalJson()`: it must equal Python
+`json.dumps(sort_keys=True, ensure_ascii=False)` — a naive `JSON.stringify` escapes non-ASCII and drops
+the `", "`/`": "` spacing, which flips the equal-`modified` tiebreak. The `equal-modified-canonical-
+tiebreak-nonascii` vector case exists specifically to catch that regression.
+
+### The client never field-merges — it PUTs and adopts; local merge is hygiene only
+`sync/engine.ts` reads the local doc, canonicalizes it with the TS merge (dedup/tombstone hygiene while
+offline), PUTs it, and **overwrites the local file with the server's returned doc whole**. It never
+merges the server's answer field-by-field. Keep it that way — server-authoritative adoption is what makes
+convergence provable. On a successful book sync it dispatches a `scriptorium:synced` window event (from
+`SYNC_EVENT`); `Reader` re-reads annotations + position on it so another device's edits and an advanced
+`furthest` appear live. Any new open surface that caches sync docs should listen too.
+
+### Paint order after sync is now by `id`, not creation order (R2's open question, now real)
+R2 flagged that `segments.paintParagraph` stacks highlights by array order (newest-on-top via append),
+and that R3's merge sorts by `id`. That is now the live behaviour: after a sync-adopt, the annotation
+array is `id`-sorted, so overlapping-highlight top-of-stack follows `id`, not `created`. It has not
+mattered yet (fixture/acceptance highlights don't overlap). If R4 makes overlap stacking meaningful, sort
+by `created` before painting (the byte-faithful `runs.join("") === paraText` guarantee is order-
+independent, so this is purely visual).
+
+### Sync triggers are installed once in `useSync`; the reading path must stay fetch-free
+`useSync` (in `App`) installs the four §13 triggers — foreground/reconnect/10-min-interval/manual — once
+per active profile, plus book-close from `App` on a read→shelf route change. Page-turns issue **zero**
+network (asserted by the acceptance). If R4 adds screens, do NOT add sync calls on the render/page-turn
+path; route new triggers through `useSync`. Automatic runs use the cached reachability ping; manual and
+reconnect pass `force` to bust the 60 s cache so a user's "Sync now" can't be stalled.
+
+### Positions are household-visible on the server, but R3's shelf does not surface others' progress yet
+`GET /api/sync/positions/{user}/{book}` is not per-profile restricted (DESIGN §12, `PROGRESS_PRIVATE`
+reserved/unbuilt), so R4's "Amy is on ch. 4" shelf-card line is a pure additive fetch — no server change
+needed. R3 only syncs the **active** profile's own books (`syncAllBooks` enumerates
+`annotations/{user}` ∪ `positions/{user}`).
+
+### Profile switching does NOT migrate; only the first pick does
+`migrateDefaultTo` runs once, from `App.pickFirst` (when no active profile was set), moving R2
+`default` data onto the chosen profile. Settings' "Switch profile" just repoints the active profile —
+each profile's data is already namespaced. If R4 adds profile creation/deletion, keep migration a
+first-run-only concern; don't re-run it on switch.
+
+### Acceptance harness: fixture-mode reader + a Vite dev proxy to a fresh server (no CORS, server untouched)
+`reader/e2e/sync.spec.ts` + `playwright.config.ts` spin up a FastAPI server on a fresh `SCRIPTORIUM_DATA`
+tmp dir (port 8799) and the Vite dev server (`VITE_FIXTURE_BUNDLE=1`, `VITE_PROXY_TARGET` → the server) so
+the browser sees `/api` + `/health` same-origin. Two `browser.newContext()` = two devices (isolated OPFS
++ device-id); offline is `context.setOffline()`. Overlay buttons (selection bar, hl-menu) can render
+outside Playwright's actionability viewport — `dispatchEvent("click")` them. Byte-equality is asserted by
+reading OPFS directly in the page (`navigator.storage.getDirectory()`), no prod backdoor. `@playwright/
+test` was added as a reader devDep; browsers install via `npx playwright install chromium`. Needs a fresh
+data dir each run or accumulated server state skews the furthest/convergence assertions.

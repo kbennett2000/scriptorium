@@ -8,24 +8,29 @@ import type { HighlightColor } from "./segments";
 
 const COLORS: HighlightColor[] = ["yellow", "blue", "green", "pink"];
 
+// Enough vertical room for the bar to sit ABOVE the selection; below this it flips underneath so it
+// never renders off the top of the viewport (a selection near the top of the page).
+const BAR_CLEARANCE_PX = 56;
+
 export function SelectionBar({
   rect,
   onColor,
   onNote,
   onCopy,
 }: {
-  rect: { top: number; left: number; width: number };
+  rect: { top: number; bottom: number; left: number; width: number };
   onColor: (color: HighlightColor) => void;
   onNote: () => void;
   onCopy: () => void;
 }) {
   const keepSelection = (e: React.MouseEvent) => e.preventDefault();
+  const below = rect.top < BAR_CLEARANCE_PX;
   return (
     <div
-      className="sel-bar"
+      className={`sel-bar${below ? " sel-bar--below" : ""}`}
       role="toolbar"
       aria-label="Selection actions"
-      style={{ top: rect.top, left: rect.left + rect.width / 2 }}
+      style={{ top: below ? rect.bottom : rect.top, left: rect.left + rect.width / 2 }}
       onMouseDown={keepSelection}
     >
       {COLORS.map((c) => (

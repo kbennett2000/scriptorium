@@ -9,8 +9,10 @@ import type { Storage } from "../shell";
 //   furthest = max by tuple (page_seq, char) regardless of timestamp (furthest-read-wins)
 //   current  = last write wins
 //
-// Positions live at `positions/{bookId}.json` — OUTSIDE `books/{bookId}/`, so shelf `remove` (which
-// deletes only `books/{id}/`) keeps them. This is what the shelf's "annotations are kept" copy promises.
+// Positions live at `positions/{user}/{bookId}.json` — OUTSIDE `books/{bookId}/`, so shelf `remove`
+// (which deletes only `books/{id}/`) keeps them. This is what the shelf's "annotations are kept" copy
+// promises. R3 namespaces positions by profile (mirroring annotations and the server's {user}/{book}
+// sync layout); R1b's un-namespaced `positions/{bookId}.json` files are migrated by `profiles/migrate`.
 
 export interface Point {
   page_seq: number;
@@ -19,8 +21,8 @@ export interface Point {
 
 const DEVICE_ID_PATH = "device-id.json";
 
-function positionsPath(bookId: string): string {
-  return `positions/${bookId}.json`;
+function positionsPath(user: string, bookId: string): string {
+  return `positions/${user}/${bookId}.json`;
 }
 
 /** A stable per-install device label (positions.current.device), generated once and reused. */
@@ -39,8 +41,12 @@ export async function deviceId(storage: Storage): Promise<string> {
 }
 
 /** Read a book's saved positions, or null if none exist yet / the file is unreadable. */
-export async function readPosition(storage: Storage, bookId: string): Promise<Positions | null> {
-  const path = positionsPath(bookId);
+export async function readPosition(
+  storage: Storage,
+  user: string,
+  bookId: string,
+): Promise<Positions | null> {
+  const path = positionsPath(user, bookId);
   if (!(await storage.exists(path))) return null;
   try {
     return JSON.parse(await storage.readText(path)) as Positions;
@@ -62,13 +68,14 @@ function isBeyond(a: Point, b: Point): boolean {
  */
 export async function writePosition(
   storage: Storage,
+  user: string,
   bookId: string,
   point: Point,
   device: string,
   now: () => Date = () => new Date(),
 ): Promise<Positions> {
   const modified = now().toISOString();
-  const existing = await readPosition(storage, bookId);
+  const existing = await readPosition(storage, user, bookId);
   const furthest =
     existing && !isBeyond(point, existing.furthest)
       ? existing.furthest
@@ -77,6 +84,6 @@ export async function writePosition(
     furthest,
     current: { page_seq: point.page_seq, char: point.char, modified, device },
   };
-  await storage.writeText(positionsPath(bookId), JSON.stringify(positions));
+  await storage.writeText(positionsPath(user, bookId), JSON.stringify(positions));
   return positions;
 }

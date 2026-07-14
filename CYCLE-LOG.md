@@ -326,6 +326,56 @@ cast.json; resume skips done pages; P1 503 → waiting_gpu → resume; P2 503 �
 `cast_running`; canonicalize 422 → `failed_units` + null major, phase completes; mentions 400
 → job `failed`), `test_job_states` updated for `cast_running`. reader/admin-ui untouched.
 
+## R3 — Reader: sync client + profile picker (2026-07-14) — shipped
+
+Annotations and positions now flow to the S12 sync API and merge back — opportunistically,
+reachability-guarded, and never on the reading path. First-run profile picker replaces R2's hardcoded
+`DEV_USER_ID`; all local files re-namespace to the chosen profile. Server untouched; S12 is
+authoritative — the client PUTs a full doc and adopts the server's merged answer whole (never
+field-merges). The one piece of local merge logic is a bit-for-bit port of `sync/merge.py`, pinned to
+it by a shared vector both suites run.
+
+**Shipped**
+- **`sync/merge.ts`** — TS port of `server/src/scriptorium/sync/merge.py`: annotations union-by-`id`,
+  LWW by `modified` (ISO **string** compare, never `Date`), tombstones merge identically, output
+  canonical (dedup + sort by `id`); positions `furthest` = tuple-max on `(page_seq, char)` ignoring
+  time, `current` = LWW with `(page_seq, char, device)` tiebreak. Includes `canonicalJson()`
+  reproducing Python `json.dumps(sort_keys=True, ensure_ascii=False)` (sorted keys, `", "`/`": "`
+  separators, raw non-ASCII) — the equal-`modified` tiebreak that a naive `JSON.stringify` would break.
+- **Shared anti-drift vector `shared/test-vectors/sync-merge.json`** consumed by **both**
+  `reader/src/sync/merge.test.ts` and new `server/tests/test_sync_vectors.py` (both orders per case →
+  commutativity). A non-ASCII equal-`modified` case genuinely pins `ensure_ascii=False`.
+- **`sync/client.ts`** — `HttpSyncClient` mirroring `shelf/client.ts` (same-origin base, `/health`
+  cached 60 s, `reachable(force)` to bust the cache for manual/reconnect): `fetchUsers`,
+  `get/putAnnotations`, `get/putPositions` (404 → `null`).
+- **`sync/engine.ts` + `sync/useSync.ts`** — `syncAllBooks` reachability-guards, canonicalizes the
+  local annotation doc, PUTs, **adopts the merged doc by whole-file write**, stamps `sync-state.json`,
+  and dispatches a `scriptorium:synced` window event so open surfaces refresh live; failures are
+  **silent** (cloud-off indicator, local edits preserved). `useSync` wires the four §13 triggers —
+  foreground (`visibilitychange`), reconnect (`online`), 10-min interval, manual — installed once per
+  profile so **page-turns never fetch**. Book-close fires from `App` on a read→shelf transition.
+- **`profiles/`** — `ProfilePicker` (avatar circles from `GET /api/users`, offline cache fallback),
+  per-device `active-profile.json`, and `migrateDefaultTo` (one-time move of R2 `annotations/default/*`
+  + un-namespaced `positions/*` under `{user}/`, idempotent + non-clobbering).
+- **Namespacing** — `annotations/store.ts` + `readerview/position.ts` thread the active `user`
+  (positions now `positions/{user}/{book}.json`); `App` gates the whole app (incl. fixture mode)
+  behind the picker and prop-drills `user` + sync status.
+- **UX** — `SyncStatusBadge` (cloud-off / "Synced N min ago", tap to sync) in the app header + reader
+  bar; **jump-to-furthest chip** in `Reader` (Continue opens `current`; chip when `furthest > current`,
+  refreshed live after sync); minimal **Settings** stub (profile switcher, Sync now, storage status).
+
+**Verification** — reader **130 vitest** (was 93): shared merge vectors (24), engine (fake-server
+adopt/silent-fail/positions/event), migration, picker. Server **290 passed / 5 deselected** (the new
+shared-vector test included; no server change). Lint + tsc clean; no type drift (no schema change).
+- **Two-context Playwright acceptance — VERIFIED** (`reader/e2e/sync.spec.ts`, `just reader-e2e`): two
+  isolated contexts (= two devices), same profile `kris`, fixture book, edited **offline**
+  (`setOffline`) — A highlights + reads to p5, B (later) notes + reads to p3 — then sync. Asserts the
+  two annotation docs are **byte-equal** with both edits (read straight from OPFS), `furthest` = p5 on
+  both, B's `current` = p3, and the **jump-chip visible on B**. Then delete-on-A / recolor-on-B (later)
+  → later-modified wins identically on both (deletion lost, colour pink). Second test: with the server
+  up, **zero `/api` requests during page-turns**. Fixture-mode reader + a Vite dev proxy to the live
+  FastAPI (server has no CORS and is untouched this cycle). See NOTES "From R3".
+
 ## R2 — Reader: annotations (highlights, notes, bookmarks) (2026-07-14) — shipped
 
 Highlights/notes/bookmarks with byte-solid anchors. The fiddliest client cycle: anchors are UTF-16
@@ -365,8 +415,19 @@ named astral (surrogate-pair), verse-`\n`, collapsed-reject, outside-text-reject
 consistency cases; `segments`/`store`/`nav` units; component tests (bookmark persist/restore across
 remount, highlight survives reload rendering over the same chars, live selection blocks page-turn).
 Lint + tsc + build clean; fixture-mode build inlines the fixture. Server **279 passed / 5 deselected**
-(untouched). No type drift (no schema change). **Manual reload-survival check is human-pending** (OPFS,
-browser-only): highlight → reload → same characters; network idle. See NOTES "From R2".
+(untouched). No type drift (no schema change). See NOTES "From R2".
+
+**Reload-survival acceptance — VERIFIED in a real browser** (headless Chromium via Playwright against
+`VITE_FIXTURE_BUNDLE=1` dev): select text → highlight → the annotation is written to **real OPFS** at
+`/annotations/default/usr-ce8f5ebd29d0.json`, and after a full tab reload the highlight **re-renders
+over the same characters** ("quiet ha"). This is the one path jsdom couldn't cover (real OPFS + real
+Selection/Range) — now closed, reproducibly.
+
+**Follow-up fix (found during that run):** the floating selection bar rendered above the viewport for a
+selection near the top of a page (its "above the selection" transform went off-screen). `SelectionBar`
+now flips **below** the selection when there isn't clearance above (`sel-bar--below`), so it's always
+reachable. Note: the app is blank in the VS Code Simple Browser (sandboxed webview) — use a real
+external browser; that is not a code issue.
 
 ## R1b — Reader: the reading surface (2026-07-14) — shipped
 
@@ -422,10 +483,18 @@ untouched, ruff clean + `uv run pytest` **279 passed / 5 deselected**; `node sha
 diff --exit-code shared/types` → **no drift** (no schema change). **Fixture-mode smoke:**
 `VITE_FIXTURE_BUNDLE=1 vite build` inlines the fixture (JSON into the chunk, webp as local assets); the
 dev server serves root, transforms `FixtureBundleReader` (glob resolves pages/structure/images), and
-serves the cross-package fixture image via `/@fs` (200, `fs.allow` working). **Offline acceptance
-(human-pending, browser-only):** run `reader/scripts/offline-acceptance.sh`, then Download → kill server
-→ Open → page-turn across the chapter boundary → plate + lightbox → reload → position restored, network
-tab idle. Evidence/screenshots to be pasted here after the human walk.
+serves the cross-package fixture image via `/@fs` (200, `fs.allow` working).
+
+**Offline acceptance — VERIFIED (2026-07-14, automated in a real browser).** Ran headless Chromium
+(Playwright) against the real server (built reader + library API served same-origin from `:8720`, a
+throwaway seeded library): Download → **Resident** (OPFS gains `books/usr-ce8f5ebd29d0/manifest.local.json`
++ the page bundle); Open → page 1 shows the chapter title + plate, progress `1/6`; paged to `6/6` (far
+plate present, no chapter header); plate → lightbox → Esc; back to `3/6`; **reload → restored to `3/6`**;
+then **killed the server** and page-turn (`4/6`) + plate lightbox still worked from OPFS. **16/16 checks
+pass.** Decisive evidence: every `/api/library/**` request is tagged to the `download` phase — **zero on
+the read path** (open/page/reload/offline). The one non-automatable bit (a human eyeballing it) is moot;
+the network-idle + server-dead reads are proven. NB: the app is blank in the VS Code Simple Browser
+(sandboxed webview) — use a real external browser.
 
 ## R1a — Reader: storage shell + shelf + checkout (2026-07-14) — shipped
 
