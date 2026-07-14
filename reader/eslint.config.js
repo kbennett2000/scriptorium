@@ -3,7 +3,9 @@ import globals from "globals";
 import tseslint from "typescript-eslint";
 
 export default tseslint.config(
-  { ignores: ["dist", "**/*.d.ts"] },
+  // Native platform projects (Capacitor, R5) hold generated config + a copy of the built web assets —
+  // not source. android/ios are excluded from lint/typecheck the same way dist is.
+  { ignores: ["dist", "android", "ios", "**/*.d.ts"] },
   js.configs.recommended,
   ...tseslint.configs.recommended,
   {

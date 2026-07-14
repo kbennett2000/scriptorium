@@ -23,7 +23,7 @@ import {
   type HighlightColor,
   type Span,
 } from "../annotations";
-import type { Storage } from "../shell";
+import { useBackHandler, type Storage } from "../shell";
 import { SYNC_EVENT, SyncStatusBadge, type SyncStatus } from "../sync";
 import type { BundleReader } from "./BundleReader";
 import { Lightbox } from "./Lightbox";
@@ -538,6 +538,22 @@ export function Reader({
     },
     [pageIds.length, flashPageOnce],
   );
+
+  // Android hardware/gesture Back (R5): close the topmost overlay first, then step back a page, then
+  // leave to the shelf — never let Back fall through to backgrounding the app while a book is open.
+  // No-op on the web (the handler is only ever invoked by the native back button; see shell/native).
+  useBackHandler(() => {
+    if (lightboxSrc) setLightboxSrc(null);
+    else if (noteTarget) setNoteTarget(null);
+    else if (hlMenu) setHlMenu(null);
+    else if (panelOpen) setPanelOpen(false);
+    else if (searchOpen) setSearchOpen(false);
+    else if (castOpen) setCastOpen(false);
+    else if (pendingSel) clearSelection();
+    else if (index > 0) go(-1);
+    else onExit();
+    return true; // a book is open — Back is always ours (overlay → page → shelf), never app-kill
+  });
 
   if (error) {
     return (

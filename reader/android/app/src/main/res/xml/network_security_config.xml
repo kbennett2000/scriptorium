@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Cleartext (http://) policy for the reader (R5, DESIGN §13). The app itself is loaded from the local
+  WebView (https://localhost) and the reading path makes ZERO network calls; the only traffic is the
+  shelf/sync LAN connection to the bakery, which is plain http on a home network. Rather than a blanket
+  `android:usesCleartextTraffic="true"` (which would allow cleartext to the whole internet), the base
+  config DENIES cleartext everywhere and we re-permit it only for the specific bakery host(s).
+
+  Android's network-security-config cannot express an RFC-1918 CIDR range (e.g. 192.168.0.0/16); it
+  allowlists concrete hosts. Because the bakery base URL is baked into the APK at build time via
+  VITE_SERVER_URL (see reader/src/shelf/client.ts), we know that host and list it here. Keep this file
+  and VITE_SERVER_URL naming the SAME host (see reader/BUILDING.md).
+
+    - 10.0.2.2        : the emulator's alias for the host loopback (dev-server acceptance run).
+    - 192.168.1.10    : PLACEHOLDER for the household bakery's LAN IP — replace with yours for a
+                        physical-device build; add more <domain> lines if your server has several.
+-->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="false" />
+    <domain-config cleartextTrafficPermitted="true">
+        <!-- The local app origin (Capacitor serves the bundled assets over http://localhost). -->
+        <domain includeSubdomains="false">localhost</domain>
+        <domain includeSubdomains="false">10.0.2.2</domain>
+        <domain includeSubdomains="false">192.168.1.10</domain>
+    </domain-config>
+</network-security-config>

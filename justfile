@@ -29,6 +29,13 @@ admin-build:
 reader-build-check:
     cd reader && npm run build:check
 
+# Build a debug Android APK (R5): web build → cap sync → gradle assembleDebug. Needs the Android SDK +
+# JDK 17 (see reader/BUILDING.md). Pass a LAN bakery URL for an on-device build, e.g.
+#   VITE_SERVER_URL=http://192.168.1.10:8720 just android-build
+# Output: reader/android/app/build/outputs/apk/debug/app-debug.apk
+android-build:
+    cd reader && npm run android:build
+
 # --- generation ---
 
 # Regenerate shared TypeScript types from the JSON Schemas (deterministic).
