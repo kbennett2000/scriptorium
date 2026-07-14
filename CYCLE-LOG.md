@@ -326,6 +326,76 @@ cast.json; resume skips done pages; P1 503 → waiting_gpu → resume; P2 503 �
 `cast_running`; canonicalize 422 → `failed_units` + null major, phase completes; mentions 400
 → job `failed`), `test_job_states` updated for `cast_running`. reader/admin-ui untouched.
 
+## S8 — P5 prompt derivation (2026-07-13) — shipped
+
+The GPU-LLM phase that derives one `illustration-prompt` per selected page, plus the two
+CPU-assembled pseudo-plates (cover + optional portraits), filling the edge
+`selected → prompts_running → prompts_draft` with schema-valid draft `prompts/{page_id}.json`
+records for the S9 review gate.
+
+**No state-machine / schema change.** `PROMPTS_RUNNING`/`PROMPTS_DRAFT` and their edges already
+existed in `_CHAIN`, and `PROMPTS_RUNNING` was already a GPU state. Two phases mirror the
+P1/P2/P3 enter/run split: `PromptsEnter` (CPU, `selected → prompts_running`, zero units) then
+`PromptsDerive` (`name="p5_prompts"`, GPU, `prompts_running → prompts_draft`). Registered after
+`P4Select()` in `app.py`.
+
+**Pseudo-unit placement decision.** The cover and portraits are **trailing CPU pseudo-units** in
+the single GPU phase — `PromptsDerive.units()` = the selected pages, then `Unit("cover")`, then
+`Unit("portrait-{slug}")` per eligible major (when `portraits_enabled`). This reuses P3's
+merge-unit pattern verbatim (non-numeric ids can't collide with a 4-digit page id; they are
+reached only after every TTS page unit has succeeded or ladder-failed, and the phase parks on
+`waiting_gpu` *before* them on a 503). Cover is always emitted; portraits are gated by config.
+
+**Per-page derivation.** Options per TTS §7.5: `ledger` = the page's merged `pages/*.json` ledger;
+`cast` = present-cast (characters whose canonical **name or any alias** is in `ledger.present`),
+capped at 4 by `len(mention_pages)` desc, tie → earliest first-mention page, each `{name,
+one_line}`; `era` from `bake_config` (omitted if unset). The transform `output` is stored verbatim
+as `derived`; `edited_prompt: null`; `final_subject_prompt = derived.prompt`. `wrapped_prompt`/
+`negative_prompt` stay absent until P7.
+
+**Two interpretations flagged (documented, following S7's precedent).**
+1. **Pseudo-plate `final_subject_prompt` includes the style prefix/suffix (§10 verbatim).** The
+   §10 portrait formula bakes `style.portrait_prefix` *into* the prompt, so for consistency the
+   cover formula's `style.prefix`/`suffix` are part of the string too. A pseudo-plate's
+   `final_subject_prompt` is thus the full §10 formula output (`derived = {"prompt": <string>}`).
+   The hand-written S3 `bundle/prompts/{cover,portrait-*}.json` are **stale placeholders** —
+   they ignore the §10 frontispiece/portrait formulas and store a *string* `derived.avoid` + a
+   `scene` field (contra TTS §7.5's array `avoid` + `{prompt,depicted,shot}`). Tests assert
+   schema + cross-references, not equality with them. **For the S10 verify tool:** regenerate the
+   bundle prompt fixtures (via `make_fixture_bundle.py`) to the §10 formulas + §7.5 `derived`.
+2. **`meta.warnings` recorded defensively.** TTS §4's `meta` does not currently define a
+   `warnings` key, but `meta` is an open provenance object. P5 reads `meta.get("warnings", [])`
+   via a new `TtsClient.transform_with_meta` and, when non-empty, records it on
+   `job.prompt_warnings[page_id]` (new schema-free job field) for S9. Harmless when absent.
+
+**Supporting changes (in scope).** `styles/` gained a loader (`load_styles`/`get_style`,
+validates `data/styles.json`, `PipelineBug` on an unknown id — path-resolved like `schemas.py`,
+independent of the passed `Config`). `TtsClient` gained `transform_with_meta` via an extracted
+`_post` (existing `transform` behaviour byte-identical — P1/P2/P3 untouched). `Job` gained
+`prompt_warnings: dict[str,list[str]]`. `tools/capture_tts_fixtures.py` now also threads
+`illustration-prompt` over the captured pages for on-LAN re-capture.
+
+**Sample assembled cover string** (engraving style, §10 formula):
+`19th-century steel engraving book illustration, fine crosshatching, monochrome ink, dramatic
+light, frontispiece for the book 'The Tidewatch Fragment' by A. Fixture: a quiet harbour at dawn,
+intricate linework, aged paper tone, high detail`
+
+**Regression anchor.** `test_pipeline_e2e.py` runs real **P0 → P5** on a committed inline synthetic
+book (paginates to 6 pages / 1 chapter → P4 tiny-work selects 2 plates), driving the registered
+`BAKE_PIPELINE` with generic schema-valid TTS stubs, then validates every schema-bound artifact
+in `work/`: `structure.json`, all `pages/*.json` (with merged ledgers), `cast.json`,
+`selection.json`, and all `prompts/*.json` (2 page prompts + `cover` + 1 portrait). This is the
+pipeline's standing regression guard from here on.
+
+**Verification:** `uv run ruff check .` (+ `tools/`) → clean. `uv run pytest` → **189 passed,
+4 deselected** (network + three `-m gpu` live tests, now including `test_prompts_live.py`). New
+tests: `test_prompts_assembly.py` (present-cast filter/cap/tie-breaks, cover/portrait/condense
+strings exact vs §10), `test_phases_p5.py` (per-page derive through the runner, cover + portrait
+pseudo-plates, `meta.warnings` capture, portraits-disabled, idempotent resume),
+`test_pipeline_e2e.py` (the P0→P5 acceptance box), `test_prompts_live.py` (`-m gpu`, pending
+on-LAN). 3 hand-written `illustration-prompt` fixtures added. reader/admin-ui untouched; no schema
+change (no type regen).
+
 ## S7 — P4 selection engine (deterministic) (2026-07-13) — shipped
 
 The pure, deterministic plate-selection function (DESIGN §8) plus its re-selection diff and the

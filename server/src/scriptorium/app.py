@@ -22,14 +22,16 @@ from .bake.phases.p1_mentions import CastMentions, MentionsEnter
 from .bake.phases.p2_cast import CastCanonicalize, CastReduce
 from .bake.phases.p3_ledger import LedgerEnter, LedgerScenes
 from .bake.phases.p4_select import P4Select
+from .bake.phases.p5_prompts import PromptsDerive, PromptsEnter
 from .bake.runner import Runner
 from .config import Config, load_config
 
 # The bake pipeline, keyed by ``from_state`` inside the runner. S5 registered P1 (mentions)
-# and P2 (reduce + canonicalize); S6 appends P3 (scene ledger); S7 appends P4 (selection).
-# ``MentionsEnter`` / ``CastReduce`` / ``LedgerEnter`` are the CPU steps that move a job onto
-# the ``*_running`` GPU states P1/P2b/P3 sit on; ``P4Select`` is the first pure rest→rest CPU
-# phase (``ledger_done → selected``), so it needs no such enter step. Later cycles append P5…P7.
+# and P2 (reduce + canonicalize); S6 appends P3 (scene ledger); S7 appends P4 (selection);
+# S8 appends P5 (prompt derivation). ``MentionsEnter`` / ``CastReduce`` / ``LedgerEnter`` /
+# ``PromptsEnter`` are the CPU steps that move a job onto the ``*_running`` GPU states P1/P2b/
+# P3/P5 sit on; ``P4Select`` is the one pure rest→rest CPU phase (``ledger_done → selected``),
+# so it needs no such enter step. Later cycles append P6…P7.
 BAKE_PIPELINE = [
     MentionsEnter(),
     CastMentions(),
@@ -38,6 +40,8 @@ BAKE_PIPELINE = [
     LedgerEnter(),
     LedgerScenes(),
     P4Select(),
+    PromptsEnter(),
+    PromptsDerive(),
 ]
 
 _PROBE_TIMEOUT_S = 2.0
@@ -49,9 +53,9 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
     Exactly one :class:`Runner` task runs — this is what makes the single-worker /
     GPU-exclusivity guarantee structural. The pipeline runs P0 (inline in the admin
-    endpoint) then P1→P2→P3→P4 here; a started job advances to ``selected`` and rests there
-    until P5 lands. Plain ``TestClient(app)`` (no context manager) does not trigger
-    lifespan, so endpoint tests never spin the worker.
+    endpoint) then P1→P2→P3→P4→P5 here; a started job advances to ``prompts_draft`` and rests
+    there until the review gate lands. Plain ``TestClient(app)`` (no context manager) does not
+    trigger lifespan, so endpoint tests never spin the worker.
     """
     runner = Runner(load_config(), pipeline=BAKE_PIPELINE)
     app.state.runner = runner

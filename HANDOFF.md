@@ -1,7 +1,20 @@
 # Handoff
 
 ## Current state
-- **S7 complete** (PR open, awaiting human merge). P4 — the deterministic selection engine.
+- **S8 complete** (PR open, awaiting human merge). P5 — prompt derivation.
+  `bake/phases/p5_prompts.py`: `PromptsEnter` (CPU, `selected → prompts_running`) + `PromptsDerive`
+  (GPU, `prompts_running → prompts_draft`). One `illustration-prompt` per `status:"selected"` page
+  (options per TTS §7.5: full ledger + present-cast `{name,one_line}` capped 4 by mention
+  frequency + `era`); `derived` verbatim, `edited_prompt:null`, `final_subject_prompt=derived.prompt`.
+  Cover + portrait pseudo-plates assembled CPU-side per DESIGN §10 as **trailing pseudo-units**
+  (`cover` always; `portrait-{slug}` per major with a description when `portraits_enabled`) — their
+  `final_subject_prompt` includes the style prefix/suffix per the §10 formulas (P7 must not
+  re-wrap them). **No state/schema change** (edge + GPU state pre-existed). Supporting: a
+  `scriptorium.styles` loader, `TtsClient.transform_with_meta`, `Job.prompt_warnings` (per-page
+  TTS `meta.warnings` for S9). The stale S3 `bundle/prompts/*` fixtures diverge (regenerate at
+  S10 — see NOTES From S8). New standing regression anchor: `test_pipeline_e2e.py` (real P0→P5,
+  every artifact schema-valid).
+- **S7 complete** (merged). P4 — the deterministic selection engine.
   `selection/engine.py` (`select(scores, structure, params)`, §8 steps 1–5; `PageScore`/`Params`/
   `PlateChoice` frozen dataclasses + `PRESETS` table; the **spoiler invariant made structural** —
   `PageScore` is numbers/booleans/id only), `selection/reselect.py` (the §8 re-selection diff,
@@ -33,26 +46,26 @@
   exceptions), `bake/api.py` (admin endpoints; P0 inline). Kill-test proves ≤1 unit lost.
 - **S3 / S2 / S1 complete** (merged): paginator + fixture bundle; ingestion adapters;
   monorepo skeleton + schemas + generated TS types + `/health`.
-- Server: `uv run pytest` → **169 passed, 3 deselected** (network + two gpu-live);
+- Server: `uv run pytest` → **189 passed, 4 deselected** (network + three gpu-live);
   `uv run ruff check .` (server + `tools/`) clean.
 
 ## Next up
-- **S8** — P5 prompt derivation (`bake/phases/p5_prompts.py`), GPU-LLM, `selected →
-  prompts_running → prompts_done`. Unit = selected page (`status: "selected"` only — read from
-  `selection.json`). Options per TTS DESIGN §7.5 (ledger from `pages/*.json`, present-cast
-  `one_line`s capped at 4 by mention frequency, `era`); artifact `prompts/{page}.json` with
-  `derived` verbatim + `edited_prompt: null` + computed `final_subject_prompt`. Plus the CPU-side
-  cover pseudo-plate (`prompts/cover.json`) and portrait pseudo-prompts if enabled. Needs 3
-  illustration-prompt fixtures. Acceptance: a P0→P5 end-to-end fixture test on the 6-page book.
+- **S9** — the review gate (DESIGN §11.1): admin endpoints to surface the `prompts_draft` +
+  `cast.json` + `selection.json` for human approval, edit prompts (`edited_prompt` → recompute
+  `final_subject_prompt`), manual plate add/remove (write `reason:"manual"` into `selection.json`,
+  where `reselect.py` finally gets wired), and the `prompts_draft → in_review → approved` gate.
+  **No render before approval** (hard rule). Surface `job.prompt_warnings[page_id]` (S8) next to
+  each plate. Admin-UI review screen likely rides along.
 - **R1** — reader shell/shelf/checkout, unblocked since S3 (build against
   `server/tests/fixtures/bundle/`). **S12** (sync API) unblocked from S1.
 
 ## Open questions / blocked
-- **Run the live checkpoint when convenient:** on the LAN with TTS T5 up, run
+- **Run the live checkpoint when convenient:** on the LAN with TTS T5/T6 up, run
   `TTS_URL=… uv run python ../tools/capture_tts_fixtures.py` to replace the hand-written TTS
-  fixtures (cast **and** scene-update) with real captures, and
-  `uv run pytest -m gpu test_cast_live.py test_ledger_live.py -s` to paste real cast + ledger
-  summaries into `CYCLE-LOG.md`. Not blocking development (fixtures suffice).
+  fixtures (cast, scene-update, **and now illustration-prompt**) with real captures, and
+  `uv run pytest -m gpu test_cast_live.py test_ledger_live.py test_prompts_live.py -s` to paste
+  real cast + ledger + prompt summaries into `CYCLE-LOG.md`. Not blocking development (fixtures
+  suffice).
 - See `NOTES-FOR-NEXT-CYCLES.md` "From S7": `reselect.py` is standalone until a revision re-bake
   wires it (and the "drop never-rendered approvals" reading to confirm); `PageScore` is the
   structural spoiler boundary (P5/P7 read the full ledger from `pages/*.json`, not via selection

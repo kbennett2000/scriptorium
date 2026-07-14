@@ -8,8 +8,9 @@ replace the hand-written fixtures under ``server/tests/fixtures/tts/`` with genu
 
 It repaginates ``server/tests/fixtures/sources/pg35.txt`` (The Time Machine) with the real
 paginator, calls ``cast-mentions`` for the first 6 pages, runs the deterministic reducer to
-pick the two biggest major characters, calls ``cast-canonicalize`` for those two, then threads
-``scene-update`` over the same 6 pages (feeding each output as the next ``prior_ledger``), and
+pick the two biggest major characters, calls ``cast-canonicalize`` for those two, threads
+``scene-update`` over the same 6 pages (feeding each output as the next ``prior_ledger``), then
+calls ``illustration-prompt`` over the same pages (options assembled with the P5 helpers), and
 writes the full response envelopes as fixtures. Tests assert schema/shape only, so a re-capture
 that changes wording stays green (CLAUDE.md: never assert exact LLM content).
 
@@ -29,6 +30,7 @@ sys.path.insert(0, str(_REPO_ROOT / "server" / "src"))
 
 import httpx  # noqa: E402
 
+from scriptorium.bake.phases.p5_prompts import illustration_options  # noqa: E402
 from scriptorium.bake.reduce_cast import reduce_cast  # noqa: E402
 from scriptorium.ingest.base import KIND_TEXT, SourceSpec, load  # noqa: E402
 from scriptorium.paginate.engine import paginate  # noqa: E402
@@ -72,23 +74,47 @@ async def main() -> int:
 
     groups = reduce_cast(reduce_input)
     majors = [g for g in groups if g["major"]][:_CHARACTERS_TO_CAPTURE]
+    canon: dict[str, dict] = {}
     for g in majors:
         options = {"name": g["name"], "aliases": g["aliases"], "descriptors": g["descriptors"]}
         env = await _post_transform(base, "cast-canonicalize", "", options)
         _write(_OUT / "cast-canonicalize" / f"{g['slug']}.json", env)
+        canon[g["slug"]] = env["output"]
 
     # P3: thread scene-update over the pages in order — each output is the next prior_ledger.
     cast_names = [g["name"] for g in groups][:40]
     prior_ledger: dict | None = None
+    ledgers: dict[str, dict] = {}
     for page in pages:
         options = {"prior_ledger": prior_ledger, "cast_names": cast_names}
         env = await _post_transform(base, "scene-update", page["text"], options)
         _write(_OUT / "scene-update" / f"{page['id']}.json", env)
         prior_ledger = env["output"]
+        ledgers[page["id"]] = env["output"]
+
+    # P5: illustration-prompt over the pages, options assembled exactly as the phase does
+    # (present-cast filtered by each page's ledger.present + capped). A lightweight cast_doc is
+    # built from the reducer groups, with one_line from the canonicalizations where available.
+    cast_doc = {
+        "characters": [
+            {
+                "name": g["name"],
+                "aliases": g.get("aliases", []),
+                "mention_pages": g.get("mention_pages", []),
+                "one_line": canon.get(g["slug"], {}).get("one_line", ""),
+            }
+            for g in groups
+        ]
+    }
+    for page in pages:
+        page_with_ledger = {**page, "ledger": ledgers.get(page["id"], {})}
+        options = illustration_options(page_with_ledger, cast_doc, era=None)
+        env = await _post_transform(base, "illustration-prompt", page["text"], options)
+        _write(_OUT / "illustration-prompt" / f"{page['id']}.json", env)
 
     print(
         f"captured {len(pages)} mention pages + {len(majors)} canonicalizations "
-        f"+ {len(pages)} scene ledgers"
+        f"+ {len(pages)} scene ledgers + {len(pages)} illustration prompts"
     )
     return 0
 

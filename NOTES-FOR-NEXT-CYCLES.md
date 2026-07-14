@@ -284,3 +284,45 @@ CYCLE-LOG S7).
 `server/tests/fixtures/selection/synthetic-120.json` is generated once with `random.Random(4835)`
 and committed, so the engine property tests are independent of Python's RNG across versions. Regen
 only if you deliberately want a new field (and update the plate counts in CYCLE-LOG S7).
+
+## From S8
+
+### P7 must style-wrap page plates but NOT re-wrap the pseudo-plates
+P5 leaves `wrapped_prompt`/`negative_prompt` absent (drafts). At P7, a **page** plate wraps as
+`style.prefix + final_subject_prompt + style.suffix` and `negative = style.negative + ", " +
+join(derived.avoid)` (DESIGN §10). The **cover/portrait** pseudo-plates already have the style
+prefix/suffix baked into `final_subject_prompt` (the §10 formulas include them — see CYCLE-LOG S8
+interpretation #1), so P7 must **not** re-wrap them (that would double the style cues). Give the
+cover/portrait a negative prompt from `style.negative` alone (their `derived` has no `avoid`
+array). Decide P7's wrap dispatch by `page_id` (numeric = wrap; `cover`/`portrait-*` = pass
+through, negative-only).
+
+### The style catalog now has a loader (`scriptorium.styles`)
+`get_style(style_id)` / `load_styles()` read + schema-validate `data/styles.json`, resolving the
+path from the repo root (env override `SCRIPTORIUM_STYLES`) independent of the passed `Config` —
+same trick as `schemas.py`, so it works under tests that point `Config.shared_dir` at a tmp dir.
+An unknown `style_id` raises `PipelineBug` (bug-class → job `failed`); the admin picker only
+offers catalog ids, so a miss is a real misconfiguration. P7 reuses this for the wrap strings.
+
+### `TtsClient.transform_with_meta` + `Job.prompt_warnings` (surfacing TTS warnings)
+`transform` still returns only `output` (P1/P2/P3 unchanged); `transform_with_meta` returns
+`(output, meta)` via a shared private `_post`. P5 records any `meta.warnings` on the schema-free
+`Job.prompt_warnings` dict keyed by page_id. **The TTS §4 contract does not yet define
+`meta.warnings`** — this is forward-looking plumbing. S9's review gate should surface
+`job.prompt_warnings[page_id]` next to each plate; confirm the real key name once TTS T6 lands.
+
+### Stale bundle prompt fixtures — regenerate at S10
+`server/tests/fixtures/bundle/prompts/{cover,portrait-the-clockmaker,0001,0003,0004}.json` predate
+the §10 formulas and the TTS §7.5 `derived` shape: their `derived.avoid` is a *string* (not an
+array) and they carry a `scene` field; the cover/portrait subjects don't follow the §10 formulas.
+They only pass validation because `prompt.derived` is opaque. `test_pipeline_e2e.py` (not these
+fixtures) is now the P0→P5 regression anchor. Regenerate the bundle prompts via
+`tools/make_fixture_bundle.py` to real P5/§10 output at S10, and have the S10 verify tool assert
+prompt schema + cross-refs, not equality with the current stale files.
+
+### The P0→P5 regression anchor is `test_pipeline_e2e.py`
+It runs real P0 (`run_p0` on a committed inline synthetic book) + the whole registered
+`BAKE_PIPELINE` with generic schema-valid TTS stubs, and validates every schema-bound artifact in
+`work/`. Any phase that breaks its artifact contract fails here. Extend it (not replace it) as
+P6/P7 land — add the manifest/positions/rendered-prompt artifacts to `_validate_tree` when they
+appear.

@@ -1,0 +1,18 @@
+{
+  "output": {
+    "prompt": "A vast twilit garden of the far future, colossal ruined buildings and a white sphinx-like statue on a bronze pedestal above overgrown rhododendron thickets, a small solitary figure standing bewildered on the turf beneath an enormous fading sky",
+    "depicted": ["the Time Traveller"],
+    "shot": "wide",
+    "avoid": ["people in crowds", "modern city", "bright color", "signage"]
+  },
+  "meta": {
+    "transform": "illustration-prompt",
+    "transform_version": "0.1.0",
+    "model": "qwen3:8b",
+    "input_tokens_est": 720,
+    "truncated": false,
+    "attempts": 1,
+    "latency_ms": 1210,
+    "queued_ms": 5
+  }
+}
