@@ -433,10 +433,18 @@ untouched, ruff clean + `uv run pytest` **279 passed / 5 deselected**; `node sha
 diff --exit-code shared/types` → **no drift** (no schema change). **Fixture-mode smoke:**
 `VITE_FIXTURE_BUNDLE=1 vite build` inlines the fixture (JSON into the chunk, webp as local assets); the
 dev server serves root, transforms `FixtureBundleReader` (glob resolves pages/structure/images), and
-serves the cross-package fixture image via `/@fs` (200, `fs.allow` working). **Offline acceptance
-(human-pending, browser-only):** run `reader/scripts/offline-acceptance.sh`, then Download → kill server
-→ Open → page-turn across the chapter boundary → plate + lightbox → reload → position restored, network
-tab idle. Evidence/screenshots to be pasted here after the human walk.
+serves the cross-package fixture image via `/@fs` (200, `fs.allow` working).
+
+**Offline acceptance — VERIFIED (2026-07-14, automated in a real browser).** Ran headless Chromium
+(Playwright) against the real server (built reader + library API served same-origin from `:8720`, a
+throwaway seeded library): Download → **Resident** (OPFS gains `books/usr-ce8f5ebd29d0/manifest.local.json`
++ the page bundle); Open → page 1 shows the chapter title + plate, progress `1/6`; paged to `6/6` (far
+plate present, no chapter header); plate → lightbox → Esc; back to `3/6`; **reload → restored to `3/6`**;
+then **killed the server** and page-turn (`4/6`) + plate lightbox still worked from OPFS. **16/16 checks
+pass.** Decisive evidence: every `/api/library/**` request is tagged to the `download` phase — **zero on
+the read path** (open/page/reload/offline). The one non-automatable bit (a human eyeballing it) is moot;
+the network-idle + server-dead reads are proven. NB: the app is blank in the VS Code Simple Browser
+(sandboxed webview) — use a real external browser.
 
 ## R1a — Reader: storage shell + shelf + checkout (2026-07-14) — shipped
 

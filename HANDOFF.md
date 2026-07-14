@@ -16,10 +16,12 @@
   all page-turns defer to a live selection. Reader **93 vitest** (was 60) — anchor round-trip property
   test reconstructs **597 random selections character-identically, 461 cross-paragraph** (seed
   `0x1a2b3c4d`), + astral/verse/reject/segmented cases, + component persist/restore. Lint/tsc/build
-  clean; server **279 passed** (untouched); no type drift (no schema change). **Manual reload-survival
-  check human-pending** (OPFS, browser): highlight → reload → same chars, network idle. See NOTES
-  "From R2". **Next up: R3** (sync client + profile picker; also migrate positions under `{user}/`),
-  then R4→R5.
+  clean; server **279 passed** (untouched); no type drift (no schema change). **Reload-survival
+  VERIFIED in a real browser** (headless Chromium): select → highlight writes to real OPFS at
+  `annotations/default/{book}.json` and re-renders over the same characters after a tab reload. Also
+  fixed a bug found there — the selection bar flipped off-screen for a top-of-page selection; it now
+  flips below (`sel-bar--below`). See NOTES "From R2". **Next up: R3** (sync client + profile picker;
+  also migrate positions under `{user}/`), then R4→R5.
 - **R1b complete** (merged) — **the reading surface.** R1's second half: a
   Resident bundle is now readable, fully offline. Filled the empty `readerview/` stub.
   **`readerview/pagetext.ts`** (pure, DOM-free, R2's anchor substrate): `splitParagraphs`/
@@ -39,8 +41,10 @@
   Reader **60 vitest** green (was 20; the rendering-lock, BundleReader `-rN`/dispose, Reader nav/
   retired-plate/position round-trip); lint/typecheck/build clean. Server untouched (**279 passed**), no
   type drift. Fixture-mode smoke green (build inlines; dev serves + `fs.allow` works). **Offline
-  acceptance is human-pending (browser-only)** — run the script, Download → kill server → read → reload,
-  confirm position restored + network idle. See NOTES "From R1b". (R2 built the annotations on top.)
+  acceptance VERIFIED** (2026-07-14, headless Chromium against the real server, built reader + API
+  served same-origin): Download → Resident → Open → page `1/6`→`6/6` (chapter title + plates) → lightbox
+  → reload restores `3/6` → **server killed, reading + plate lightbox still work from OPFS**; 16/16
+  checks, every `/api/library` call is download-phase only (zero on the read path). See CYCLE-LOG R1b.
 - **R1a complete** (merged) — the offline-first plumbing: `shell/` (`Storage`/`OpfsStorage`/
   `MemoryStorage`/`CapacitorStorage`-stub + `Platform.persistHint`), `shelf/` (`resolve.ts` `-rN` port,
   `client.ts` reachability+fetch, `checkout.ts` verify/retry/delta/remove state machine), the ESLint
@@ -189,17 +193,10 @@
   `npm run test:unit` → **36 pass**, `tsc` clean.
 
 ## Next up
-**Server done (S1–S12). Reader in progress: R1a + R1b shipped; R2 next, then R3–R5.**
-- **Human-pending (R1b):** run `reader/scripts/offline-acceptance.sh` and do the 2-minute browser walk
-  (Download fixture → Resident → kill server → Open → page-turn across the chapter boundary → plate +
-  lightbox → reload → position restored, "storage protected" visible, **network tab idle**). Paste
-  evidence/screenshots into the R1b CYCLE-LOG entry. This also exercises real OpfsStorage in a browser
-  (the one path jsdom can't cover).
-- **R2** — annotations: the anchor-math cycle (the fiddliest client code). Selection/Range → UTF-16
-  anchors over the R1b DOM. **Reuse `readerview/pagetext.ts`** (`paragraphStarts`/`splitParagraphs`) —
-  paragraph i's `<p>` starts at `paragraphStarts[i]`, `"\n\n"` join = 2 units between paragraphs; do
-  NOT reinvent the offset math (NOTES From R1b). Highlight (4 colors)/note/bookmark, tombstones,
-  per-book list. Watch the edge tap-zone vs selection collision (NOTES From R1b).
+**Server done (S1–S12). Reader in progress: R1a + R1b + R2 shipped (R2 = PR #17); R3 next, then R4–R5.**
+- **R1b + R2 real-browser acceptance: DONE** (headless Chromium, 2026-07-14). R1b offline walk 16/16
+  (Download → Resident → offline read + reload + server-killed reads; zero read-path API calls); R2
+  reload-survival (highlight persists to real OPFS, re-renders same chars). No longer human-pending.
 - **R3** — sync client + profile picker: consumes the S12 API. Its TS merge must mirror
   `server/src/scriptorium/sync/merge.py` **including the tie-breaks** (NOTES From S12). R1b already
   writes `positions/{bookId}.json` in the wire shape — feed it straight into the merge (NOTES From R1b).
