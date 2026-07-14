@@ -113,6 +113,6 @@ def test_cross_references_are_consistent():
             assert (BUNDLE / character["portrait"]).is_file()
 
 
-@pytest.mark.parametrize("pseudo", ["cover.json", "portrait-the-clockmaker.json"])
+@pytest.mark.parametrize("pseudo", ["cover.json", "portrait-wanderer.json"])
 def test_pseudo_plate_prompts_present(pseudo):
     validate("prompt", _load(f"prompts/{pseudo}"))

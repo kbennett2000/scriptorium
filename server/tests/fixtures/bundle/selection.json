@@ -11,21 +11,14 @@
     {
       "page_id": "0001",
       "reason": "chapter_open",
-      "salience": 0.71,
+      "salience": 0.45,
       "status": "rendered",
       "added_in_revision": 1
     },
     {
-      "page_id": "0003",
-      "reason": "scene_boundary",
-      "salience": 0.66,
-      "status": "rendered",
-      "added_in_revision": 1
-    },
-    {
-      "page_id": "0004",
-      "reason": "chapter_open",
-      "salience": 0.69,
+      "page_id": "0006",
+      "reason": "fill",
+      "salience": 0.7,
       "status": "rendered",
       "added_in_revision": 1
     }

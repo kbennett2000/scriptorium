@@ -456,3 +456,46 @@ The S5-era live checkpoint + the S10 gpu-marked render test remain unrun: on thi
 on the GPU box (unreachable from here). When TTS/ollama is healthy on the LAN with imagegen up, run
 `capture_tts_fixtures.py` + `uv run pytest -m gpu` (cast/ledger/prompts/**render** live) and paste
 summaries into CYCLE-LOG.
+
+## From S10b
+
+### gpu-marked live render is pending on a stale imagegen deploy (restart needed)
+The LAN is green (TTS + ollama up, imagegen `comfyuiReachable:true`) and the live render runs
+end-to-end, but the **deployed imagegen-service predates PR #13**: it returns 1024² even for an
+explicit `{width:832,height:1216}` request (HTTP 200, no 422). The fix is already on disk
+(`cf0f0a6`, `setNodeSize`); it needs a **service restart** (`sudo systemctl restart
+imagegen-service` on the GPU box — sudo/human; a shared-service restart, not something the headless
+cycle does unauthorized). After the restart, re-run `TTS_URL=… IMAGEGEN_URL=… uv run pytest -m gpu
+tests/test_render_live.py -s` — it asserts 832×1216 and will go green (it correctly caught the stale
+deploy this cycle). This supersedes the S10a "TTS degraded" reason — TTS/ollama are healthy now.
+
+### Post-publish `-rN` variant resolution is a reader (S11) concern
+Post-publish regen writes an additive `…/{page}-r{revision}.png` (+ web/thumb) beside the untouched
+original and bumps the revision; the prompt schema's `render` block is `additionalProperties:false`,
+so there is **no current-variant pointer** — the convention is **highest `-rN` wins**, derivable
+from filenames + manifest. `verify_bundle` tolerates the variants. When S11 builds checkout/serving,
+implement that resolution (and delta-sync may prune superseded variants locally, §4.4).
+
+### reselect → re-publish (revision re-bake) is still unwired
+`selection/reselect.py` remains standalone. The publish integrity guard + revision bump are now in
+place (`p8_publish.publish_bundle` bumps past the prior library revision), so the re-bake path a
+density-knob re-turn should trigger — reselect → P5(new)→P6→P7→**P8 re-publish** — can be wired
+where revisions are bumped. The guard will (correctly) refuse if a re-bake changes any published
+page's bytes. Confirm the "drop never-rendered non-manual plates" reading (flagged From S7) when it
+is wired.
+
+### meta.bake pinning is best-effort; richer per-bake capture is a possible follow-up
+`p8_publish._pin_bake` queries TTS `/v1/transforms` + `/health` (and imagegen `/health`) at publish
+time and falls back to non-empty placeholders offline. It does **not** capture the exact transform
+versions used *during* the bake (P1/P3/P5 discard the `meta` they receive). If provenance fidelity
+matters, thread the versions from `transform_with_meta` onto the job during the bake and read them
+here instead of re-querying at publish.
+
+### The fixture bundle is now real P8 output (new identity + regeneration command)
+`server/tests/fixtures/bundle/` is `usr-ce8f5ebd29d0` ("The Winter Quay", cast slug `wanderer`, 2
+plates) produced by the real pipeline. Regenerate with `cd server && uv run python
+../tools/make_fixture_bundle.py` (byte-reproducible — frozen clock + pinned `meta.bake` +
+deterministic FakeImagegen; `git diff --exit-code` after). The shared driver is
+`server/tests/_pipeline_build.py` (imported by both the tool and `test_pipeline_e2e`). Any phase
+change that alters an artifact means regenerating + re-committing the bundle in the same PR. The S7
+`selection.json` min_gap divergence and the S8 stale-prompt divergence are **cleared**.

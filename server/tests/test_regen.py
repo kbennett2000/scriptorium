@@ -87,11 +87,13 @@ def test_regen_endpoint_rerenders_a_plate(client, monkeypatch, tmp_path) -> None
     assert (tmp_path / "work" / "b" / "images" / "plates" / "0001.png").is_file()
 
 
-def test_regen_endpoint_refuses_published(client) -> None:
+def test_regen_endpoint_published_without_library_is_404(client) -> None:
+    # A published job whose plate has no library bundle file → 404 (the additive -rN path needs the
+    # published bundle; the happy -r2 case is exercised in test_publish.py).
     _seed_book(load_config(), state=JobState.PUBLISHED, rendered=True)
     r = client.post("/api/admin/books/b/plates/0001/regen")
-    assert r.status_code == 409
-    assert "post-publish" in r.json()["detail"]
+    assert r.status_code == 404
+    assert "no published plate" in r.json()["detail"]
 
 
 def test_regen_endpoint_404_for_unknown_plate(client) -> None:

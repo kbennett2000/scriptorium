@@ -326,6 +326,81 @@ cast.json; resume skips done pages; P1 503 → waiting_gpu → resume; P2 503 �
 `cast_running`; canonicalize 422 → `failed_units` + null major, phase completes; mentions 400
 → job `failed`), `test_job_states` updated for `cast_running`. reader/admin-ui untouched.
 
+## S10b — Publish (P8) + bundle verifier + post-publish regen + fixture regen (2026-07-13) — shipped
+
+The publish half of S10 (S10 split at the S10a plan gate). Rendered bakes now become an immutable,
+verifiable `library/{id}` bundle: `rendered → published`, a standalone verifier, the additive
+post-publish `-rN` regen path, and — finally — a fixture bundle produced by the *real* pipeline.
+After this cycle the bakery is complete; only S11 (library/checkout serving) stands between a
+published bundle and the reader.
+
+**Shipped**
+- **`Config.library_dir`** (`data/library/{book_id}/`, §3/§4.2) — the immutable published root.
+- **`bake/phases/p8_publish.py`** — `Publish` (CPU rest→rest `rendered → published`, like P4;
+  registered after `Render()` in `BAKE_PIPELINE`). One idempotent unit: **integrity guard** →
+  **assemble** → **meta** → **manifest**.
+  - *Integrity guard (§4.4):* if `library/{id}/pages/*` already exist, every one must be
+    byte-identical to the new bake's or publish raises `PipelineBug` (job `failed`) — published page
+    text is frozen forever (annotation anchors depend on it). First publish has nothing to guard.
+  - *Assemble:* copies `structure/pages/cast/selection/prompts` + `images/**` from `work/` into
+    `library/` — **excluding** the `*.src.sha256` derivative sidecars and **not** copying `ledgers/`
+    (its merged form rides on `pages/*`). `retired` plate files are copied like any other (additive).
+  - *meta.json* is **built** at publish from `job.bake_config` (identity) + computed `stats` +
+    pinned `bake` provenance. Pinning is **best-effort + offline-safe**: `pipeline_version` =
+    `git describe` (fallback `"unknown"`), `transform_service`/`models` fetched from TTS when
+    reachable, else non-empty placeholders (schema requires `minLength ≥ 1`; tests assert shape, not
+    values). `revision` = prior library revision + 1, else 1.
+  - *manifest.json* via a reusable `build_manifest()` (per-file sha256 + bytes, the 7
+    `reader_required` globs verbatim, `total_bytes_reader`) — ported from `make_fixture_bundle`.
+- **`tools/verify_bundle.py`** — standalone + importable (`verify_bundle(dir) -> list[str]`, nonzero
+  CLI exit). Checks manifest↔disk (hash/size/no-unlisted), every schema, `reader_required` presence,
+  and cross-refs (selection↔pages, each non-retired plate + cover + portraits have prompt + image
+  trio, retired files kept), tolerating post-publish `-rN` variants. Asserts schema + cross-refs,
+  **not** value equality (the fixtures deliberately diverge, per NOTES From S7/S8).
+- **Post-publish regen (the `-rN` design call):** the S10a `POST …/plates/{id}/regen` endpoint's
+  published branch now calls `regen_published_plate()` — renders a new `…/{page}-rN.png` (+ web/
+  thumb) **beside the untouched original** (N = the new revision, first → `-r2`, matching §10),
+  updates `prompts/{id}.render`, bumps `meta.revision`, and rebuilds the manifest **in place** — no
+  full re-publish, so the integrity guard is never at risk (pages untouched). Reuses the render core
+  (`render_to_spec`, factored out of `render_plate`). How the reader picks the current variant
+  (highest `-rN` wins) is an S11 concern — no schema change here.
+- **Fixture bundle regenerated via the real pipeline.** `tools/make_fixture_bundle.py` now drives a
+  genuine P0→P8 offline (real phases, respx TTS, FakeImagegen pixels, real P8) via a shared harness
+  `server/tests/_pipeline_build.py` (also the e2e driver). The committed
+  `server/tests/fixtures/bundle/` is now real P8 output — clearing the S8-flagged stale prompts
+  (`derived.avoid` is now an array, no stray `scene`, §10-correct cover/portrait) and the S7
+  hand-written `selection.json` min_gap divergence (it's now genuine P4 output). Byte-reproducible
+  (frozen clock + pinned `meta.bake` + deterministic FakeImagegen) → `git diff --exit-code`.
+  New identity: `usr-ce8f5ebd29d0` ("The Winter Quay", cast slug `wanderer`).
+- **admin-UI** (minimal wiring): `"rendered"` added to `JobStateName` + `CHAIN_ORDER` + the
+  Post-render gate + a "Rendered (P7)" milestone; `regenPlate()` client call; the **Regen button is
+  enabled** (per-plate re-render, cache-busts the thumb, refetches); the placeholder banner is now
+  gated on `render_stub` (added to the review payload) instead of always-on.
+
+**Design call — regen manifest:** in-library additive `-rN` + in-place manifest rebuild (revision
+bump), *not* a full republish. Chosen because §4.4 makes revisions additive and only re-publish (a
+reselect re-bake, not wired yet) exercises the integrity guard; a single-plate regen never touches
+pages, so an in-place manifest update is both sufficient and safe.
+
+**Tests (offline, 237 passed / 5 deselected — was 225/5):** `test_pipeline_e2e` extended to
+**P0→P8** (`verify_bundle` green); `test_publish.py` (integrity-guard refusal; republish
+idempotency; additive `-r2` regen + verify still green; endpoint published-branch 200); new
+`test_verify_bundle.py` (fixture clean + each corruption caught); `test_regen.py` published branch
+updated (404-without-library). `test_phases_p4` divergence-doc assertion flipped to a
+consistency assertion (the fixture is now real engine output). ruff clean; admin-ui eslint + tsc +
+vitest clean; no schema/type drift.
+
+**gpu-marked live render box — PENDING (stale imagegen deploy, reported not papered over):** with
+the LAN green (TTS `ollama_reachable:true`, `qwen3.5:9b`; imagegen `comfyuiReachable:true`), the live
+render ran end-to-end — TTS unload-first → real SDXL render → derivatives → `rendered`, and TTS
+`/health` showed `models_loaded:[]` after (§7.4 sequencing observed). **But plates came back
+1024×1024, not 832×1216**: the deployed imagegen-service (pid up ~32.7 h) predates PR #13 — a direct
+`POST /generate {width:832,height:1216}` also returns 1024² (HTTP 200, no 422). The fix is already on
+disk (`cf0f0a6`, `setNodeSize` present); it needs a service **restart** (`sudo systemctl restart
+imagegen-service` on the GPU box — sudo/human, and a shared-service restart I won't do unauthorized).
+The gpu-marked `test_render_live` correctly caught the stale deploy (as designed); box stays pending
+until the restart. Offline FakeImagegen fully covers development.
+
 ## S10a — Real render (P7) + imagegen client + ADR-0011 (2026-07-13) — shipped
 
 The render half of S10 (S10 split at the plan gate; **S10b = publish P8 + verify_bundle**). Approved
