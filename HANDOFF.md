@@ -1,7 +1,26 @@
 # Handoff
 
 ## Current state
-- **R1b complete** (PR open, awaiting human merge) — **the reading surface.** R1's second half: a
+- **R2 complete** (PR open, awaiting human merge) — **annotations: highlights, notes, bookmarks with
+  byte-solid anchors.** New `reader/src/annotations/`: **`anchors.ts`** (pure `domRangeToAnchor`/
+  `anchorToDomRange`, reusing `readerview/pagetext.ts` — intra-paragraph offset via a boundary
+  `Range.toString().length`, robust to highlight-segmented paragraphs; collapsed/out-of-text → null);
+  **`segments.ts`** (`paintParagraph` overlap→runs, later-on-top, `runs.join("")===paraText`);
+  **`store.ts`** (local `annotations/{user}/{bookId}.json`, `DEV_USER_ID="default"`, create/update/
+  delete-as-tombstone/`toggleBookmark {0,0}`, uuid+ISO+injectable `now`, R3-mergeable wire shape);
+  **UX** `SelectionBar`/`NoteSheet`/`AnnotationsPanel` wired into `Reader.tsx` (select→bar with 4 colors/
+  Note/Copy, toolbar bookmark toggle, filterable list with jump+flash, tap-a-highlight recolor/note/
+  delete). **`Page.tsx`** paints paragraphs through `paintParagraph` (`<span class="hl hl-{color}">`;
+  R1b-identical DOM when unhighlighted). **Tap-zone↔selection fix**: removed the selection-stealing
+  `.tap-zone` buttons; edge-tap page-turn now comes from `readerview/nav.ts#edgeTapAction` (pure), and
+  all page-turns defer to a live selection. Reader **93 vitest** (was 60) — anchor round-trip property
+  test reconstructs **597 random selections character-identically, 461 cross-paragraph** (seed
+  `0x1a2b3c4d`), + astral/verse/reject/segmented cases, + component persist/restore. Lint/tsc/build
+  clean; server **279 passed** (untouched); no type drift (no schema change). **Manual reload-survival
+  check human-pending** (OPFS, browser): highlight → reload → same chars, network idle. See NOTES
+  "From R2". **Next up: R3** (sync client + profile picker; also migrate positions under `{user}/`),
+  then R4→R5.
+- **R1b complete** (merged) — **the reading surface.** R1's second half: a
   Resident bundle is now readable, fully offline. Filled the empty `readerview/` stub.
   **`readerview/pagetext.ts`** (pure, DOM-free, R2's anchor substrate): `splitParagraphs`/
   `joinParagraphs` (exact inverse on `"\n\n"`, verse `\n` preserved), `paragraphStarts`
@@ -21,8 +40,7 @@
   retired-plate/position round-trip); lint/typecheck/build clean. Server untouched (**279 passed**), no
   type drift. Fixture-mode smoke green (build inlines; dev serves + `fs.allow` works). **Offline
   acceptance is human-pending (browser-only)** — run the script, Download → kill server → read → reload,
-  confirm position restored + network idle. See NOTES "From R1b". **Next up: R2** (annotations — the
-  anchor-math cycle), then R3→R5.
+  confirm position restored + network idle. See NOTES "From R1b". (R2 built the annotations on top.)
 - **R1a complete** (merged) — the offline-first plumbing: `shell/` (`Storage`/`OpfsStorage`/
   `MemoryStorage`/`CapacitorStorage`-stub + `Platform.persistHint`), `shelf/` (`resolve.ts` `-rN` port,
   `client.ts` reachability+fetch, `checkout.ts` verify/retry/delta/remove state machine), the ESLint
