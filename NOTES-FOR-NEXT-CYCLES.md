@@ -158,3 +158,58 @@ fetched bytes inside the gutenberg flow so provenance (§5.1) holds for pg- book
 `tests/` has no `__init__.py`, so `tests/fake_phases.py` is imported as `from fake_phases
 import …` (pytest prepends the test dir to `sys.path`), not as a relative import. Keep new
 shared test doubles there and import them the same way.
+
+## From S5
+
+### `cast_running` was added to the state machine (approved deviation)
+DESIGN §7.3 gave P1/P3/P5/P7 a `*_running` GPU state but **not** P2, so P2's
+`cast-canonicalize` (a GPU call) could not park on `waiting_gpu`. We added
+`cast_running` (chain `… mentions_done → cast_running → cast_done …`, `cast_running ∈
+GPU_STATES`). If `system-overview.md`/DESIGN ever resurfaces and is treated as canonical,
+reconcile it to include `cast_running`. The state list is now: created, ingested,
+mentions_running, mentions_done, **cast_running**, cast_done, ledger_running, ledger_done,
+selected, prompts_running, prompts_draft, in_review, approved, rendering, published.
+
+### The "enter the running state" pattern for GPU phases
+The runner can only park on `waiting_gpu` from a state in `GPU_STATES`, so a GPU phase's
+`from_state` must be a `*_running` state. A job coming off a rest/`*_done` state therefore
+needs a **CPU "enter" phase** to move it onto the running state first. S5 has two:
+`MentionsEnter` (`ingested → mentions_running`, zero units — pure marker) and `CastReduce`
+(`mentions_done → cast_running`, carries the actual CPU reduce). **P3/P5/P7 need the same
+shape:** a CPU step onto `ledger_running`/`prompts_running`/`rendering`, then the GPU phase.
+(P3 also needs strict page contiguity — §7.3 — layered on top.)
+
+### TTS client + error taxonomy are the reusable GPU-call surface
+`bake/tts_client.py` (`TtsClient(cfg)`, async) is the one place the TTS taxonomy is mapped:
+503/conn → `GpuUnavailable`, 422 → `UnitFailed`, 400/404/413/401/500 → `PipelineBug`
+(new bug-class exception in `phases/base.py` → job `failed`). P3/P5 should call it the same
+way (`scene-update`, `illustration-prompt`). `unload_models()` is implemented and tested
+now but **unused until P7/S10**, which must call it (and require success) before rendering
+(§7.4). `health()` exists too; the runner's own `default_gpu_gate` still probes `/health`
+independently (left untouched — the S4 runner is load-bearing).
+
+### `_TRANSFORM_TIMEOUT_S` is a hardcoded constant (candidate Config field)
+`tts_client._TRANSFORM_TIMEOUT_S = 120.0` (LLM calls are slow) and `_QUICK_TIMEOUT_S = 15.0`
+(health/unload). There is still no TTS-timeout `Config` field; promote them if a slow model
+or a big page needs tuning. (Same note as S4's "no dedicated TTS timeout field".)
+
+### TTS fixtures are hand-written — replace with real captures
+`server/tests/fixtures/tts/**` were authored by hand (TTS unreachable from the box). Run
+`tools/capture_tts_fixtures.py` on the LAN (TTS T5 up, `TTS_URL` set) to overwrite them with
+genuine captures, and run the `-m gpu` `test_cast_live.py` to paste a real cast summary into
+CYCLE-LOG. S6/S8 (P3 ledger, P5 prompts) will want the same capture-tool treatment for
+`scene-update` / `illustration-prompt`. Tests assert shape only, so re-captures stay green.
+
+### Reducer intermediates vs. the published cast contract
+`reduce_cast` returns groups **with** `is_person` and `descriptors`; those are written to the
+work-only `cast/groups.json` and are deliberately **absent** from `cast.json` (per that
+schema's top-level note). `cast.json` is (re)assembled from `groups.json` + the per-major
+`cast/canon/{slug}.json` after every canonicalized major, so it is always schema-valid and a
+kill mid-P2b loses ≤1 unit. Minors (and un-canonicalized/failed majors) get
+`visual_description: null`, `one_line: ""`, `tags: []`, `portrait: null`. Portraits are P7.
+
+### Major rule interpretation (pin if it ever matters)
+`major` = person groups with ≥3 `mention_pages` **or** the top-6 persons by page count,
+**whichever set has more members** (tie → the ≥3 set). Non-persons are never auto-major.
+Both branches are pinned by `test_reduce_cast.py`. For tiny casts (<6 persons) the top-6
+branch makes nearly everyone major — that is the spec's literal behavior, not a bug.

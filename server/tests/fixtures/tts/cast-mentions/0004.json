@@ -1,0 +1,41 @@
+{
+  "output": {
+    "mentions": [
+      {
+        "name": "the Time Traveller",
+        "aliases": [],
+        "descriptors": [],
+        "is_person": true
+      },
+      {
+        "name": "the Eloi",
+        "aliases": [
+          "Eloi"
+        ],
+        "descriptors": [
+          "frail creatures",
+          "about four feet high"
+        ],
+        "is_person": false
+      },
+      {
+        "name": "Weena",
+        "aliases": [],
+        "descriptors": [
+          "a little woman"
+        ],
+        "is_person": true
+      }
+    ]
+  },
+  "meta": {
+    "transform": "cast-mentions",
+    "transform_version": "1",
+    "model": "qwen3:8b",
+    "input_tokens_est": 800,
+    "truncated": false,
+    "attempts": 1,
+    "latency_ms": 4200,
+    "queued_ms": 0
+  }
+}

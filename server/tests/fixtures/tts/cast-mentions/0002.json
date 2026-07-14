@@ -1,0 +1,42 @@
+{
+  "output": {
+    "mentions": [
+      {
+        "name": "the Time Traveller",
+        "aliases": [],
+        "descriptors": [
+          "a slender build"
+        ],
+        "is_person": true
+      },
+      {
+        "name": "the Psychologist",
+        "aliases": [],
+        "descriptors": [],
+        "is_person": true
+      },
+      {
+        "name": "Filby",
+        "aliases": [],
+        "descriptors": [],
+        "is_person": true
+      },
+      {
+        "name": "the Very Young Man",
+        "aliases": [],
+        "descriptors": [],
+        "is_person": true
+      }
+    ]
+  },
+  "meta": {
+    "transform": "cast-mentions",
+    "transform_version": "1",
+    "model": "qwen3:8b",
+    "input_tokens_est": 800,
+    "truncated": false,
+    "attempts": 1,
+    "latency_ms": 4200,
+    "queued_ms": 0
+  }
+}

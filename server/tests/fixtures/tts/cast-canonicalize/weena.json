@@ -1,0 +1,23 @@
+{
+  "output": {
+    "visual_description": "A small, childlike woman of the Eloi, delicate and about four feet high, with a frail yet graceful build, large gentle eyes, and a soft simple tunic of pale cloth.",
+    "one_line": "A small childlike Eloi woman, frail and graceful",
+    "tags": [
+      "eloi",
+      "childlike",
+      "small",
+      "frail",
+      "graceful"
+    ]
+  },
+  "meta": {
+    "transform": "cast-canonicalize",
+    "transform_version": "1",
+    "model": "qwen3:8b",
+    "input_tokens_est": 800,
+    "truncated": false,
+    "attempts": 1,
+    "latency_ms": 4200,
+    "queued_ms": 0
+  }
+}

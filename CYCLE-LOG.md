@@ -264,3 +264,64 @@ it (or fail) — the resume-to-prev guard is tested as an illegal-transition cas
   `waiting_gpu` via both the health gate and a mid-phase `GpuUnavailable` green; WoL guard
   green; kill-test green; `POST /books` (frontmatter.md) → schema-valid `work/{id}` pages +
   structure. reader/admin-ui untouched (green from S1).
+
+## S5 — TTS client + P1 mentions + P2 reduce/canonicalize (2026-07-13) — shipped
+
+First real GPU phases. `bake/tts_client.py` (async client for `POST /v1/transform/{name}` +
+`/v1/models/unload` + `/health`, mapping the TTS §8 error taxonomy to phase-control
+exceptions), `bake/reduce_cast.py` (the §7.2 reducer as a pure function), and the four phase
+classes that fill the runner's `pipeline=[]` seam. Developed against hand-written TTS
+fixtures (TTS unreachable from this box); `tools/capture_tts_fixtures.py` re-captures them
+on-LAN.
+
+**Pipeline registered (keyed by `from_state`, each a legal single edge):**
+```
+mentions_enter    ingested        -> mentions_running   CPU, 0 units (claims the GPU state)
+p1_mentions       mentions_running-> mentions_done      GPU, unit=page   -> mentions/{page}.json
+p2_reduce         mentions_done   -> cast_running        CPU, 1 unit      -> cast/groups.json + cast.json
+p2_canonicalize   cast_running    -> cast_done           GPU, unit=major  -> cast/canon/{slug}.json, cast.json
+```
+`mentions_enter`/`p2_reduce` are the CPU steps that move a job onto a `*_running` GPU state,
+because the runner may only park on `waiting_gpu` from a state in `GPU_STATES`.
+
+**DESIGN deviations (both approved this cycle):**
+1. **Added a `cast_running` GPU state** (chain: `… mentions_done → cast_running → cast_done …`;
+   `cast_running ∈ GPU_STATES`). §7.3 omitted a running state for P2, which would have left
+   its `cast-canonicalize` (a GPU call) unable to park on `waiting_gpu`. With `cast_running`,
+   P2's canonicalize parks exactly like every other GPU phase. `mentions_done → cast_done` is
+   no longer a direct edge; `test_job_states.py` updated accordingly.
+2. **Pronoun-drop in the reducer** (§7.2 amendment): mentions whose normalized name is a bare
+   pronoun (`i, he, she, they, we, you, it`) are dropped before grouping — live T5 outputs
+   surfaced unattributable first-person `"I"` mentions. Proved by
+   `test_bare_pronouns_dropped_before_grouping` + the `"I"` mention in fixture page 0001.
+
+**TTS error taxonomy → job outcome (tts_client, TTS §8):** 503/connection → `GpuUnavailable`
+→ `waiting_gpu` (retried each tick w/ WoL); 422 → `UnitFailed` → 3× 10/60/300s ladder →
+`failed_units` (unit left un-enriched, cast.json stays valid via nullable
+`visual_description`); 400/404/413/401/500 → new `PipelineBug` → bug-class → job `failed`.
+Every code is exercised in `test_tts_client.py`; the job-level effect of the representative
+codes is exercised end-to-end in `test_phases_cast.py`.
+
+**Reducer (`reduce_cast`, pure) — §7.2 steps implemented + edge tests green:** Weena/Eloi
+co-occurrence guard (union skipped if it would co-locate a distinct-on-a-page pair, checked
+against component roots so it holds transitively); Mr. Hillyer/Hillyer honorific merge (rule
+2c on content tokens); possessive `'s` strip; ≥3-pages **or** top-6 major rule (both
+"larger set" branches tested); kebab slug uniquing with `-2` suffixes.
+
+**Fixtures:** `server/tests/fixtures/tts/cast-mentions/{0001..0006}.json` +
+`cast-canonicalize/{time-traveller,weena}.json` — **hand-written** (provenance in the
+fixtures README), full `{output, meta}` envelopes, schema-shaped to the TTS transforms. The
+full P1→P2 run over them yields a schema-valid `cast.json` with `time-traveller` major and
+aliases including "the Traveller" (asserted by membership, not exact strings).
+
+**gpu-marked live test** (`test_cast_live.py`, `-m gpu`, skipped offline): P1+P2 over the
+first 10 pg35 pages against real TTS; prints a cast summary to paste here. **Not yet run** —
+TTS was unreachable from the authoring box; run on-LAN with `TTS_URL` set and paste the
+summary on the next live checkpoint.
+
+**Verification:** `uv run ruff check .` (+ `tools/`) → clean. `uv run pytest` → **137 passed,
+2 deselected** (network + gpu-live). New: `test_tts_client` (every error code), `test_reduce_cast`
+(6 named edge cases + non-person + majority), `test_phases_cast` (full P1→P2 schema-valid
+cast.json; resume skips done pages; P1 503 → waiting_gpu → resume; P2 503 → waiting_gpu on
+`cast_running`; canonicalize 422 → `failed_units` + null major, phase completes; mentions 400
+→ job `failed`), `test_job_states` updated for `cast_running`. reader/admin-ui untouched.

@@ -31,6 +31,7 @@ class JobState:
     INGESTED = "ingested"
     MENTIONS_RUNNING = "mentions_running"
     MENTIONS_DONE = "mentions_done"
+    CAST_RUNNING = "cast_running"
     CAST_DONE = "cast_done"
     LEDGER_RUNNING = "ledger_running"
     LEDGER_DONE = "ledger_done"
@@ -54,6 +55,7 @@ _CHAIN: tuple[str, ...] = (
     JobState.INGESTED,
     JobState.MENTIONS_RUNNING,
     JobState.MENTIONS_DONE,
+    JobState.CAST_RUNNING,
     JobState.CAST_DONE,
     JobState.LEDGER_RUNNING,
     JobState.LEDGER_DONE,
@@ -71,6 +73,7 @@ _CHAIN: tuple[str, ...] = (
 GPU_STATES: frozenset[str] = frozenset(
     {
         JobState.MENTIONS_RUNNING,
+        JobState.CAST_RUNNING,
         JobState.LEDGER_RUNNING,
         JobState.PROMPTS_RUNNING,
         JobState.RENDERING,

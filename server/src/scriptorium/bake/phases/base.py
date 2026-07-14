@@ -12,6 +12,10 @@ Exceptions model the three §7.3 failure classes:
   ``waiting_gpu`` and retries each tick (with Wake-on-LAN, §7.4).
 - :class:`UnitFailed` — 422-class, retriable. The runner runs the 3× backoff ladder;
   on exhaustion it records the unit in ``failed_units`` and continues the phase.
+- :class:`PipelineBug` — 400/404/413/401/500-class from a GPU service (malformed request,
+  unknown transform, over-budget input, auth, internal): a bug the pipeline can't retry
+  around. It is deliberately a plain ``Exception`` so the runner's bug-class handler fails
+  the whole job loudly (TTS DESIGN §8: "halt the phase loudly").
 - Anything else = bug-class → the runner fails the whole job (human attention).
 """
 
@@ -37,6 +41,14 @@ class GpuUnavailable(Exception):
 
 class UnitFailed(Exception):
     """A unit failed retriably (422-class) → 3× ladder then ``failed_units`` (§7.3)."""
+
+
+class PipelineBug(Exception):
+    """A non-retriable GPU-service error (400/404/413/401/500) → job ``failed`` (§8).
+
+    Not caught specially by the runner: it falls through to the bug-class handler and
+    fails the whole job, which is exactly the "halt loudly" contract for these codes.
+    """
 
 
 @runtime_checkable
