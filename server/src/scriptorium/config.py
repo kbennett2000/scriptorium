@@ -67,6 +67,20 @@ class Config:
         """Directory holding the JSON Schemas (shared/schemas)."""
         return self.shared_dir / "schemas"
 
+    @property
+    def sync_dir(self) -> Path:
+        """Root of the mutable sync layer — annotations, positions, and their
+        versioned backups (``sync/{annotations,positions,annotations-backups}/``,
+        DESIGN §12). Outside ``library/`` because sync docs are the one thing that
+        changes after publish."""
+        return self.data_dir / "sync"
+
+    @property
+    def users_file(self) -> Path:
+        """Household profiles file (``users.json``, DESIGN §14). May be absent on a
+        fresh box — the users loader falls back to a committed dev sample."""
+        return self.data_dir / "users.json"
+
 
 def load_config() -> Config:
     """Build a Config from the current environment."""

@@ -1,6 +1,25 @@
 # Handoff
 
 ## Current state
+- **S12 complete** (PR open, awaiting human merge) — **the server is now feature-complete for M1;
+  everything after is reader work.** The DESIGN §12 sync API — the mutable layer the reader syncs to.
+  New **`sync/merge.py`** (pure): `merge_annotations` (union by `id`, LWW by `modified` string-compare,
+  tombstones identical, output canonical/sorted-by-id) + `merge_positions` (`furthest` tuple-max on
+  `(page_seq,char)` ignoring time, `current` LWW) — both commutative/associative/idempotent, ties
+  broken by deterministic full-field keys; `TOMBSTONE_RETENTION_DAYS=180` (compaction deferred). New
+  **`sync/api.py`** (`APIRouter(prefix="/api")`, wired in `app.py`): `GET /api/users`; annotations
+  GET/PUT + positions GET/PUT under `/api/sync/{kind}/{user}/{book}`. PUT = validate-in (422) →
+  identity-vs-path check (annotations, 400) → per-`(user,book)` `asyncio.Lock` → merge → validate-out
+  → atomic write (tmp+`os.replace`) → **annotations only:** timestamped backup (`ns`-named) + prune to
+  newest 20. `{user}`/`{book}` pattern-guarded (traversal) + `is_relative_to(sync_dir)` backstop.
+  Positions GET → **404 when absent** (no synthesized default). New **`users/loader.py`** + committed
+  **`users/users.sample.json`** (fallback when `data_dir/users.json` absent; schema-validated). New
+  `Config.sync_dir`/`users_file` properties. Offline **273 passed / 5 deselected** (+20: a 1600-case
+  seeded property harness — no `hypothesis` — the three §12 conflict examples, backup-prune 25→20, and
+  a two-client async concurrency proof); ruff/eslint/tsc/vitest clean; no type drift (no schema
+  changes); live smoke green. See NOTES "From S12". **Next up: reader cycles R1→R5** (R1 = shell/
+  shelf/checkout/reading against the S11 library API; R3 consumes this S12 sync API and must mirror
+  `sync/merge.py`).
 - **S11 complete** (PR open, awaiting human merge). The library + checkout API — a published bundle
   is now fully checkout-able. New **`library/api.py`** (`APIRouter(prefix="/api/library")`, wired in
   `app.py`, served **only** from `cfg.library_dir`): `GET /api/library` (shelf listing: id, title,
@@ -118,21 +137,20 @@
   exceptions), `bake/api.py` (admin endpoints; P0 inline). Kill-test proves ≤1 unit lost.
 - **S3 / S2 / S1 complete** (merged): paginator + fixture bundle; ingestion adapters;
   monorepo skeleton + schemas + generated TS types + `/health`.
-- Server: `uv run pytest` → **253 passed, 5 deselected** (network + four gpu-live incl. render);
+- Server: `uv run pytest` → **273 passed, 5 deselected** (network + four gpu-live incl. render);
   `uv run ruff check . ../tools` clean. admin-ui: `npm run test` (Vitest) → **1 passed**
   (the offline smoke); eslint + tsc clean. `tools/verify_bundle.py` exits 0 over the fixture bundle.
   imagegen-service (PR #13, merged): `npm run test:unit` → **36 pass**, `tsc` clean.
 
 ## Next up
-- **S12** — sync API: annotations/positions delta protocol (the second reader-facing group,
-  §11.1). The library group (S11) is done; sync is the remaining server surface before the reader is
-  fully served. Unblocked from S1.
-- **R1** — reader shell/shelf/checkout, unblocked since S3 and now fully unblocked by S11's
+**The server is feature-complete for M1 (S1–S12 done). All remaining cycles are reader (R1–R5).**
+- **R1** — reader shell/shelf/checkout, unblocked since S3 and fully unblocked by S11's
   `/api/library/*`. Build against `server/tests/fixtures/bundle/` (a **real** P8 bundle) and a live
   server; the reader can copy admin-ui's test-runner/fetch-client shape but must keep network calls
   fenced to `sync/`+`shelf/`. **Port `library/checkout.py`'s highest-`-rN`-wins resolution** into the
   reader's `sync/` so delta-sync fetches exactly one current image per plate (NOTES From S11).
-  S12 and R1 are dispatchable in parallel.
+- **R3** — sync client + profile picker: consumes this S12 API. Its TS merge must mirror
+  `server/src/scriptorium/sync/merge.py` **including the tie-breaks** (NOTES From S12).
 - **Ops (not a cycle):** restart `imagegen-service` on the GPU box so PR #13 (width/height) is live,
   then re-run `pytest -m gpu tests/test_render_live.py` to close the gpu-marked box (832×1216).
 
