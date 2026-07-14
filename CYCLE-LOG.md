@@ -326,6 +326,58 @@ cast.json; resume skips done pages; P1 503 → waiting_gpu → resume; P2 503 �
 `cast_running`; canonicalize 422 → `failed_units` + null major, phase completes; mentions 400
 → job `failed`), `test_job_states` updated for `cast_running`. reader/admin-ui untouched.
 
+## S12 — Sync API (annotations, positions, backups) (2026-07-13) — shipped
+
+The mutable layer: the DESIGN §12 sync surface that the reader syncs annotations and reading
+positions to. Completes the server for M1 — everything after is reader work.
+
+**Shipped**
+- `sync/merge.py` — pure, FastAPI-free merge. `merge_annotations` (union by `id`, LWW by `modified`
+  via ISO string compare; tombstones merge identically; output canonicalized — dedup-by-id + sorted
+  by id — so the algebra is provable by `==`). `merge_positions` (`furthest` = tuple-max on
+  `(page_seq, char)` ignoring time; `current` = LWW by `modified`). Ties broken by full-field keys so
+  both are truly commutative. `TOMBSTONE_RETENTION_DAYS = 180` documented; compaction deferred.
+- `sync/api.py` — `GET /api/users`; annotations GET/PUT and positions GET/PUT under `/api/sync`.
+  PUT flow: validate body (422 on fail) → identity-vs-path check for annotations (400) → per-`(user,
+  book)` `asyncio.Lock` → merge → validate merged → atomic write (tmp + `os.replace`, the `job.py`
+  idiom) → **annotations only:** timestamped backup + prune to newest 20. `{user}`/`{book}` are
+  pattern-validated (the traversal guard) plus an `is_relative_to(sync_dir)` backstop.
+- `users/loader.py` + committed `users/users.sample.json` (kris/amy/junior). `GET /api/users` reads
+  `data_dir/users.json` if present, else the sample; both validated against the `users` schema.
+- `config.py` — `sync_dir` + `users_file` properties (derived from `data_dir`; no new fields, no env).
+- `app.py` — `sync_router` included (before the catch-all static `/` mount).
+- Tests (+20 → **273 passed** / 5 deselected): `test_sync_merge.py` — the three §12 conflict examples
+  as named tests + a **seeded-random property harness** (`random.Random`, no `hypothesis`): 800
+  annotation triples proving commutative/associative/idempotent, 800 position triples proving the
+  same + `furthest` never regresses; **1600 property cases**, every generated & merged doc
+  schema-validated. `test_sync_api.py` — users fallback/override/malformed-surfaced; annotations
+  union-merge + LWW; **backup prune 25→20 ordered**; invalid-body 422 (nothing written); identity
+  mismatch 400; bad-id 400 + encoded-`..` rejected-and-no-leak; positions 404-when-absent +
+  furthest-wins; **concurrency: two interleaved async PUTs (httpx `ASGITransport` + `asyncio.gather`)
+  keep both annotations** — the lock's proof.
+
+**Decisions**
+- **Merge tie-breaks are part of the contract.** LWW "greater `modified`" is ambiguous when two
+  copies share a timestamp; each merge key appends a deterministic full-field tiebreak
+  (annotations: canonical JSON of the entry; `current`: `(page_seq, char, device)`) so the result is
+  independent of argument order — otherwise commutativity fails on equal-timestamp collisions. Caught
+  by the property harness while writing it (positions `current` differing only by `device`).
+- **Positions GET is 404 when absent, not a synthesized default** (confirmed with the human): a
+  positions doc's `page_seq` is ≥1, so there is no valid "empty" value to invent; the reader treats
+  404 as "no position yet, start at page 1."
+- **Backups are zero-padded `time.time_ns()` filenames** (lexical order == chronological), bump-`+1`
+  on the astronomically unlikely same-ns collision. Prune = `sorted(glob)[:-20]` unlinked. Positions
+  get no backup (DESIGN §12).
+- **users.json dev sample lives in the package** (`users/users.sample.json`) as a loader fallback, so
+  a fresh box and the tests get profiles without seeding; a real `data_dir/users.json` overrides it.
+
+**Verification** — ruff clean; `uv run pytest` 273 passed / 5 deselected; admin-ui lint+typecheck+
+test green (untouched); `node shared/gen-types.mjs && git diff --exit-code shared/` → no drift (no
+schema changes); live smoke (real `uvicorn`, temp data dir): `GET /api/users` sample; two annotation
+PUTs merge to `{a,b}` with 2 backups written; positions PUT round-trips; fresh positions → 404;
+encoded `..` → rejected (404 via ASGI path-normalization on a real server; 400 via the pattern guard
+under TestClient — both safe, nothing escapes `sync_dir`).
+
 ## S11 — Library + checkout API (2026-07-13) — shipped
 
 The bridge from a published bundle to the reader: the DESIGN §11.1 library group, the two static

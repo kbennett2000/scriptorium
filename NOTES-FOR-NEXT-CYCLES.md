@@ -544,3 +544,47 @@ real `uvicorn` + scripted client over `127.0.0.1:8799` (18/18 reader files sha25
 == `total_bytes_reader`, ETag/304, traversal 400) — functionally identical to a LAN fetch (same ASGI
 path), but a true cross-host run (and a real pg-35 bundle rather than the `usr-…` fixture) is still
 worth doing once a reader box exists. The offline `test_library_api.py` fully covers the contract.
+
+## From S12 (sync API)
+
+### Reader-side merge (R3) must mirror `sync/merge.py` bit-for-bit
+The server is authoritative, but R3's sync engine adopts the server's merged doc *and* may merge
+locally before PUT, so the TS merge must match `server/src/scriptorium/sync/merge.py` exactly:
+annotations = union by `id`, LWW by `modified` (ISO **string** compare — do not parse to Date, the
+strings are already UTC and lexically ordered), tombstones merge identically (a later delete beats an
+earlier edit and vice-versa — deletion can lose); positions `furthest` = tuple-max on
+`(page_seq, char)` ignoring time, `current` = LWW. **Port the tie-breaks too** — equal-`modified`
+collisions are resolved by a deterministic full-field key (annotations: canonical JSON of the entry;
+`current`: `(page_seq, char, device)`); skip them and two clients can diverge on identical
+timestamps. Output must be canonical (annotations sorted by `id`) so client/server equality holds.
+
+### Tombstone compaction is still deferred — the 180-day constant is inert
+`merge_annotations` keeps **every** tombstone forever; `TOMBSTONE_RETENTION_DAYS = 180` is only a
+documented floor a future compactor must honor. Annotation docs therefore grow unbounded across a
+book's life (a few hundred entries is fine per §12, so no urgency). When compaction lands it must run
+server-side after merge, drop only tombstones older than the retention floor, and stay convergent
+(a client offline longer than the floor could resurrect a compacted-away annotation — accept or
+lengthen the floor). Not v1.
+
+### Positions have no backup by design; annotations backups are unbounded-in-count-but-pruned
+Only annotations get versioned backups (`sync/annotations-backups/{user}/{book}/{ns}.json`, newest 20
+kept). Positions are cheap to reconstruct and were intentionally left un-backed-up (DESIGN §12). If a
+positions-restore is ever wanted, add a parallel prune-to-N there — trivial, deliberately omitted.
+
+### `GET /api/sync/positions` is household-visible; `PROGRESS_PRIVATE` reserved
+No auth and no per-profile restriction on reading another profile's position (DESIGN §12 — the shelf
+shows "Amy is on ch. 4"). The `PROGRESS_PRIVATE=false` flag is reserved and **unimplemented**; wiring
+it means a config field + a requesting-profile check on the positions GET (and R3 UI to set it).
+
+### users.json admin CRUD is still a §14 stretch goal (not built)
+`GET /api/users` is read-only; profiles are hand-edited in `data_dir/users.json` (falls back to the
+committed `users/users.sample.json`). Admin-UI CRUD for profiles was descoped from S12; add it as a
+small admin cycle if desired. Note the sample ships **inside the package** — a wheel build must
+include package data (dev/editable installs read it directly via `Path(__file__).parent`).
+
+### Encoded-`..` rejection code differs by server (both safe)
+`{user}`/`{book}` traversal is rejected two ways: the pattern guard returns **400**, but a real ASGI
+server (uvicorn) normalizes `..` in the path *before* routing, so a two-segment route simply doesn't
+match → **404**. `TestClient` doesn't normalize, so tests see 400. `test_encoded_traversal_never_
+escapes` asserts rejection ∈ {400, 404} + no leak rather than a fixed code. Nothing reaches disk
+outside `sync_dir` either way (the `is_relative_to` backstop).

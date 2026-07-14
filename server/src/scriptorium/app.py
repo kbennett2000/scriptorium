@@ -30,6 +30,7 @@ from .bake.review_api import router as review_router
 from .bake.runner import Runner
 from .config import Config, load_config
 from .library.api import router as library_router
+from .sync.api import router as sync_router
 
 # The bake pipeline, keyed by ``from_state`` inside the runner. S5 registered P1 (mentions)
 # and P2 (reduce + canonicalize); S6 appends P3 (scene ledger); S7 appends P4 (selection);
@@ -88,6 +89,7 @@ app = FastAPI(title="scriptorium", version="0.1.0", lifespan=lifespan)
 app.include_router(admin_router)
 app.include_router(review_router)
 app.include_router(library_router)
+app.include_router(sync_router)
 
 
 async def _probe(url: str | None) -> dict[str, bool]:
