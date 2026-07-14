@@ -14,6 +14,16 @@ export default defineConfig({
       ),
     },
   },
+  server: {
+    // VITE_FIXTURE_BUNDLE mode inlines the canonical server fixture via import.meta.glob; the dev
+    // server must be allowed to read it across the package boundary (build reads from disk directly).
+    fs: {
+      allow: [
+        fileURLToPath(new URL(".", import.meta.url)),
+        fileURLToPath(new URL("../server/tests/fixtures/bundle", import.meta.url)),
+      ],
+    },
+  },
   test: {
     environment: "jsdom",
     globals: false,

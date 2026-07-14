@@ -604,7 +604,7 @@ itself (real `navigator.storage.getDirectory()`) is exercised only in a real bro
 of **R1b's offline-acceptance run** (checkout the fixture in a browser, kill the server, confirm
 reading + zero network). If OPFS behaviour ever surprises us, that's where it surfaces.
 
-### R1b owes: the reading surface, VITE_FIXTURE_BUNDLE, and full offline acceptance
+### R1b owes: the reading surface, VITE_FIXTURE_BUNDLE, and full offline acceptance — DONE in R1b
 R1a stops at Resident. R1b must add: byte-faithful `<p>`-per-`\n\n` text render with verse `\n`
 preserved (lock with a rendering test — R2 anchors depend on it); plate-at-page-top + lightbox
 (map page_id→`images/web/plates/{page_id}.webp` via `selection.json`); page-turn nav; position
@@ -612,12 +612,12 @@ tracking (page_seq + approximate top-visible char — document the approximation
 zero-server dev mode; and the offline acceptance (open/navigate/plates/position-survives-reload +
 DevTools network idle). Plate images come from Storage as bytes → `Blob`/object URL.
 
-### Retired-plate hiding is deferred (R1b/R4)
+### Retired-plate hiding — CLOSED in R1b
 A page has a plate iff its `page_id` is in `selection.json` `plates[]`; the image path is by
-convention `images/web/plates/{page_id}.webp` (resolved highest-`-rN`). R1a downloads whatever the
-manifest's `reader_required` covers. **A `retired` plate keeps its files** (§4.4), so a naive reader
-would still show it. R1b/R4 should cross-check `selection.plates[].status != "retired"` before
-rendering a plate. Not handled yet (the fixture has none).
+convention `images/web/plates/{page_id}.webp` (resolved highest-`-rN`). **A `retired` plate keeps its
+files** (§4.4), so a naive reader would still show it. R1b's `Reader.tsx` builds its plate set from
+`selection.plates[]` filtered to `status !== "retired"`, and a `Reader.test.tsx` case asserts a
+retired plate does not render. Done.
 
 ### Reader TypeScript floats to 5.9 (from ^5.6.3) — WebCrypto/OPFS need ArrayBuffer copies
 `npm install` resolved `typescript@^5.6.3` to 5.9.3, whose `Uint8Array<ArrayBufferLike>` generics make
@@ -630,3 +630,45 @@ into a fresh `ArrayBuffer` before the WebCrypto/OPFS call, and `OpfsStorage.walk
 `shell/capacitor.ts` implements the `Storage` shape but every method throws "implemented in R5" — no
 `@capacitor/*` dependency is pulled into the reader yet. R5 (Capacitor build) fills it and wires
 `getStorage()` to select it on native platforms.
+
+## From R1b (reader: the reading surface)
+
+### `readerview/pagetext.ts` IS the anchor substrate — R2 must reuse it, not reinvent it
+The byte-faithful paragraph math lives here: `splitParagraphs`/`joinParagraphs` (exact inverse on the
+`"\n\n"` delimiter, verse `\n` preserved), `paragraphStarts` (`start[i] = Σ len(p_j<i) + 2·i`, UTF-16
+code units), `paragraphIndexForChar`. R2's `Selection`/`Range` → anchor mapping must compute offsets
+the SAME way (paragraph i's DOM `<p>` starts at `paragraphStarts[i]`; the `"\n\n"` join contributes 2
+units between paragraphs). `pagetext.test.ts` is the rendering-lock — extend it, don't fork the math.
+**All offsets are UTF-16 code units; never iterate by code point on the offset path** (astral chars
+count as 2, consistently). The rendered DOM is `<p>` per paragraph with `white-space: pre-line`.
+
+### Positions are persisted LOCALLY only in R1b — R3 owns merge/upload
+`readerview/position.ts` writes `positions/{bookId}.json` (OUTSIDE `books/`, so shelf Remove keeps it)
+already shaped to `positions.schema` (`furthest` max-tuple, `current` LWW, `device` = a persisted
+`crypto.randomUUID()`). R3's sync client should read these files and feed them straight into the S12
+positions merge — the on-disk shape is deliberately the wire shape. R1b does NOT ping the server or
+merge; it only reads/writes the local file. `page_seq → page index` uses `index = page_seq - 1`
+(seq is contiguous 1-based reading order) with a clamp; revisit if a book ever has non-contiguous seq.
+
+### Edge tap-zones will collide with R2 text selection
+`Reader.tsx` nav includes narrow left/right edge tap-zones (`.tap-zone`, 12% width, inset from top/
+bottom) kept OUTSIDE the centered text column so they don't block selection. When R2 adds
+selection-to-highlight, re-check that a drag starting near an edge isn't stolen by a tap-zone
+(and that a tap on the plate/lightbox still works). Keyboard ←/→, Prev/Next buttons, and swipe are the
+other nav paths.
+
+### FixtureBundleReader reads the canonical server fixture via glob + `fs.allow`
+`VITE_FIXTURE_BUNDLE=1` opens `server/tests/fixtures/bundle/` with no backend, via `import.meta.glob`
+(`?raw` JSON inlined, `?inline` images emitted as local assets). It needs the `server.fs.allow` entry
+in `reader/vite.config.ts` (dev server only; `vite build` reads disk directly). It is a **dev
+convenience** — the genuinely zero-network read path is `StorageBundleReader` over OPFS. It is
+dynamically imported so the eager glob (and the fixture bytes) stay out of the prod bundle. If a real
+`-rN`-variant fixture is ever added, teach `FixtureBundleReader.imageUrl` to run `resolveReaderFiles`
+over the fixture manifest (today it's a plain path lookup because the fixture has no variants).
+
+### `StorageBundleReader` mints object URLs — callers MUST `dispose()`
+Image bytes → `Blob({type:"image/webp"})` → `URL.createObjectURL`, cached per logical path and revoked
+in `dispose()`. `Reader.tsx` calls `dispose()` on unmount. Any future surface that constructs a
+`StorageBundleReader` (search result previews, cast portraits in R4) must do the same or it leaks blob
+URLs. Blob MIME is hardcoded webp (correct for `images/web/**`/`images/thumbs/**`); if the `.png`
+originals are ever served, derive the type from the extension.
