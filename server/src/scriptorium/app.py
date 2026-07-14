@@ -16,6 +16,7 @@ from typing import Any
 
 import httpx
 from fastapi import FastAPI
+from fastapi.staticfiles import StaticFiles
 
 from .bake.api import router as admin_router
 from .bake.phases.p1_mentions import CastMentions, MentionsEnter
@@ -28,6 +29,7 @@ from .bake.phases.p8_publish import Publish
 from .bake.review_api import router as review_router
 from .bake.runner import Runner
 from .config import Config, load_config
+from .library.api import router as library_router
 
 # The bake pipeline, keyed by ``from_state`` inside the runner. S5 registered P1 (mentions)
 # and P2 (reduce + canonicalize); S6 appends P3 (scene ledger); S7 appends P4 (selection);
@@ -85,6 +87,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 app = FastAPI(title="scriptorium", version="0.1.0", lifespan=lifespan)
 app.include_router(admin_router)
 app.include_router(review_router)
+app.include_router(library_router)
 
 
 async def _probe(url: str | None) -> dict[str, bool]:
@@ -152,3 +155,20 @@ async def health() -> dict[str, Any]:
             "jobs": {"total": 0, "by_state": {}},
             "error": type(exc).__name__,
         }
+
+
+def _mount_static(app: FastAPI, cfg: Config) -> None:
+    """Mount the two built SPAs: admin-ui at ``/admin`` and the reader PWA at ``/`` (S11).
+
+    The catch-all ``/`` mount is added **last** so the API routers and ``/health`` (registered
+    above) always win. A dist dir that doesn't exist (tests, CI, a box that never ran a build) is
+    skipped silently — ``StaticFiles`` raises at construction otherwise. Closes the S9b
+    "static mount unwired" note.
+    """
+    for path, directory in (("/admin", cfg.admin_dist), ("/", cfg.reader_dist)):
+        if directory.is_dir():
+            name = path.strip("/") or "reader"
+            app.mount(path, StaticFiles(directory=directory, html=True), name=name)
+
+
+_mount_static(app, load_config())

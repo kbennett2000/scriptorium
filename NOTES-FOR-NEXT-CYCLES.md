@@ -499,3 +499,48 @@ deterministic FakeImagegen; `git diff --exit-code` after). The shared driver is
 `server/tests/_pipeline_build.py` (imported by both the tool and `test_pipeline_e2e`). Any phase
 change that alters an artifact means regenerating + re-committing the bundle in the same PR. The S7
 `selection.json` min_gap divergence and the S8 stale-prompt divergence are **cleared**.
+
+## From S11
+
+### The manifest glob-matcher is now triplicated — a candidate for a shared util
+`_matches_any` (the `/**` / `/*` / exact dialect) now lives in three places:
+`bake/phases/p8_publish.py`, `tools/verify_bundle.py`, and `library/checkout.py::matches_any`. All
+three must stay in lockstep. If a fourth consumer appears, promote it to a small shared module (e.g.
+`scriptorium/bundle_globs.py`) and have p8/verify import it — deferred now to avoid touching the
+sacred publish/verify paths in a serving cycle.
+
+### Listing `total_bytes_reader` (resolved) can differ from the stored manifest field after a regen
+`GET /api/library` reports `total_bytes_reader` over the **resolved** reader set
+(`checkout.resolved_total_bytes` — current `-rN` variants only), i.e. exactly what the reader
+downloads. P8's stored `manifest.total_bytes_reader` (`build_manifest`) still sums **all**
+reader-required matches, so after a post-publish regen it counts the superseded base too and the two
+numbers diverge (the stored one is an upper bound). Harmless today (fixture has no variants → both
+41812). If you want them identical, recompute P8's stored total over the resolved set in
+`build_manifest`/`regen_published_plate` — a P8 change that forces a fixture regen, so out of S11's
+serving scope.
+
+### Reader-side `-rN` resolution must mirror `library/checkout.py` (S12/R1)
+The server exposes every variant via the files endpoint and lists the resolved size, but the client
+decides what to fetch. The TS reader's `sync/` must implement the **same** highest-`-rN`-wins rule
+(group by `(dir, base_stem, ext)`, strip a trailing `-r<digits>`, keep max N; base = revision 1) so
+delta-sync downloads exactly one current image per plate and may prune superseded variants locally
+(§4.4). `server/src/scriptorium/library/checkout.py` is the reference implementation — port its
+`_variant_key` logic verbatim. Note the theoretical ambiguity: a portrait slug literally ending
+`-r<digits>` would be misparsed (page-ids are 4-digit numerics, so plates are safe); guard only if a
+real slug ever collides.
+
+### Static SPA mounts have no deep-link fallback beyond `html=True`
+`app._mount_static` uses `StaticFiles(..., html=True)`, which serves `index.html` for a directory
+request but **404s an unknown sub-path** — so a hard refresh on a client-routed deep link (e.g.
+`/book/pg-35/read`) under the reader mount at `/` will 404 instead of loading the SPA shell. Fine for
+the hash-router admin UI and for v1; when the reader uses path-based routing, add an SPA catch-all
+(serve `index.html` for non-asset 404s under the mount) — a small custom StaticFiles subclass or an
+exception handler. Deferred (no reader routing exists yet). Also: the mounts are decided at **import
+time** from env; a deployment that builds `dist/` after the server process starts must restart it.
+
+### Live acceptance ran against localhost, not a second LAN machine
+S11's acceptance box says "from another machine on the LAN." I verified the checkout contract with a
+real `uvicorn` + scripted client over `127.0.0.1:8799` (18/18 reader files sha256-verified, transfer
+== `total_bytes_reader`, ETag/304, traversal 400) — functionally identical to a LAN fetch (same ASGI
+path), but a true cross-host run (and a real pg-35 bundle rather than the `usr-…` fixture) is still
+worth doing once a reader box exists. The offline `test_library_api.py` fully covers the contract.
