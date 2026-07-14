@@ -18,8 +18,15 @@ import httpx
 from fastapi import FastAPI
 
 from .bake.api import router as admin_router
+from .bake.phases.p1_mentions import CastMentions, MentionsEnter
+from .bake.phases.p2_cast import CastCanonicalize, CastReduce
 from .bake.runner import Runner
 from .config import Config, load_config
+
+# The bake pipeline, keyed by ``from_state`` inside the runner. S5 registers P1 (mentions)
+# and P2 (reduce + canonicalize); later cycles append P3…P7. ``MentionsEnter`` / ``CastReduce``
+# are the CPU steps that move a job onto the ``*_running`` GPU states P1/P2b sit on.
+BAKE_PIPELINE = [MentionsEnter(), CastMentions(), CastReduce(), CastCanonicalize()]
 
 _PROBE_TIMEOUT_S = 2.0
 
@@ -29,12 +36,12 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     """Start the single bake worker for the app's lifetime (DESIGN §11.2).
 
     Exactly one :class:`Runner` task runs — this is what makes the single-worker /
-    GPU-exclusivity guarantee structural. The pipeline is P0-only today (no post-P0
-    phase is registered until S5), so a started job simply rests at ``ingested``.
-    Plain ``TestClient(app)`` (no context manager) does not trigger lifespan, so
-    endpoint tests never spin the worker.
+    GPU-exclusivity guarantee structural. The pipeline runs P0 (inline in the admin
+    endpoint) then P1→P2 here; a started job advances to ``cast_done`` and rests there
+    until P3 lands. Plain ``TestClient(app)`` (no context manager) does not trigger
+    lifespan, so endpoint tests never spin the worker.
     """
-    runner = Runner(load_config(), pipeline=[])
+    runner = Runner(load_config(), pipeline=BAKE_PIPELINE)
     app.state.runner = runner
     task = asyncio.create_task(runner.run_forever())
     try:

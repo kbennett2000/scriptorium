@@ -1,0 +1,39 @@
+{
+  "output": {
+    "mentions": [
+      {
+        "name": "Weena",
+        "aliases": [
+          "little Weena"
+        ],
+        "descriptors": [
+          "exactly like a child",
+          "clung to me"
+        ],
+        "is_person": true
+      },
+      {
+        "name": "the Eloi",
+        "aliases": [],
+        "descriptors": [],
+        "is_person": false
+      },
+      {
+        "name": "the Time Traveller",
+        "aliases": [],
+        "descriptors": [],
+        "is_person": true
+      }
+    ]
+  },
+  "meta": {
+    "transform": "cast-mentions",
+    "transform_version": "1",
+    "model": "qwen3:8b",
+    "input_tokens_est": 800,
+    "truncated": false,
+    "attempts": 1,
+    "latency_ms": 4200,
+    "queued_ms": 0
+  }
+}

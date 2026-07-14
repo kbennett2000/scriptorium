@@ -25,7 +25,8 @@ LEGAL = [
     (JobState.CREATED, JobState.INGESTED),
     (JobState.INGESTED, JobState.MENTIONS_RUNNING),
     (JobState.MENTIONS_RUNNING, JobState.MENTIONS_DONE),
-    (JobState.MENTIONS_DONE, JobState.CAST_DONE),
+    (JobState.MENTIONS_DONE, JobState.CAST_RUNNING),
+    (JobState.CAST_RUNNING, JobState.CAST_DONE),
     (JobState.CAST_DONE, JobState.LEDGER_RUNNING),
     (JobState.LEDGER_DONE, JobState.SELECTED),
     (JobState.PROMPTS_DRAFT, JobState.IN_REVIEW),
@@ -33,6 +34,7 @@ LEGAL = [
     (JobState.RENDERING, JobState.PUBLISHED),
     # cross-cutting
     (JobState.MENTIONS_RUNNING, JobState.WAITING_GPU),
+    (JobState.CAST_RUNNING, JobState.WAITING_GPU),  # P2 canonicalize parks (S5 deviation)
     (JobState.RENDERING, JobState.WAITING_GPU),
     (JobState.INGESTED, JobState.PAUSED),
     (JobState.RENDERING, JobState.FAILED),
@@ -46,6 +48,7 @@ ILLEGAL = [
     (JobState.PUBLISHED, JobState.FAILED),  # terminal
     (JobState.FAILED, JobState.INGESTED),  # terminal
     (JobState.MENTIONS_DONE, JobState.WAITING_GPU),  # done-state, not running
+    (JobState.MENTIONS_DONE, JobState.CAST_DONE),  # cast_running now sits between them
 ]
 
 

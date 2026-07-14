@@ -1,0 +1,23 @@
+{
+  "output": {
+    "visual_description": "A lean Victorian gentleman in his late thirties with pale grey eyes and a usually pale, worn face, dressed in a stained and dusty smoking jacket over a slender frame.",
+    "one_line": "A pale, lean Victorian inventor in a dusty jacket",
+    "tags": [
+      "victorian",
+      "gentleman",
+      "pale",
+      "lean",
+      "inventor"
+    ]
+  },
+  "meta": {
+    "transform": "cast-canonicalize",
+    "transform_version": "1",
+    "model": "qwen3:8b",
+    "input_tokens_est": 800,
+    "truncated": false,
+    "attempts": 1,
+    "latency_ms": 4200,
+    "queued_ms": 0
+  }
+}
