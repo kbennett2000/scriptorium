@@ -1,5 +1,6 @@
 import type { Manifest } from "@scriptorium/shared";
 
+import { buildAndPersistIndexFromStorage } from "../search";
 import type { Storage } from "../shell";
 import type { Platform } from "../shell/platform";
 import type { LibraryClient } from "./client";
@@ -105,8 +106,20 @@ export async function checkout(
   }
 
   await storage.writeText(localManifestPath(bookId), JSON.stringify(manifest));
+  // Build the full-text search index now that every page is Resident (DESIGN §13). Best-effort: a
+  // failure here must not fail the checkout — the reader rebuilds on first search (search#ensureIndex).
+  await buildSearchIndexQuietly(storage, bookId);
   if (firstCheckout && opts.platform) {
     await opts.platform.persistHint();
+  }
+}
+
+/** Build+persist the search index, swallowing errors (the reader rebuilds on first search if absent). */
+async function buildSearchIndexQuietly(storage: Storage, bookId: string): Promise<void> {
+  try {
+    await buildAndPersistIndexFromStorage(storage, bookId);
+  } catch {
+    // Non-fatal: search#ensureIndex builds on first use.
   }
 }
 
@@ -167,6 +180,8 @@ export async function delta(
   }
 
   await storage.writeText(localManifestPath(bookId), JSON.stringify(server));
+  // Page text may have changed with the revision; rebuild the index (best-effort, as at checkout).
+  if (fetched.length) await buildSearchIndexQuietly(storage, bookId);
   return { fetched, pruned };
 }
 

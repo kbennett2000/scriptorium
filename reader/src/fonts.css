@@ -1,0 +1,21 @@
+/* Vendored reading typefaces (DESIGN §13, ADR-0003): Literata (default, serif) + Inter (sans).
+ * Both are committed as latin variable-weight woff2 under src/assets/fonts/ with their SIL Open Font
+ * License texts (literata-OFL.txt, inter-OFL.txt). NOTHING loads from a CDN — Vite fingerprints these
+ * local files into dist/assets, so the zero-online read path holds. Sourced from the @fontsource-variable
+ * packages (files/{literata,inter}-latin-wght-normal.woff2); see the build guard scripts/check-dist-fonts.mjs. */
+
+@font-face {
+  font-family: "Literata Variable";
+  font-style: normal;
+  font-weight: 200 900;
+  font-display: swap;
+  src: url("./assets/fonts/literata.woff2") format("woff2");
+}
+
+@font-face {
+  font-family: "Inter Variable";
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+  src: url("./assets/fonts/inter.woff2") format("woff2");
+}

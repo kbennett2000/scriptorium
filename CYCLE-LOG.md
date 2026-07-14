@@ -326,6 +326,49 @@ cast.json; resume skips done pages; P1 503 → waiting_gpu → resume; P2 503 �
 `cast_running`; canonicalize 422 → `failed_units` + null major, phase completes; mentions 400
 → job `failed`), `test_job_states` updated for `cast_running`. reader/admin-ui untouched.
 
+## R4 — Reader: search, dramatis personae, settings/typography (2026-07-14) — shipped
+
+The reader's last three features before Android, all working with the API server dead. **Search:** a
+MiniSearch index over `{id, seq, text}` (one doc per page), built at checkout completion
+(`shelf/checkout.ts`, best-effort — a build error never fails a checkout) and persisted via `toJSON`
+to `books/{bookId}/search-index.json`; already-Resident books and the fixture (which never checks out)
+build on first search (`search#ensureIndex`). The `SearchPanel` slide-over queries as you type
+(prefix + fuzzy 0.2), lists page hits with a `<mark>`-ed snippet, and jumps to the page + pulses it
+(reusing the annotation flash-page). **Dramatis personae:** a full-screen overlay (NOT injected into
+`pageIds` — positions/anchors stay byte-stable), gated by the ADR-0008 furthest-read filter
+(`cast/filter.ts` — a character mentioned only ahead of furthest-read is hidden). Auto-shows once as an
+interstitial before chapter 1 on a fresh book; reopens from a toolbar "Cast" button; portraits resolve
+the resident `images/thumbs/portraits/{slug}.webp` derivative (monogram fallback). **Settings:** the
+full screen replaces the R3 stub — typeface (Literata/Inter, both **vendored** as latin variable woff2
+with their OFL licenses under `src/assets/fonts/`, zero external font loading), font size (5 steps),
+theme (light/sepia/dark) via a small design-token layer in `index.css`; per-device prefs
+(`settings/prefs.json`, never synced) applied at the App root by `usePrefs`. Reachable from a ⚙ button
+in the reader bar (needed in fixture mode where there is no shelf header).
+
+**Decisions**
+- **Furthest-read for the cast filter is live** (`max(synced furthest, session max seq)`), so a
+  character passed this session appears when the cast page reopens — not only after a sync.
+- **Cast page auto-interstitial** shows only on a fresh open (no saved position). This changed
+  fresh-boot UX, so the R3 sync acceptance's `boot()` now dismisses it (and targets the chapter title
+  by role, since the wanderer's one-line "…winter quay" collided with the title text matcher).
+- **Fixture left untouched.** The named ADR-0008 scenario (mentioned p40, furthest 30) can't live in a
+  6-page fixture, and adding a hideable major would ripple into generated portrait assets + prompt
+  fixtures + a full deterministic bundle regen. Instead the named test is a pure vitest
+  (`cast/filter.test.ts`) plus a component test that renders the real overlay with a synthetic hideable
+  character (`cast/CastPage.test.tsx`); the browser test verifies the overlay end-to-end on the real
+  fixture.
+- **Index stores page `text`** (in MiniSearch `storeFields`) so hits carry text for snippets with no
+  second read. Novel-scale cost is the text roughly doubled in the persisted index — acceptable for v1.
+- **Search-jump match-flash** reuses the whole-page `flash-page` pulse + `pendingRestoreChar` scroll,
+  rather than a new per-run Page prop — lands on the match paragraph, no byte-faithful-render changes.
+
+**Verification** — reader 145 vitest (was 130) + 5 Playwright (2 R3 sync + 3 R4: search/persist/flash,
+cast auto-open + reopen, theme+font survive reload — all with `/api`+`/health` aborted to simulate the
+server down). `npm run build:check` (`scripts/check-dist-fonts.mjs`): 2 vendored `.woff2` in `dist/`,
+no `fonts.googleapis`/`cdn` references. server 290 passed / 5 deselected (fixture untouched). eslint +
+tsc clean (reader, admin-ui) · ruff clean · gen-types NO DRIFT. Fixture index: 6 pages, built once on
+first search (~ms), loads from disk on reload with no rebuild (asserted via the build counter).
+
 ## R3 — Reader: sync client + profile picker (2026-07-14) — shipped
 
 Annotations and positions now flow to the S12 sync API and merge back — opportunistically,
