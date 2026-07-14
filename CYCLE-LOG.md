@@ -1310,4 +1310,14 @@ Commit `2f1a65c`. Caveats (NOTES): `sync/` empty until readers connect; USB is s
 `ea8a7b5`, `2f1a65c`. Findings filed in NOTES From M1. **§16 checklist:** ingest/chapters ✓, P1–P5
 `failed_units=0` ✓, review-gate edit+toggle+approve ✓, render + plate count + cover/portraits ✓,
 publish + `verify_bundle` ✓, kill-test ≤1 unit ✓, ADR-0007 backup ✓; **device checkout/offline/merge
-(B3) and blind plate read (B2) human-pending.** M1 not declared complete.
+(B3) human-pending.** M1 not declared complete.
+
+**B2 — blind plate read (done, 2026-07-14).** Spoiler half done analytically (CC knows the text): all
+18 plates depict only content at/behind their page — **no spoilers; causality invariant held in real
+pixels.** Character continuity: engraving **style is excellent and consistent** across the set, but the
+Time Traveller is only clearly framed in **0004** (character-scale interior); 0017/0046/0051/0055 are
+wide landscapes where he is a speck or not discernible. Result: **continuity indeterminate** — not
+morphing, but the protagonist isn't rendered large enough to compare, because every P5 prompt defaults
+to "wide shot of …". Headline B2 finding → key input to the reader/prompt spec: **P5 should control
+shot type for person-centric beats instead of defaulting all plates to wide establishing shots**
+(filed, NOTES From M1).
