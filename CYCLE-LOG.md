@@ -1472,3 +1472,36 @@ create + render + delete; no `work/{book}`; the book's own job id untouched.
 **Done-state:** server ruff clean + **336 pytest** (offline, FakeImagegen); reader/admin-ui unchanged &
 green; `gen-types` deterministic (Phase 2 adds no schema). Not yet committed (awaiting owner go-ahead).
 Not user-visible yet — the reader "make/switch a set" UX is Phases 3–4.
+
+---
+
+## M1 follow-up — Private picture "Sets", Phase 3: private offline download (2026-07-14)
+
+**Phase 3 of 4** (see the plan): the plumbing that gets a private set's images onto a device — server
+serving endpoints + a reader download module — sha256-verified, stored **outside** `books/{id}`. No new
+schemas (the set manifest reuses `manifest`). Still not user-visible (no picker wiring — that's Phase 4).
+
+- **Server serving (`artsets/api.py`).** Two read-only endpoints mirroring `library/api.py`:
+  `GET /api/artsets/{user}/{book}/{set_id}/manifest` and `…/files/{path:path}`, with `ETag = sha256`
+  (from the manifest), `If-None-Match` → 304, the `{file_path:path}` converter, and a `_set_dir` guard
+  (pattern-validate segments → `.resolve()` + `is_relative_to(artsets_dir)` → require `manifest.json`).
+  `default` never reaches here (`_SET_RE` excludes it) — Default art is served from the resident book
+  bundle. Additive routes; the existing list/create/delete routes still match unambiguously.
+- **Reader download (`reader/src/shelf/artsetCheckout.ts`).** A sibling of `checkout.ts`, in `shelf/`
+  (the only place besides `sync/` the ESLint network fence allows `fetch`). Reuses `sha256Hex` and
+  `resolveReaderFiles` verbatim; a `HttpArtsetClient` (base URL from `VITE_SERVER_URL`) fetches the set
+  manifest + file bytes. `artsetCheckout` runs the checkout walk (skip-if-good, verify/retry ×3, write
+  `manifest.local.json` **last** = Resident marker) into `artsets/{user}/{book}/{setId}/` — outside
+  `books/{id}` so Remove-book and immutability are untouched. `setState` (resident/incomplete/available,
+  no network) + `removeSet` (subtree-only prune) round out the surface, exported from `shelf/index.ts`.
+
+**Tests:** server `test_artsets_serving.py` — manifest served (schema-valid), a file served with the
+manifest sha256 ETag, `If-None-Match` → 304, traversal → 400/404, missing → 404, unknown/`default`/
+malformed `set_id` → 400/404, `library/` never touched. Reader `artsetCheckout.test.ts` (`MemoryStorage`
++ fake client) — images land under the set path (never `books/`), verified, `manifest.local.json` last;
+resume skips good files; a corrupt file retries ×3 then throws (stays incomplete); `removeSet` deletes
+only its subtree.
+
+**Done-state:** server ruff clean + **347 pytest**; reader eslint + tsc clean + **158 vitest** (network
+fence intact); `gen-types` deterministic (Phase 3 adds no schema). Not user-visible yet — Phase 4 wires
+the picker's create/switch/download/delete and the `BundleReader` image-source swap.

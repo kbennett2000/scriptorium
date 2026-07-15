@@ -10,13 +10,17 @@ set-job id (``{book}#{set_id}``) is kept server-internal — ``#`` is a URL-frag
 
 from __future__ import annotations
 
+import hashlib
+import json
 import re
+from pathlib import Path
 from typing import Any
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Request
+from fastapi.responses import FileResponse, JSONResponse, Response
 from pydantic import BaseModel
 
-from ..config import load_config
+from ..config import Config, load_config
 from . import service
 
 router = APIRouter(prefix="/api")
@@ -25,6 +29,9 @@ router = APIRouter(prefix="/api")
 _USER_RE = re.compile(r"^[a-z0-9]+(-[a-z0-9]+)*$")
 _BOOK_RE = re.compile(r"^(pg-[0-9]+|usr-[0-9a-f]{12})$")
 _SET_RE = re.compile(r"^set-[0-9a-f]{12}$")
+
+# Set images are the same asset kinds a book bundle serves (mirror library/api.py).
+_CONTENT_TYPES = {".json": "application/json", ".webp": "image/webp", ".png": "image/png"}
 
 
 class CreateSetBody(BaseModel):
@@ -68,3 +75,71 @@ def delete_set(user: str, book: str, set_id: str) -> dict[str, Any]:
         raise HTTPException(status_code=400, detail=f"bad set id {set_id!r}")
     service.delete_set(load_config(), user, book, set_id)
     return {"deleted": set_id}
+
+
+# --- serving (Phase 3): private offline download, mirroring library/api.py ---
+#
+# The synthetic ``default`` set has no bytes of its own — the reader resolves it from the resident
+# book bundle (``/api/library/...``), so it never reaches here (``_SET_RE`` excludes it).
+
+
+def _set_dir(cfg: Config, user: str, book: str, set_id: str) -> Path:
+    """Resolve ``artsets/{user}/{book}/{set_id}`` inside the artsets root, or raise.
+
+    Segments are pattern-validated first (400), then a ``.resolve()`` + ``is_relative_to`` check
+    keeps a hostile segment from escaping the root (mirrors ``library.api._bundle_dir``).
+    """
+    _require_path(user, book)
+    if not _SET_RE.match(set_id):
+        raise HTTPException(status_code=400, detail=f"bad set id {set_id!r}")
+    root = cfg.artsets_dir.resolve()
+    set_dir = (root / user / book / set_id).resolve()
+    if not set_dir.is_relative_to(root) or not (set_dir / "manifest.json").is_file():
+        raise HTTPException(status_code=404, detail=f"no such set {set_id!r}")
+    return set_dir
+
+
+def _load_manifest(set_dir: Path) -> dict[str, Any]:
+    return json.loads((set_dir / "manifest.json").read_text(encoding="utf-8"))
+
+
+def _content_type(path: Path) -> str:
+    return _CONTENT_TYPES.get(path.suffix, "application/octet-stream")
+
+
+def _etag_map(manifest: dict[str, Any]) -> dict[str, str]:
+    return {f["path"]: f["sha256"] for f in manifest.get("files", [])}
+
+
+@router.get("/artsets/{user}/{book}/{set_id}/manifest")
+def get_set_manifest(user: str, book: str, set_id: str) -> JSONResponse:
+    """Serve a personal set's ``manifest.json`` verbatim (same shape as a book manifest)."""
+    set_dir = _set_dir(load_config(), user, book, set_id)
+    return JSONResponse(_load_manifest(set_dir))
+
+
+@router.get("/artsets/{user}/{book}/{set_id}/files/{file_path:path}")
+def get_set_file(
+    user: str, book: str, set_id: str, file_path: str, request: Request
+) -> Response:
+    """Serve a set image with a sha256 ETag; ``If-None-Match`` short-circuits to 304."""
+    set_dir = _set_dir(load_config(), user, book, set_id)
+
+    target = (set_dir / file_path).resolve()
+    if not target.is_relative_to(set_dir):
+        raise HTTPException(status_code=400, detail="bad path")
+    if not target.is_file():
+        raise HTTPException(status_code=404, detail="no such file")
+
+    rel = target.relative_to(set_dir).as_posix()
+    sha = _etag_map(_load_manifest(set_dir)).get(rel)
+    if sha is None:  # not tracked in the manifest (e.g. manifest.json itself) — hash on the fly
+        sha = hashlib.sha256(target.read_bytes()).hexdigest()
+    etag = f'"{sha}"'
+
+    if_none_match = request.headers.get("if-none-match", "")
+    tokens = {t.strip() for t in if_none_match.split(",")}
+    if etag in tokens or "*" in tokens:
+        return Response(status_code=304, headers={"ETag": etag})
+
+    return FileResponse(target, media_type=_content_type(target), headers={"ETag": etag})

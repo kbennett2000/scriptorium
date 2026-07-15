@@ -74,6 +74,25 @@ approve step, and no inline/off-runner render (unlike `regen_published_plate`).
   larger project, explicitly out of scope.
 - The composite `#` job id is **server-internal only** — it is disk-safe but a URL-fragment
   delimiter; routes carry `user`/`book`/`set_id` separately and compose the id server-side.
-- **Delivered in phases:** Phase 1 (schemas + reader "Pictures" menu showing Default) and Phase 2
-  (this: server-side create/generate/delete) are done; per-account offline download and reader
-  multi-set switching follow in later cycles.
+- **Delivered in phases:** Phase 1 (schemas + reader "Pictures" menu showing Default), Phase 2
+  (server-side create/generate/delete), and Phase 3 (private offline download) are done; reader
+  multi-set switching (the picker wiring + image-source swap) follows in Phase 4.
+
+## Phase 3 — private offline delivery
+
+A set's images reach a device the same way a book's do, but from a per-account path. Two read-only
+serving endpoints mirror `library/api.py` exactly — `GET /api/artsets/{user}/{book}/{set_id}/manifest`
+and `…/files/{path}`, with `ETag = sha256` (from the manifest), `If-None-Match` → 304, the
+`{file_path:path}` converter, and the same `.resolve()` + `is_relative_to` traversal guard rooted at
+`cfg.artsets_dir`. The synthetic `default` set has no bytes of its own and is excluded by the
+`set-[0-9a-f]{12}` guard — Default art is served from the resident book bundle (`/api/library/…`), never
+here. The set manifest is the one `p8_publish.build_manifest` already wrote, so it validates against
+`manifest.schema.json` unchanged; no new schema.
+
+On the device, `reader/src/shelf/artsetCheckout.ts` (a sibling of `checkout.ts`) downloads a set into
+`artsets/{user}/{book}/{set_id}/` — **outside** `books/{id}/`, so the shelf's Remove-book and bundle
+immutability are both untouched. It reuses `sha256Hex` and `resolveReaderFiles` verbatim and follows the
+checkout contract: skip-if-already-good, verify-and-retry each file, and write `manifest.local.json`
+**last** (the resumable Resident marker). It lives in `shelf/` because that (with `sync/`) is the reader's
+only sanctioned network boundary (ESLint-enforced). Orphan-set pruning on book- or profile-removal is
+deferred to Phase 5; `removeSet` handles the explicit per-set case today.

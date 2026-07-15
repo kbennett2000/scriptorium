@@ -6,6 +6,18 @@ export type { LibraryClient, LibraryEntry } from "./client";
 export { ApiError, HttpLibraryClient } from "./client";
 export type { BookState, CheckoutOptions, CheckoutProgress, DeltaResult } from "./checkout";
 export { bookState, checkout, delta, remove, residentEntries, sha256Hex } from "./checkout";
+export type {
+  ArtsetClient,
+  ArtsetCheckoutOptions,
+  ArtsetCheckoutProgress,
+  SetState,
+} from "./artsetCheckout";
+export {
+  artsetCheckout,
+  HttpArtsetClient,
+  removeSet,
+  setState,
+} from "./artsetCheckout";
 export {
   matchesAny,
   resolveReaderFiles,
