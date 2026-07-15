@@ -24,7 +24,8 @@ from pathlib import Path
 from typing import Any
 
 from ... import schemas
-from ...selection.engine import PRESETS, PageScore, select
+from ...selection.engine import PRESETS, PageScore, PlateChoice, select
+from ...selection.segment import expand_choices
 from ..job import Job, JobState
 from .base import Unit
 
@@ -74,6 +75,46 @@ def _page_scores(cfg: Any, job: Job) -> list[PageScore]:
     return scores
 
 
+def _page_texts(cfg: Any, job: Job) -> dict[str, str]:
+    """Map page_id -> canonical page text.
+
+    Used only to segment *already-selected* pages (in P4, not the engine), so no page's text is ever
+    an input to the selection decision — the spoiler invariant holds.
+    """
+    texts: dict[str, str] = {}
+    for page_file in sorted(_pages_dir(cfg, job).glob("*.json")):
+        page = _read_json(page_file)
+        texts[page["id"]] = page.get("text", "")
+    return texts
+
+
+def _images_per_scene(job: Job) -> int:
+    """Pictures-per-scene from bake config (≥1; defaults to 1 for pre-feature configs)."""
+    try:
+        return max(1, int(job.bake_config.get("images_per_scene", 1)))
+    except (TypeError, ValueError):
+        return 1
+
+
+def _plate_doc(pc: PlateChoice) -> dict:
+    """Serialize a fresh (revision-1, selected) plate choice. Compound fields are emitted only for
+    the evenly-spaced extras, so a page's base plate stays byte-identical to a single-image bake."""
+    doc: dict[str, Any] = {"page_id": pc.page_id}
+    if pc.plate_id is not None:
+        doc["plate_id"] = pc.plate_id
+    if pc.anchor is not None:
+        doc["anchor"] = pc.anchor
+    if pc.segment_index is not None:
+        doc["segment_index"] = pc.segment_index
+    doc.update({
+        "reason": pc.reason,
+        "salience": pc.salience,
+        "status": "selected",
+        "added_in_revision": 1,
+    })
+    return doc
+
+
 class P4Select:
     """P4: select plates from the merged page ledgers (CPU, one unit)."""
 
@@ -104,20 +145,17 @@ class P4Select:
         structure_path = _structure_path(cfg, job)
         structure = _read_json(structure_path) if structure_path.is_file() else {"chapters": []}
 
-        plates = select(_page_scores(cfg, job), structure, params)
+        chosen = select(_page_scores(cfg, job), structure, params)
+
+        # Expand each selected page into up to `images_per_scene` evenly-spaced illustrations. The
+        # engine chose *which* pages (text-free); segmentation needs the page text, so it happens
+        # here in P4. A scene yields at most one plate per paragraph.
+        expanded = expand_choices(chosen, _page_texts(cfg, job), _images_per_scene(job))
+
         doc = {
             "preset": preset,
             "params": params.as_dict(),
-            "plates": [
-                {
-                    "page_id": plate.page_id,
-                    "reason": plate.reason,
-                    "salience": plate.salience,
-                    "status": "selected",
-                    "added_in_revision": 1,
-                }
-                for plate in plates
-            ],
+            "plates": [_plate_doc(pc) for pc in expanded],
         }
         schemas.validate("selection", doc)
         _write_json(_selection_path(cfg, job), doc)

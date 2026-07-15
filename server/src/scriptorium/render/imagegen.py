@@ -13,9 +13,12 @@ The bake's render phase (P7) talks to an image-generation service only through t
   Same ``(prompt, size, seed)`` in → byte-identical PNG out, which lets tests assert determinism
   without asserting image content (CLAUDE.md: never assert exact image content).
 
-Style rides entirely in ``prompt``/``negative`` — the client is style-neutral. Sizes come from the
-caller (P7): plate/cover 832×1216, portrait 1024×1024. imagegen-service honours ``width``/``height``
-only once the S10a size PR (this cycle) is merged+deployed; older builds ignore them (fixed 1024²).
+Style rides in ``prompt``/``negative`` *and*, optionally, in the imagegen-service ``style`` preset:
+passing ``style`` (an imagegen preset name like ``"oil painting"``) makes the service apply that
+style's LoRA (ADR-0013). ``style=None`` (the default) is the original prompt-only, byte-identical
+behaviour. Sizes come from the caller (P7): plate/cover 832×1216, portrait 1024×1024.
+imagegen-service honours ``width``/``height`` only once the S10a size PR (this cycle) is
+merged+deployed; older builds ignore them (fixed 1024²).
 """
 
 from __future__ import annotations
@@ -40,7 +43,8 @@ class ImagegenClient(Protocol):
     """The image-generation surface P7 depends on (DESIGN §10).
 
     ``txt2img`` returns PNG bytes; ``health`` reports reachability (used by the GPU gate in the
-    real S10 phase). Style rides entirely in ``prompt``/``negative`` — the client is style-neutral.
+    real S10 phase). ``style`` is an optional imagegen-service preset name (applies a LoRA);
+    ``None`` keeps the prompt-only behaviour (ADR-0013).
     """
 
     async def txt2img(
@@ -50,8 +54,9 @@ class ImagegenClient(Protocol):
         width: int = PLATE_SIZE[0],
         height: int = PLATE_SIZE[1],
         seed: int | None = None,
+        style: str | None = None,
     ) -> bytes:
-        """Render ``prompt`` to PNG bytes at ``width``×``height``."""
+        """Render ``prompt`` to PNG bytes at ``width``×``height``, optionally under ``style``."""
         ...
 
     async def health(self) -> bool:
@@ -83,6 +88,7 @@ class RealImagegenClient:
         width: int = PLATE_SIZE[0],
         height: int = PLATE_SIZE[1],
         seed: int | None = None,
+        style: str | None = None,
     ) -> bytes:
         """``POST /generate`` → PNG bytes. Maps 503/conn → GpuUnavailable, 422 → UnitFailed."""
         if self._base is None:
@@ -95,6 +101,10 @@ class RealImagegenClient:
         }
         if seed is not None:
             body["seed"] = seed
+        # Only forward `style` when set, so prompt-only styles produce byte-identical requests
+        # to the pre-ADR-0013 client (the service applies the named preset's LoRA; ADR-0011).
+        if style is not None:
+            body["style"] = style
         url = f"{self._base}/generate"
         try:
             async with httpx.AsyncClient(timeout=_GENERATE_TIMEOUT_S) as client:
@@ -144,9 +154,18 @@ def _error_detail(resp: httpx.Response) -> str:
         return resp.text
 
 
-def _digest(prompt: str, width: int, height: int, seed: int | None) -> str:
-    """A stable hex digest of the full render request (drives both color and burned-in text)."""
+def _digest(
+    prompt: str, width: int, height: int, seed: int | None, style: str | None = None
+) -> str:
+    """A stable hex digest of the full render request (drives both color and burned-in text).
+
+    ``style`` is folded in only when set, so ``style=None`` yields byte-identical placeholders to
+    the pre-ADR-0013 fake (existing determinism/round-trip fixtures stay green), while distinct
+    styles produce visibly distinct stand-ins.
+    """
     payload = f"{prompt}\x00{width}x{height}\x00{seed}".encode()
+    if style is not None:
+        payload += f"\x00{style}".encode()
     return hashlib.sha256(payload).hexdigest()
 
 
@@ -164,8 +183,9 @@ class FakeImagegen:
         width: int = PLATE_SIZE[0],
         height: int = PLATE_SIZE[1],
         seed: int | None = None,
+        style: str | None = None,
     ) -> bytes:
-        return self.render(prompt, width=width, height=height, seed=seed)
+        return self.render(prompt, width=width, height=height, seed=seed, style=style)
 
     async def health(self) -> bool:
         return True
@@ -177,9 +197,10 @@ class FakeImagegen:
         width: int = PLATE_SIZE[0],
         height: int = PLATE_SIZE[1],
         seed: int | None = None,
+        style: str | None = None,
     ) -> bytes:
         """Synchronous core: deterministic placeholder PNG bytes for ``prompt``."""
-        digest = _digest(prompt, width, height, seed)
+        digest = _digest(prompt, width, height, seed, style)
         # Background: a muted color from the digest so distinct prompts look distinct.
         bg = (int(digest[0:2], 16) // 2, int(digest[2:4], 16) // 2, int(digest[4:6], 16) // 2)
         img = Image.new("RGB", (width, height), bg)

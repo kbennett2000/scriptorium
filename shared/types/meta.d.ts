@@ -62,6 +62,10 @@ export interface Meta {
    */
   density_preset: "lavish" | "classic" | "sparse";
   /**
+   * How many illustrations to weave, evenly spaced, into each selected scene (DESIGN §8 'pictures per scene'). 1 = one image per scene (the default and pre-feature behavior). Capped per scene at its paragraph count. Optional/absent means 1 (back-compat with bundles baked before the feature).
+   */
+  images_per_scene?: number;
+  /**
    * Whether dramatis-personae portraits were rendered for major characters in this bake (DESIGN §10).
    */
   portraits_enabled: boolean;

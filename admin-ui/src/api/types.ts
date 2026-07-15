@@ -89,6 +89,7 @@ export interface CreateBookBody {
   bake: {
     style_id: string;
     density_preset: "lavish" | "classic" | "sparse";
+    images_per_scene: number;
     era?: string | null;
     portraits_enabled: boolean;
     title?: string | null;

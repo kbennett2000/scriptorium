@@ -150,6 +150,41 @@ def test_markdown_spec_overrides_front_matter():
     assert book.title == "Override"
 
 
+def test_markdown_headings_without_space_are_detected():
+    # Non-technical users paste `#Chapter` (no space); it must still split into chapters.
+    text = (
+        "#Chapter One\nFirst.\n\n"
+        "#Chapter Two\nSecond.\n\n"
+        "#Chapter Three\nThird.\n"
+    )
+    book = load(SourceSpec(kind="markdown", text=text, title="Brown"))
+    assert WARN_CHAPTERS_UNDETECTED not in book.warnings
+    assert [c.title for c in book.chapters] == ["Chapter One", "Chapter Two", "Chapter Three"]
+
+
+def test_markdown_mixed_space_and_no_space_headings():
+    # The exact shape that produced only 1 chapter before the fix (one spaced, rest not).
+    text = (
+        "# Chapter One - A\nDetective Brown sat.\n\n"
+        "#Chapter Two - B\nHe washed up.\n\n"
+        "#Chapter Three - C\nA robot appeared.\n\n"
+        "#The End\n"
+    )
+    book = load(SourceSpec(kind="markdown", text=text, title="Brown"))
+    assert WARN_CHAPTERS_UNDETECTED not in book.warnings
+    assert [c.title for c in book.chapters] == [
+        "Chapter One - A", "Chapter Two - B", "Chapter Three - C", "The End",
+    ]
+
+
+def test_markdown_single_heading_still_collapses_to_one_chapter():
+    # A lone title (level appears once) is not "chapters" — must stay one chapter + warning.
+    text = "# Just A Title\nOne paragraph.\n\nAnother paragraph.\n"
+    book = load(SourceSpec(kind="markdown", text=text, title="Solo"))
+    assert WARN_CHAPTERS_UNDETECTED in book.warnings
+    assert len(book.chapters) == 1
+
+
 # --- registry ---------------------------------------------------------------
 
 def test_registry_dispatches_by_kind():
@@ -215,7 +250,7 @@ def test_load_gutenberg_mocked_end_to_end():
 
 @respx.mock
 def test_search_mocked():
-    respx.get("https://gutendex.com/books").mock(
+    respx.get("https://gutendex.com/books/").mock(
         return_value=httpx.Response(200, json={"results": [_BOOK_JSON]})
     )
     with httpx.Client() as client:

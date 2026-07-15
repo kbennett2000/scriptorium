@@ -163,6 +163,12 @@ class Runner:
                 # §7.4: retried each tick — resume to the GPU phase and re-gate.
                 job.transition(job.prev_state or JobState.INGESTED)
                 job.save(self.cfg)
+            elif self.phase_for(job.state) is None:
+                # A resting state with no worker phase (e.g. prompts_draft awaits the human
+                # review gate). There is nothing to run, so skip it rather than spend the
+                # single per-tick slot on a no-op — otherwise one job parked at review would
+                # starve every newer runnable job behind it.
+                continue
             await self.advance_job(job)
             return  # single worker: one job advances per tick
 

@@ -167,8 +167,9 @@ describe("admin workbench smoke", () => {
 
     // --- Wizard: styles load, paste a source, create. ---
     expect(await screen.findByText("Engraving")).toBeInTheDocument();
+    await user.click(screen.getByRole("radio", { name: /Paste the text myself/i }));
     await user.type(screen.getByLabelText("source text"), "# Chapter I\n\nOnce upon a time.");
-    const createBtn = screen.getByRole("button", { name: /Create book/i });
+    const createBtn = screen.getByRole("button", { name: /Make this book/i });
     await waitFor(() => expect(createBtn).toBeEnabled());
     await user.click(createBtn);
 

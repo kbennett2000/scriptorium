@@ -26,6 +26,7 @@ from ..config import Config, load_config
 from ..render.imagegen import ImagegenClient, RealImagegenClient
 from ..selection.engine import PRESETS, PageScore, select
 from ..selection.reselect import reselect
+from ..selection.segment import expand_choices
 from ..styles import load_styles
 from . import job as jobmod
 from .job import Job, JobState
@@ -41,7 +42,9 @@ _REVIEW_STATES = (JobState.PROMPTS_DRAFT, JobState.IN_REVIEW)
 _READABLE_STATES = (
     JobState.PROMPTS_DRAFT, JobState.IN_REVIEW, JobState.APPROVED, JobState.RENDERING,
 )
-_GUTENDEX = "https://gutendex.com/books"
+# Trailing slash matters: gutendex.com 301-redirects /books?... -> /books/?..., so we hit the
+# canonical URL directly (and the client below follows redirects as a belt-and-braces guard).
+_GUTENDEX = "https://gutendex.com/books/"
 
 
 # --- request bodies ---------------------------------------------------------
@@ -102,6 +105,13 @@ def _page_scores(book_id: str) -> list[PageScore]:
     return scores
 
 
+def _page_texts(book_id: str) -> dict[str, str]:
+    """page_id -> canonical text, for the pictures-per-scene expansion on re-selection."""
+    pages_dir = _book_dir(book_id) / "pages"
+    return {doc["id"]: doc.get("text", "")
+            for doc in (_read_json(p) for p in sorted(pages_dir.glob("*.json")))}
+
+
 def _page_salience(book_id: str, page_id: str) -> float:
     path = _book_dir(book_id) / "pages" / f"{page_id}.json"
     if not path.is_file():
@@ -133,7 +143,7 @@ def gutendex(q: str = Query("")) -> dict:
     if not q.strip():
         return {"results": []}
     try:
-        with httpx.Client(timeout=10.0) as client:
+        with httpx.Client(timeout=10.0, follow_redirects=True) as client:
             resp = client.get(_GUTENDEX, params={"search": q})
         resp.raise_for_status()
         data = resp.json()
@@ -342,7 +352,12 @@ def do_reselect(book_id: str, body: ReselectBody) -> dict:
     book = cfg.work_dir / book_id
     structure = _read_json(book / "structure.json")
     params = PRESETS[body.density_preset]
-    fresh = select(_page_scores(book_id), structure, params)
+    # Re-run page selection, then apply the same pictures-per-scene expansion P4 uses, so the
+    # diff below compares like plate shapes (compound extras included).
+    n_per_scene = max(1, int((job.bake_config or {}).get("images_per_scene", 1)))
+    fresh = expand_choices(
+        select(_page_scores(book_id), structure, params), _page_texts(book_id), n_per_scene
+    )
 
     sel_path = book / "selection.json"
     existing = _read_json(sel_path)["plates"] if sel_path.is_file() else []

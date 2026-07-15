@@ -46,9 +46,21 @@ export interface Selection {
      */
     page_id: string;
     /**
-     * Why the page was selected (DESIGN §8): a mandatory chapter opener, a scene boundary, a gap fill, or a manual override in review.
+     * Filename stem for this plate's prompt and image assets. Absent means the plate uses the bare page_id (the page's first/only illustration). Additional evenly-spaced illustrations on the same page use '{page_id}-2', '{page_id}-3', … (the 'pictures per scene' feature, DESIGN §8). Optional for back-compat with single-image bundles.
      */
-    reason: "chapter_open" | "scene_boundary" | "fill" | "manual";
+    plate_id?: string;
+    /**
+     * UTF-16 character offset into the page's text where this illustration is woven in (matches the annotation-anchor convention). Absent/0 means top of the page (the first image). Used by the reader to place extra images between paragraphs.
+     */
+    anchor?: number;
+    /**
+     * 0-based index of the even text segment this plate illustrates (0 = first). Provenance for the 'pictures per scene' expansion; absent means the single whole-page illustration.
+     */
+    segment_index?: number;
+    /**
+     * Why the page was selected (DESIGN §8): a mandatory chapter opener, a scene boundary, a gap fill, a manual override in review, or an extra evenly-spaced illustration on an already-selected page ('segment').
+     */
+    reason: "chapter_open" | "scene_boundary" | "fill" | "manual" | "segment";
     /**
      * Visual salience score [0,1] of the page at selection time.
      */

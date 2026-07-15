@@ -28,7 +28,7 @@ import { SYNC_EVENT, SyncStatusBadge, type SyncStatus } from "../sync";
 import type { BundleReader } from "./BundleReader";
 import { Lightbox } from "./Lightbox";
 import { edgeTapAction } from "./nav";
-import { Page } from "./Page";
+import { Page, type PagePlate } from "./Page";
 import { paragraphIndexForChar, paragraphStarts, splitParagraphs, throttle, topVisibleChar } from "./pagetext";
 import { deviceId, readPosition, writePosition } from "./position";
 
@@ -119,13 +119,23 @@ export function Reader({
     }
     return m;
   }, [structure]);
-  // Non-retired plates only (DESIGN §4.4): retired plates keep their files but must not render.
-  const platePages = useMemo(() => {
-    const s = new Set<string>();
+  // A page's illustrations, grouped by page id, ordered top-to-bottom by anchor. Non-retired only
+  // (DESIGN §4.4): retired plates keep their files but must not render. A page's first/base plate
+  // uses the bare page_id at anchor 0 (top); evenly-spaced extras use compound ids + a within-page
+  // anchor (pictures per scene, DESIGN §8). Built from selection.json — no extra I/O (zero-online).
+  const platesByPage = useMemo(() => {
+    const m = new Map<string, PagePlate[]>();
     for (const p of selection?.plates ?? []) {
-      if (p.status !== "retired") s.add(p.page_id);
+      if (p.status === "retired") continue;
+      const plateId = p.plate_id ?? p.page_id;
+      const list = m.get(p.page_id) ?? [];
+      list.push({ plateId, relPath: `${PLATE_DIR}/${plateId}.webp`, anchor: p.anchor ?? 0 });
+      m.set(p.page_id, list);
     }
-    return s;
+    for (const list of m.values()) {
+      list.sort((a, b) => a.anchor - b.anchor || a.plateId.localeCompare(b.plateId));
+    }
+    return m;
   }, [selection]);
 
   // Highlight/note spans on the current page (bookmarks are page-level, not rendered as spans).
@@ -567,8 +577,7 @@ export function Reader({
   }
 
   const chapterTitle = currentId ? (titleByFirstPage.get(currentId) ?? null) : null;
-  const plateRelPath =
-    currentId && platePages.has(currentId) ? `${PLATE_DIR}/${currentId}.webp` : null;
+  const currentPlates = currentId ? platesByPage.get(currentId) ?? [] : [];
 
   return (
     <section className="reader" onTouchStart={onTouchStart} onTouchEnd={onTouchEnd}>
@@ -645,7 +654,7 @@ export function Reader({
             page={pageDoc}
             reader={reader}
             chapterTitle={chapterTitle}
-            plateRelPath={plateRelPath}
+            plates={currentPlates}
             onOpenLightbox={setLightboxSrc}
             annotations={pageSpans}
             flashId={flashId}

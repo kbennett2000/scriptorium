@@ -9,7 +9,7 @@
  */
 export interface Prompt {
   /**
-   * Plate id: a zero-padded 4-digit page id, or a pseudo-plate id 'cover' or 'portrait-{slug}' (DESIGN §10).
+   * Plate id (also the filename stem): a zero-padded 4-digit page id, an extra evenly-spaced same-page illustration '{page_id}-N' (DESIGN §8 'pictures per scene'), or a pseudo-plate id 'cover' or 'portrait-{slug}' (DESIGN §10).
    */
   page_id: string;
   /**

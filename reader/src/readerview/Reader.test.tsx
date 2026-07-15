@@ -135,3 +135,70 @@ describe("Reader", () => {
     await waitFor(() => expect(screen.getByText("2 / 2")).toBeInTheDocument());
   });
 });
+
+describe("Reader — pictures per scene (multiple plates on a page)", () => {
+  // Page 0001 has 3 paragraphs; anchors: "Para one."=9 +2 => para 2 at 11; +"Para two."(9)+2 => para 3 at 22.
+  const MULTI: Selection = {
+    preset: "lavish",
+    params: { min_gap: 1, max_gap: 3, salience_floor: 0.4, chapter_open: true, scene_boundary: true },
+    plates: [
+      { page_id: "0001", reason: "chapter_open", salience: 0.5, status: "rendered", added_in_revision: 1 },
+      { page_id: "0001", plate_id: "0001-2", anchor: 11, segment_index: 1, reason: "segment", salience: 0.5, status: "rendered", added_in_revision: 1 },
+      { page_id: "0001", plate_id: "0001-3", anchor: 22, segment_index: 2, reason: "segment", salience: 0.5, status: "rendered", added_in_revision: 1 },
+    ],
+  };
+
+  function makeMultiReader() {
+    const requestedImages: string[] = [];
+    const reader: BundleReader = {
+      async readJson<T>(relPath: string): Promise<T> {
+        if (relPath === "structure.json") return STRUCTURE as T;
+        if (relPath === "selection.json") return MULTI as T;
+        const m = /^pages\/(\d+)\.json$/.exec(relPath);
+        if (m && PAGES[m[1]]) return PAGES[m[1]] as T;
+        throw new Error(`unexpected readJson: ${relPath}`);
+      },
+      async imageUrl(relPath: string): Promise<string | null> {
+        requestedImages.push(relPath);
+        return /^images\/web\/plates\/0001(-\d+)?\.webp$/.test(relPath) ? `blob:${relPath}` : null;
+      },
+      dispose: vi.fn(),
+    };
+    return { reader, requestedImages };
+  }
+
+  beforeEach(() => {
+    URL.createObjectURL = vi.fn(() => "blob:x");
+    URL.revokeObjectURL = vi.fn();
+  });
+
+  it("renders all three plates in reading order, woven between paragraphs", async () => {
+    const { reader } = makeMultiReader();
+    const { container } = render(
+      <Reader reader={reader} storage={new MemoryStorage()} bookId={BOOK} onExit={() => {}} />,
+    );
+    // All three illustrations render (distinguishable alts), and the text is intact.
+    expect(await screen.findByAltText("Plate 1 for page 1")).toBeInTheDocument();
+    expect(screen.getByAltText("Plate 2 for page 1")).toBeInTheDocument();
+    expect(screen.getByAltText("Plate 3 for page 1")).toBeInTheDocument();
+    await waitFor(() => expect(container.querySelectorAll(".page-para").length).toBe(3));
+
+    // Document order: base image, then para 1, then image 2, para 2, image 3, para 3.
+    const marks = Array.from(container.querySelectorAll("img, .page-para")).map((el) =>
+      el.tagName === "IMG" ? (el as HTMLImageElement).alt : "PARA",
+    );
+    expect(marks).toEqual([
+      "Plate 1 for page 1", "PARA", "Plate 2 for page 1", "PARA", "Plate 3 for page 1", "PARA",
+    ]);
+  });
+
+  it("adds no network paths outside images/web when a page has several plates", async () => {
+    const { reader, requestedImages } = makeMultiReader();
+    render(<Reader reader={reader} storage={new MemoryStorage()} bookId={BOOK} onExit={() => {}} />);
+    await screen.findByAltText("Plate 1 for page 1");
+    for (const p of requestedImages) {
+      expect(p.startsWith("images/web/")).toBe(true);
+      expect(p.endsWith(".png")).toBe(false);
+    }
+  });
+});

@@ -87,6 +87,11 @@
       "type": "string",
       "enum": ["lavish", "classic", "sparse"]
     },
+    "images_per_scene": {
+      "description": "How many illustrations to weave, evenly spaced, into each selected scene (DESIGN §8 'pictures per scene'). 1 = one image per scene (the default and pre-feature behavior). Capped per scene at its paragraph count. Optional/absent means 1 (back-compat with bundles baked before the feature).",
+      "type": "integer",
+      "minimum": 1
+    },
     "portraits_enabled": {
       "description": "Whether dramatis-personae portraits were rendered for major characters in this bake (DESIGN §10).",
       "type": "boolean"

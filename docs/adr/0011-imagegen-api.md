@@ -69,6 +69,9 @@ exactly the "stop and report before building" condition BUILD-PLAN/S10 Task 0 ca
 - The client is style-neutral (style is baked into the prompt by P5/P7), so `style`/LoRA
   selection and the `quality` tier are **not** used by scriptorium; if step/cfg control is
   ever needed it requires another imagegen-service change (no per-call knobs today).
+  **Updated by ADR-0013:** the client now *optionally* forwards `style` (a LoRA preset name)
+  so catalog styles can carry the real Chronicle look; prompt-only styles pass `null` and
+  keep this style-neutral behaviour.
 - `/health` cannot distinguish GPU-busy from GPU-down (only `comfyuiReachable`). A busy GPU
   surfaces as a slow `/generate` that eventually `503`s on the tier timeout → `GpuUnavailable`,
   which is the correct park-and-retry behaviour anyway.

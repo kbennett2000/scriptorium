@@ -13,7 +13,7 @@ from fastapi.testclient import TestClient
 
 from scriptorium.app import app
 
-_GUTENDEX = "https://gutendex.com/books"
+_GUTENDEX = "https://gutendex.com/books/"
 
 _UPSTREAM = {
     "count": 1,
@@ -60,3 +60,21 @@ def test_upstream_failure_degrades_to_502_not_500(client) -> None:
     respx.get(_GUTENDEX).mock(side_effect=httpx.ConnectError("boom"))
     r = client.get("/api/admin/gutendex", params={"q": "x"})
     assert r.status_code == 502
+
+
+@respx.mock
+def test_proxy_follows_redirects(client) -> None:
+    """Regression: gutendex.com 301-redirects; the proxy must follow, not surface a 502.
+
+    Historically the proxy hit /books (no slash) and gutendex 301'd to /books/ with the
+    redirect unfollowed, so the wizard's search failed. Guard that any such redirect is
+    followed through to the real payload.
+    """
+    redirected = "https://gutendex.com/v2/books/"
+    respx.get(_GUTENDEX).mock(
+        return_value=httpx.Response(301, headers={"Location": redirected})
+    )
+    respx.get(redirected).mock(return_value=httpx.Response(200, json=_UPSTREAM))
+    r = client.get("/api/admin/gutendex", params={"q": "time machine"})
+    assert r.status_code == 200, r.text
+    assert r.json()["results"][0]["id"] == 35

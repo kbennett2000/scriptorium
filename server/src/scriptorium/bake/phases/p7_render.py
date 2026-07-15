@@ -31,6 +31,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -50,6 +51,16 @@ UNLOAD_UNIT_ID = "__unload__"
 
 COVER_ID = "cover"
 PORTRAIT_PREFIX = "portrait-"
+
+# A page-plate id: a bare 4-digit page id, or a '{page_id}-N' evenly-spaced extra (pictures per
+# scene). These are style-wrapped and flip their selection entry to 'rendered'; the cover/portrait
+# pseudo-plates (non-numeric) are not. NOTE: bare `.isdigit()` is False for '0007-2', so a compound
+# plate would otherwise be mis-routed to the pseudo-plate path — always use this predicate.
+_PAGE_PLATE = re.compile(r"^[0-9]{4}(-[0-9]+)?$")
+
+
+def _is_page_plate(plate_id: str) -> bool:
+    return bool(_PAGE_PLATE.match(plate_id))
 
 # DESIGN §10 sizes: (render_w, render_h, web_max_w). Thumbs are a fixed 320w (see derivatives).
 _PLATE_SIZE = (832, 1216, 1080)
@@ -142,7 +153,7 @@ def wrap_prompt(style: dict, plate_id: str, prompt_doc: dict) -> tuple[str, str]
     negative is just ``style.negative`` (P7 must not re-wrap them — see p5_prompts docstring).
     """
     final = prompt_doc["final_subject_prompt"]
-    if plate_id.isdigit():
+    if _is_page_plate(plate_id):
         wrapped = f"{style['prefix']}{final}{style['suffix']}"
         avoid = _join_avoid((prompt_doc.get("derived") or {}).get("avoid"))
         negative = f"{style['negative']}, {avoid}" if avoid else style["negative"]
@@ -160,28 +171,38 @@ def _now_iso() -> str:
     return datetime.now(UTC).isoformat()
 
 
-def _mark_rendered(cfg: Any, job: Job, page_id: str) -> None:
-    """Flip a page plate's ``selection.json`` status to ``rendered`` (pixels now exist)."""
+def _mark_rendered(cfg: Any, job: Job, plate_id: str) -> None:
+    """Flip a single plate's ``selection.json`` status to ``rendered`` (pixels now exist).
+
+    Matches on the plate's effective id (``plate_id`` when present, else ``page_id``), so a page's
+    evenly-spaced extras are marked independently of its base plate.
+    """
     path = _selection_path(cfg, job)
     if not path.is_file():
         return
     doc = _read_json(path)
     for plate in doc.get("plates", []):
-        if plate["page_id"] == page_id and plate["status"] != "retired":
+        if plate.get("plate_id", plate["page_id"]) == plate_id and plate["status"] != "retired":
             plate["status"] = "rendered"
     _write_json(path, doc)
 
 
 async def render_to_spec(
-    client: ImagegenClient, wrapped: str, negative: str, spec: _AssetSpec, seed: int
+    client: ImagegenClient,
+    wrapped: str,
+    negative: str,
+    spec: _AssetSpec,
+    seed: int,
+    style: str | None = None,
 ) -> None:
     """The pure render step: txt2img → write archival PNG → idempotent WebP derivatives.
 
     Shared by P7's :func:`render_plate` (work tree) and P8's post-publish regen (library tree,
     ``-rN`` variants). It touches only the three files in ``spec`` — no prompt/selection
-    bookkeeping.
+    bookkeeping. ``style`` is the imagegen preset name (from ``styles.json`` ``imagegen_style``),
+    or ``None`` for prompt-only styles (ADR-0013).
     """
-    png = await client.txt2img(wrapped, negative, spec.width, spec.height, seed)
+    png = await client.txt2img(wrapped, negative, spec.width, spec.height, seed, style=style)
     spec.src.parent.mkdir(parents=True, exist_ok=True)
     spec.src.write_bytes(png)
     make_derivatives(spec.src, spec.web, spec.thumb, web_max_width=spec.web_max)
@@ -203,7 +224,7 @@ async def render_plate(
     if seed is None:
         seed = _default_seed(job.book_id, plate_id)
 
-    await render_to_spec(client, wrapped, negative, spec, seed)
+    await render_to_spec(client, wrapped, negative, spec, seed, style.get("imagegen_style"))
 
     prev_attempts = int((doc.get("render") or {}).get("attempts", 0))
     doc["wrapped_prompt"] = wrapped
@@ -216,7 +237,7 @@ async def render_plate(
     schemas.validate("prompt", doc)
     _write_json(prompt_path, doc)
 
-    if plate_id.isdigit():
+    if _is_page_plate(plate_id):
         _mark_rendered(cfg, job, plate_id)
     job.render_stub = False  # real pixels, not FakeImagegen placeholders
 

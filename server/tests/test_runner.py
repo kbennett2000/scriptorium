@@ -134,6 +134,35 @@ def test_gpu_gate_down_parks_before_running_units(tmp_path) -> None:
     assert len(wake_calls) == 2
 
 
+# --- scheduling: a review-gated job must not starve newer jobs --------------
+
+
+def test_review_gated_job_does_not_starve_newer_jobs(tmp_path) -> None:
+    cfg = _cfg(tmp_path)
+    # Older job parked at the review gate: prompts_draft has no worker phase (the human
+    # approve endpoint advances it), so the runner has nothing to run for it.
+    parked = Job(
+        id="parked", book_id="parked", state=JobState.PROMPTS_DRAFT,
+        started=True, created_at="2020-01-01T00:00:00+00:00",
+    )
+    parked.save(cfg)
+    # Newer job ready to run from ingested (a phase IS registered for ingested).
+    fresh = Job(
+        id="fresh", book_id="fresh", state=JobState.INGESTED,
+        started=True, created_at="2020-01-02T00:00:00+00:00",
+    )
+    fresh.save(cfg)
+
+    phase = CountingPhase(["u1"])  # from_state=INGESTED -> to_state=MENTIONS_RUNNING
+    runner = Runner(cfg, [phase], sleep=_noop_sleep)
+    asyncio.run(runner.tick())
+
+    # The parked job is left alone; the fresh job advanced (it was NOT starved behind it).
+    assert jobmod.load(cfg, "parked").state == JobState.PROMPTS_DRAFT
+    assert phase.executed == ["u1"]
+    assert jobmod.load(cfg, "fresh").state == JobState.MENTIONS_RUNNING
+
+
 # --- WoL helper -------------------------------------------------------------
 
 

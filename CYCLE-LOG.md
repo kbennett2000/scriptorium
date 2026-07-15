@@ -1321,3 +1321,86 @@ morphing, but the protagonist isn't rendered large enough to compare, because ev
 to "wide shot of …". Headline B2 finding → key input to the reader/prompt spec: **P5 should control
 shot type for person-centric beats instead of defaulting all plates to wide establishing shots**
 (filed, NOTES From M1).
+
+---
+
+## M1 follow-up — control-room usability + Chronicle art styles (2026-07-14)
+
+Surfaced while the owner used the admin "New Book" screen himself (not a numbered cycle; three
+owner-requested fixes during M1 usage).
+
+**1. Gutendex search fix.** The wizard's book search 502'd: `gutendex.com` now 301-redirects
+`/books?…` → `/books/?…` and the proxy client didn't follow redirects. Fixed the canonical URL
+(trailing slash) + `follow_redirects=True` in `review_api.py`; same URL fix in `ingest/gutenberg.py`.
+Added a respx regression test that mocks the 301 (the old tests mocked a direct 200 and never
+exercised the redirect). Live-verified: "Anna Karenina" → 5 results.
+
+**2. Chronicle art styles — real LoRA look (ADR-0013).** Owner wanted "the same art styles the
+Chronicle uses." Probed the live imagegen-service: 12 LoRA-backed presets, and `/generate` already
+accepts an optional `style` field the client never sent (ADR-0011 was deliberately style-neutral).
+Reversed that: added required `imagegen_style: string|null` to the styles schema (regen types),
+added the 12 presets to `data/styles.json` (16 total; kept the original 4 as `null` → prompt-only,
+protecting the published Time Machine on `engraving`), made `RealImagegenClient`/`FakeImagegen`
+`txt2img` take `style` (forwarded only when set → prompt-only requests stay byte-identical; fake
+folds style into its digest only when set → determinism fixtures unchanged), and threaded
+`style["imagegen_style"]` through P7 `render_to_spec` and P8 regen. ADR-0013 records the reversal;
+`test_styles_catalog.py` guards every `imagegen_style` against the known preset set (typo → silent
+prompt-only). Live-verified: API serves 16 styles, 12 with LoRA.
+
+**3. Plain-English New Book screen.** De-jargoned `NewBookWizard.tsx` for the non-technical owner:
+Source→"Choose a book" (default now book-search, was paste), Metadata/era→"About the book" with
+"Time & place", Style captions "keeps characters looking the same"/"may look different", Density→
+"How many pictures" (Most/Balanced/Fewest, was Lavish/Classic/Sparse "plates"), Portraits→"Character
+portraits", "Create book"→"Make this book"; dropped §-refs and "M1"/"swatch"/"Gutendex". Updated the
+admin smoke test (selects paste mode, new button label).
+
+**4. Runner starvation bug (found by owner usage, fixed).** The owner's new book sat at `ingested`
+for minutes after Start. Root cause in `runner.tick()`: it advances the oldest runnable job and
+`return`s once per tick, but a job resting in a **no-worker-phase** state (`prompts_draft`, awaiting
+the human review gate — `phase_for` returns `None`) was still selected and consumed the tick doing
+nothing, **starving every newer job behind it**. Here the A6 kill-test leftover `pg-1065` (parked at
+review) blocked the owner's book indefinitely. Fix: in `tick()`, skip a job whose state has no
+registered phase (and isn't `waiting_gpu`) so the worker moves on to the next runnable job. Added
+`test_review_gated_job_does_not_starve_newer_jobs`. After the fix the owner's book advanced
+ingested→mentions→cast→… on its own (`failed_units=0`).
+
+**Done-state:** ruff clean; offline suite **300 passed**; eslint+tsc clean (reader + admin-ui);
+`gen-types` deterministic (only the intended `styles.d.ts` field diff); schemas/types in sync.
+Not yet committed (awaiting owner go-ahead). Parked as before: second-picture-per-scene.
+
+---
+
+## M1 follow-up — "Pictures per scene" (multiple illustrations per page) (2026-07-14)
+
+Owner baked a short 3-"chapter" paste, chose "Maximum" pictures, got ONE. Two stacked causes:
+(a) markdown chapter headings required a space after `#` (`#Chapter` was ignored → 1 page), and
+(b) books under 8 pages hit a "tiny-work" shortcut that ignored the density preset and capped at
+1–2 plates. Owner's fix request: make it a **number** — "pictures per scene" from 1..N, woven in
+**evenly**. That refinement let us drop the riskiest design option (an AI/ledger change to discover
+extra "beats"): even spacing = deterministic paragraph segmentation, no GPU/TTS dependency.
+
+**Shipped (server + reader + admin, all additive/back-compat):**
+- **Stage 0 — chapters count.** `ingest/markdown.py` heading regex `\s+`→`\s*` (new ingests only;
+  paginator bytes untouched). Tests for `#Chapter` / mixed / single-title-collapse.
+- **Stage 1 — short books honor scenes.** Removed the `TINY_WORK_THRESHOLD`/`_tiny_work` ≤2 collapse
+  in `selection/engine.py`; the mark→min_gap→fill pipeline now runs at every size (floor: never zero
+  plates). Density is meaningful for small books again.
+- **Stage 2 — pictures per scene.** New `images_per_scene` (int ≥1, default 1) on `BakeBody` +
+  `meta.schema.json` (optional) + the New Book wizard ("5 · Pictures per scene"). New shared
+  `selection/segment.py` `even_segments`/`expand_choices`: split a selected page's paragraphs into N
+  even groups, UTF-16 anchors matching the reader's `pagetext.ts`. **Compound plate identity**: base
+  image keeps the bare `page_id`; extras are `{page_id}-N` with optional `plate_id`/`anchor`/
+  `segment_index` in `selection.schema.json` (+ broadened `prompt.schema.json` id pattern). P4 emits
+  the expanded plates; P5 derives each plate's prompt from **its own segment** (causality-safe);
+  P7's `.isdigit()` page-plate check → regex `^[0-9]{4}(-[0-9]+)?$` (the one silent-bug risk) and
+  `_mark_rendered` keys on effective plate id; `reselect` diff-keys on effective id and re-select
+  expands `fresh` too; publish/regen carry through by filename stem. Reader groups plates by page and
+  weaves extras **between paragraphs** at their anchor (never mid-paragraph → byte-faithful
+  `.page-para` DOM and R2 anchors untouched); single-image bundles render identically. A scene holds
+  at most one picture per paragraph (documented limit).
+
+**Live proof:** a real 4-paragraph ingest with `images_per_scene=2` → plates `0001` + `0001-2`
+(even anchor); =3 → three at even anchors. **Done-state:** server ruff clean + **312 pytest**;
+reader **148** + admin-ui green (tsc/eslint/vitest); `gen-types` deterministic; schemas/types in
+sync. Existing bundles (The Time Machine) unchanged. Not yet committed (awaiting owner go-ahead).
+Owner must **re-bake** Detective Brown (immutable) to see the new behavior.

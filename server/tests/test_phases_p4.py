@@ -176,6 +176,51 @@ def test_phase_is_idempotent_when_selection_exists(tmp_path) -> None:
     assert _selection(cfg) == sentinel  # untouched
 
 
+def test_images_per_scene_expands_a_selected_page_evenly(tmp_path) -> None:
+    cfg = _cfg(tmp_path)
+    # One selected page with 3 paragraphs; ask for 3 pictures per scene.
+    page = {
+        "id": "0001", "seq": 1, "chapter": 1,
+        "text": "First para.\n\nSecond para.\n\nThird para.", "word_count": 6,
+        "ledger": _ledger(False, 0.7),
+    }
+    structure = {"chapters": [{"index": 1, "title": "I", "page_ids": ["0001"]}]}
+    _seed_pages(cfg, [page], structure,
+                bake_config={"density_preset": "lavish", "images_per_scene": 3})
+
+    job = _drive(cfg, _runner(cfg), stop_states={JobState.SELECTED})
+    assert job.state == JobState.SELECTED
+
+    doc = _selection(cfg)
+    schemas.validate("selection", doc)
+    plates = doc["plates"]
+    assert len(plates) == 3
+    # Base plate keeps the bare page_id (no plate_id/anchor) and its original reason.
+    assert plates[0]["page_id"] == "0001" and "plate_id" not in plates[0]
+    assert plates[0]["reason"] == "chapter_open"
+    # Extras carry compound ids, ascending anchors, and the 'segment' reason.
+    assert [p.get("plate_id") for p in plates] == [None, "0001-2", "0001-3"]
+    assert [p.get("segment_index") for p in plates] == [None, 1, 2]
+    anchors = [p["anchor"] for p in plates[1:]]
+    assert anchors == sorted(anchors) and anchors[0] > 0
+
+
+def test_images_per_scene_capped_at_paragraph_count(tmp_path) -> None:
+    cfg = _cfg(tmp_path)
+    # A single-paragraph page can hold only one picture, whatever the setting.
+    page = {"id": "0001", "seq": 1, "chapter": 1, "text": "Only one paragraph.",
+            "word_count": 3, "ledger": _ledger(False, 0.7)}
+    structure = {"chapters": [{"index": 1, "title": "I", "page_ids": ["0001"]}]}
+    _seed_pages(cfg, [page], structure,
+                bake_config={"density_preset": "lavish", "images_per_scene": 5})
+
+    _drive(cfg, _runner(cfg), stop_states={JobState.SELECTED})
+    doc = _selection(cfg)
+    schemas.validate("selection", doc)
+    assert len(doc["plates"]) == 1
+    assert "plate_id" not in doc["plates"][0]
+
+
 def test_fixture_pipeline_selection_is_schema_valid(tmp_path) -> None:
     """S7 acceptance: run P4 over the bundle book with the S6 scene-update ledgers merged in.
 

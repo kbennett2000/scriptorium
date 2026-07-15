@@ -1,10 +1,12 @@
 """Markdown / paste adapter (DESIGN §5.2).
 
 Headings become chapter breaks: the first heading level that appears at least
-twice is the chapter level; that heading's text is the chapter title. Body is
-split on blank lines into paragraphs; other markdown syntax is passed through as
-plain text (v1, no rendering). A leading ``---`` YAML front-matter block is honored
-for ``title``/``author``/``language``/``era`` when present.
+twice is the chapter level; that heading's text is the chapter title. The leading
+``#`` may be followed by a space or not (``# Chapter`` and ``#Chapter`` both count) —
+non-technical users paste both forms. Body is split on blank lines into paragraphs;
+other markdown syntax is passed through as plain text (v1, no rendering). A leading
+``---`` YAML front-matter block is honored for ``title``/``author``/``language``/``era``
+when present.
 
 Front-matter is parsed with a minimal scalar ``key: value`` reader rather than a
 YAML dependency: the honored keys are all simple strings, so a full YAML parser
@@ -30,7 +32,9 @@ from .base import (
 )
 from .base import _chapters_from_headings as _segment
 
-_HEADING = re.compile(r"^(#{1,6})\s+(.+?)\s*#*\s*$")
+# The space after ``#`` is optional: ``# Chapter`` and ``#Chapter`` both parse as headings.
+# Anchored ``^`` keeps it from matching a mid-line ``#``.
+_HEADING = re.compile(r"^(#{1,6})\s*(.+?)\s*#*\s*$")
 _FRONT_MATTER_KEYS = {"title", "author", "language", "era"}
 
 

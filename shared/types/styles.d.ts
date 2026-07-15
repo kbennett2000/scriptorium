@@ -21,6 +21,10 @@ export interface Styles {
      */
     name: string;
     /**
+     * The imagegen-service style preset name to forward on /generate to apply that style's LoRA (e.g. 'oil painting'), or null for prompt-only styles that carry no LoRA (DESIGN §10, ADR-0013).
+     */
+    imagegen_style: string | null;
+    /**
      * Whether character identity stays consistent across plates in this style. Unfriendly styles get a drift warning in the picker (DESIGN §9).
      */
     consistency_friendly: boolean;

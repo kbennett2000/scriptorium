@@ -4,6 +4,7 @@
       "id": "engraving",
       "name": "Victorian Engraving",
       "consistency_friendly": true,
+      "imagegen_style": null,
       "prefix": "engraving, ",
       "suffix": ", detail",
       "negative": "photo",

@@ -74,7 +74,9 @@ def _language(book: dict) -> str | None:
 
 def search(query: str, *, client: httpx.Client) -> list[dict]:
     """Search Gutendex; return simplified hits for the admin UI (§5.1)."""
-    resp = client.get(f"{GUTENDEX_BASE}/books", params={"search": query})
+    # Trailing slash: gutendex.com now 301-redirects /books?... -> /books/?... (the caller's
+    # client follows redirects, but hit the canonical URL directly to avoid the extra hop).
+    resp = client.get(f"{GUTENDEX_BASE}/books/", params={"search": query})
     resp.raise_for_status()
     hits = []
     for book in resp.json().get("results", []):

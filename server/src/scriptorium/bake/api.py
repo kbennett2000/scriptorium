@@ -14,7 +14,7 @@ import json
 from pathlib import Path
 
 from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from ..config import Config, load_config
 from ..ingest import base as ingest
@@ -61,6 +61,7 @@ class SourceBody(BaseModel):
 class BakeBody(BaseModel):
     style_id: str
     density_preset: str = "classic"
+    images_per_scene: int = Field(default=1, ge=1)
     era: str | None = None
     portraits_enabled: bool = True
     title: str | None = None

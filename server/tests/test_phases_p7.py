@@ -153,6 +153,47 @@ def test_render_produces_pixels_derivatives_and_provenance(tmp_path) -> None:
 
 
 @respx.mock
+def test_compound_plate_is_style_wrapped_and_marked_rendered(tmp_path) -> None:
+    # An evenly-spaced extra ('0001-2') must take the page-plate path (style-wrapped + marked
+    # rendered), not be mistaken for a pre-wrapped pseudo-plate. Guards the .isdigit() -> regex fix.
+    cfg = _cfg(tmp_path)
+    book = cfg.work_dir / "b"
+    prompts = book / "prompts"
+    prompts.mkdir(parents=True, exist_ok=True)
+    for pid, text in [("0001", "the first half"), ("0001-2", "the second half"),
+                      ("cover", "frontispiece")]:
+        (prompts / f"{pid}.json").write_text(json.dumps(_prompt_doc(pid, text)), encoding="utf-8")
+    (book / "selection.json").write_text(json.dumps({
+        "preset": "lavish",
+        "params": {"min_gap": 1, "max_gap": 3, "salience_floor": 0.4,
+                   "chapter_open": True, "scene_boundary": True},
+        "plates": [
+            {"page_id": "0001", "reason": "chapter_open", "salience": 0.8,
+             "status": "approved", "added_in_revision": 1},
+            {"page_id": "0001", "plate_id": "0001-2", "anchor": 20, "segment_index": 1,
+             "reason": "segment", "salience": 0.8, "status": "approved", "added_in_revision": 1},
+        ],
+    }), encoding="utf-8")
+    Job(id="b", book_id="b", state=JobState.APPROVED, started=True,
+        bake_config={"style_id": "engraving"}).save(cfg)
+    respx.post(f"{TTS}/v1/models/unload").mock(return_value=httpx.Response(200, json={}))
+
+    job = _drive(cfg, FakeImagegen())
+    assert job.state == JobState.RENDERED, f"stuck at {job.state}"
+
+    # Rendered to its own file at the §10 plate size.
+    assert _png_size(book / "images" / "plates" / "0001-2.png") == (832, 1216)
+    # Style-wrapped (page-plate path), not passed through like a pseudo-plate.
+    extra = json.loads((prompts / "0001-2.json").read_text("utf-8"))
+    assert extra["wrapped_prompt"].startswith("19th-century steel engraving")
+    assert "the second half" in extra["wrapped_prompt"]
+    # Its own selection entry flipped to rendered, independently of the base plate.
+    selection = json.loads((book / "selection.json").read_text("utf-8"))
+    statuses = {p.get("plate_id", p["page_id"]): p["status"] for p in selection["plates"]}
+    assert statuses == {"0001": "rendered", "0001-2": "rendered"}
+
+
+@respx.mock
 def test_unload_happens_before_any_render(tmp_path) -> None:
     cfg = _cfg(tmp_path)
     _seed(cfg)

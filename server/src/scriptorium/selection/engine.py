@@ -10,7 +10,7 @@ booleans only* — ``seq``, ``page_id`` (an identifier, not content), ``chapter`
 cannot "read ahead" into page content; score lookahead is allowed, content lookahead is not
 (DESIGN §8). A test asserts the field set exactly.
 
-The five §8 steps are implemented in :func:`select`:
+The §8 steps are implemented in :func:`select`:
 
 1. **Mandatory marks** — the first page of each chapter (``chapter_open``) and, when the preset
    enables it, every ``scene_changed`` page (``scene_boundary``).
@@ -20,8 +20,16 @@ The five §8 steps are implemented in :func:`select`:
 3. **Fill** the gaps: wherever the run since the last kept plate would exceed ``max_gap``, take
    the highest-salience page clearing ``salience_floor`` in the window; if none clears the floor,
    leave the gap (a gap may exceed ``max_gap`` rather than force a weak plate).
-4. **Tiny-work** degradation: a book under 8 pages collapses to ``{page 1} ∪ {argmax salience}``.
-5. Emit a ``reason`` per plate.
+4. Emit a ``reason`` per plate, guaranteeing at least the first page is always chosen (a book
+   never yields zero plates).
+
+This function selects **which pages** are illustrated (one choice per page). Turning a selected
+page into *multiple* evenly-spaced illustrations (the "pictures per scene" setting) happens later
+in P4, which has the page text; the engine stays text-free (spoiler invariant).
+
+Short books used to be short-circuited to at most two plates, which made the density preset a
+no-op for them. That degradation is gone: the same mark/min_gap/fill pipeline runs at every book
+size, so ``lavish``/``classic``/``sparse`` change the count even for a handful of pages.
 
 **Fill window vs. ``min_gap`` (deliberate reconciliation).** §8 step 3 writes the fill window as
 ``(last+1 … last+max_gap)``, but the binding acceptance property is "no two plates closer than
@@ -42,9 +50,6 @@ CHAPTER_OPEN = "chapter_open"
 SCENE_BOUNDARY = "scene_boundary"
 FILL = "fill"
 MANUAL = "manual"
-
-# Below this page count the presets are ignored (DESIGN §8 step 4).
-TINY_WORK_THRESHOLD = 8
 
 # Mandatory-mark precedence: lower rank wins a min_gap collision (DESIGN §8 step 2).
 _PRECEDENCE = {CHAPTER_OPEN: 0, SCENE_BOUNDARY: 1}
@@ -92,11 +97,24 @@ class PlateChoice:
 
     ``status`` and ``added_in_revision`` are attached at serialization (a fresh selection is
     ``selected`` / revision 1) or by :mod:`scriptorium.selection.reselect`.
+
+    ``select`` produces one choice per page (bare, ``plate_id``/``anchor``/``segment_index`` all
+    ``None``). The pictures-per-scene expansion (``segment.expand_choices``) then turns a page into
+    several choices: the first stays bare (its base image), extras carry a compound ``plate_id``
+    (``{page_id}-N``), a within-page ``anchor``, and a ``segment_index``.
     """
 
     page_id: str
     reason: str
     salience: float
+    plate_id: str | None = None
+    anchor: int | None = None
+    segment_index: int | None = None
+
+    @property
+    def effective_id(self) -> str:
+        """Filename stem / diff key: the compound ``plate_id`` or, if absent, the ``page_id``."""
+        return self.plate_id or self.page_id
 
 
 # The §8 preset table, verbatim (min_gap, max_gap, salience_floor, chapter_open, scene_boundary).
@@ -124,10 +142,6 @@ def select(scores: list[PageScore], structure: dict, params: Params) -> list[Pla
         return []
     ordered = sorted(scores, key=lambda s: s.seq)
 
-    # Step 4: tiny-work degradation ignores the presets entirely.
-    if len(ordered) < TINY_WORK_THRESHOLD:
-        return _tiny_work(ordered)
-
     # Step 1: mandatory marks in seq order.
     opener_ids = _chapter_opener_ids(structure) if params.chapter_open else set()
     marks = _mandatory_marks(ordered, opener_ids, params)
@@ -138,21 +152,14 @@ def select(scores: list[PageScore], structure: dict, params: Params) -> list[Pla
     # Step 3: fill gaps wider than max_gap where salience permits.
     plates = _fill(ordered, kept, params)
 
-    # Step 5: emit reasons, in seq order.
+    # Floor: a book never yields zero plates — fall back to its first page. (With chapters this
+    # is already satisfied, since chapter 1's opener is page 1; this guards structure-less input.)
+    if not plates:
+        plates = [_Mark(ordered[0], CHAPTER_OPEN)]
+
+    # Step 4: emit reasons, in seq order.
     plates.sort(key=lambda m: m.score.seq)
     return [PlateChoice(m.score.page_id, m.reason, m.score.visual_salience) for m in plates]
-
-
-def _tiny_work(ordered: list[PageScore]) -> list[PlateChoice]:
-    """{page 1} ∪ {argmax salience}, deduped (DESIGN §8 step 4)."""
-    first = ordered[0]
-    # argmax salience, earliest seq on a tie (deterministic).
-    argmax = max(ordered, key=lambda s: (s.visual_salience, -s.seq))
-    plates = [PlateChoice(first.page_id, CHAPTER_OPEN, first.visual_salience)]
-    if argmax.seq != first.seq:
-        reason = SCENE_BOUNDARY if argmax.scene_changed else FILL
-        plates.append(PlateChoice(argmax.page_id, reason, argmax.visual_salience))
-    return plates
 
 
 def _chapter_opener_ids(structure: dict) -> set[str]:

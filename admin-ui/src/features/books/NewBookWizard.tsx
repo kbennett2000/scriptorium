@@ -9,9 +9,9 @@ import { navigate } from "../../routes";
 type SourceMode = "gutenberg" | "paste" | "upload";
 
 const DENSITIES: { value: DensityPreset; label: string }[] = [
-  { value: "lavish", label: "Lavish — most plates" },
-  { value: "classic", label: "Classic — balanced (default)" },
-  { value: "sparse", label: "Sparse — fewest plates" },
+  { value: "lavish", label: "Most pictures" },
+  { value: "classic", label: "Balanced (recommended)" },
+  { value: "sparse", label: "Fewest pictures" },
 ];
 
 // New Book wizard (§11.3): source → metadata/era → style → density → portraits → create. Rendered
@@ -23,7 +23,7 @@ export function NewBookWizard() {
     .slice()
     .sort((a, b) => Number(b.consistency_friendly) - Number(a.consistency_friendly));
 
-  const [mode, setMode] = useState<SourceMode>("paste");
+  const [mode, setMode] = useState<SourceMode>("gutenberg");
   const [kind, setKind] = useState<"text" | "markdown">("markdown");
   const [text, setText] = useState("");
   const [filename, setFilename] = useState<string | null>(null);
@@ -36,6 +36,7 @@ export function NewBookWizard() {
 
   const [styleId, setStyleId] = useState<string | null>(null);
   const [density, setDensity] = useState<DensityPreset>("classic");
+  const [imagesPerScene, setImagesPerScene] = useState(1);
   const [portraits, setPortraits] = useState(true);
 
   const [submitting, setSubmitting] = useState(false);
@@ -79,6 +80,7 @@ export function NewBookWizard() {
       bake: {
         style_id: effectiveStyle,
         density_preset: density,
+        images_per_scene: imagesPerScene,
         era: era || null,
         portraits_enabled: portraits,
         title: title || null,
@@ -97,13 +99,13 @@ export function NewBookWizard() {
   return (
     <section>
       <div className="crumbs">
-        <a onClick={() => navigate({ name: "list" })}>Books</a> › New Book
+        <a onClick={() => navigate({ name: "list" })}>Books</a> › New book
       </div>
-      <h2>New Book</h2>
+      <h2>New book</h2>
 
-      {/* 1. Source */}
+      {/* 1. Choose a book */}
       <div className="wizard-step">
-        <h3>1 · Source</h3>
+        <h3>1 · Choose a book</h3>
         <div className="row">
           <label>
             <input
@@ -112,7 +114,7 @@ export function NewBookWizard() {
               checked={mode === "gutenberg"}
               onChange={() => setMode("gutenberg")}
             />
-            Gutendex search
+            Search free classic books
           </label>
           <label>
             <input
@@ -121,7 +123,7 @@ export function NewBookWizard() {
               checked={mode === "paste"}
               onChange={() => setMode("paste")}
             />
-            Paste text
+            Paste the text myself
           </label>
           <label>
             <input
@@ -130,7 +132,7 @@ export function NewBookWizard() {
               checked={mode === "upload"}
               onChange={() => setMode("upload")}
             />
-            Upload file
+            Upload a file
           </label>
         </div>
 
@@ -160,17 +162,17 @@ export function NewBookWizard() {
             )}
             <div className="row" style={{ marginBottom: 6 }}>
               <label>
-                Kind:
+                This text is:
                 <select
                   value={kind}
                   onChange={(e) => setKind(e.target.value as "text" | "markdown")}
                 >
-                  <option value="markdown">markdown</option>
-                  <option value="text">text</option>
+                  <option value="markdown">Formatted (chapters marked with #)</option>
+                  <option value="text">Plain text</option>
                 </select>
               </label>
               <span className="muted">
-                markdown honours front-matter + <code>#</code> chapter headings.
+                Not sure? Leave it on “Formatted” — it picks up chapter titles automatically.
               </span>
             </div>
             <textarea
@@ -184,9 +186,9 @@ export function NewBookWizard() {
         )}
       </div>
 
-      {/* 2. Metadata + era */}
+      {/* 2. About the book */}
       <div className="wizard-step">
-        <h3>2 · Metadata &amp; era</h3>
+        <h3>2 · About the book</h3>
         <div className="row">
           <label>
             Title
@@ -194,7 +196,7 @@ export function NewBookWizard() {
               type="text"
               value={title}
               onChange={(e) => setTitle(e.target.value)}
-              placeholder="override / detected"
+              placeholder="filled in automatically"
             />
           </label>
           <label>
@@ -206,27 +208,27 @@ export function NewBookWizard() {
             />
           </label>
           <label>
-            Era
+            Time &amp; place
             <input
               type="text"
               value={era}
               onChange={(e) => setEra(e.target.value)}
-              placeholder="e.g. late-Victorian"
+              placeholder="e.g. Victorian London"
             />
           </label>
         </div>
         <p className="muted" style={{ marginTop: 4 }}>
-          Era rides in every prompt (§4.3). Set it from the author’s period; leave blank to let the
-          bake default it.
+          Title and author fill in on their own for searched books. “Time &amp; place” is when and
+          where the story happens, so the pictures match — leave it blank and we’ll guess.
         </p>
       </div>
 
-      {/* 3. Style picker */}
+      {/* 3. Pick an art style */}
       <div className="wizard-step">
-        <h3>3 · Style</h3>
+        <h3>3 · Pick an art style</h3>
         <ErrorNotice error={styles.error} prefix="Could not load styles" />
         <p className="muted" style={{ marginTop: 0 }}>
-          Swatches are placeholders (real samples land at M1).
+          These little tiles are stand-ins, not real samples yet — pick by name for now.
         </p>
         <div className="style-grid">
           {styleList.map((s) => (
@@ -240,16 +242,18 @@ export function NewBookWizard() {
               <StyleSwatch id={s.id} />
               <div className="name">{s.name}</div>
               <div className="muted" style={{ fontSize: 11 }}>
-                {s.consistency_friendly ? "consistency-friendly" : "may drift"}
+                {s.consistency_friendly
+                  ? "keeps characters looking the same"
+                  : "characters may look different picture to picture"}
               </div>
             </button>
           ))}
         </div>
       </div>
 
-      {/* 4. Density */}
+      {/* 4. How many pictures */}
       <div className="wizard-step">
-        <h3>4 · Density</h3>
+        <h3>4 · How many pictures</h3>
         <div className="row">
           {DENSITIES.map((d) => (
             <label key={d.value}>
@@ -265,27 +269,50 @@ export function NewBookWizard() {
         </div>
       </div>
 
-      {/* 5. Portraits */}
+      {/* 5. Pictures per scene */}
       <div className="wizard-step">
-        <h3>5 · Portraits</h3>
+        <h3>5 · Pictures per scene</h3>
+        <div className="row">
+          <label>
+            <input
+              type="number"
+              min={1}
+              max={9}
+              value={imagesPerScene}
+              onChange={(e) =>
+                setImagesPerScene(Math.max(1, Math.floor(Number(e.target.value) || 1)))
+              }
+              style={{ width: 64 }}
+            />
+          </label>
+          <span className="muted">
+            More pictures woven evenly through each scene. 1 = one per scene. (A scene can hold
+            at most as many pictures as it has paragraphs.)
+          </span>
+        </div>
+      </div>
+
+      {/* 6. Character portraits */}
+      <div className="wizard-step">
+        <h3>6 · Character portraits</h3>
         <label>
           <input
             type="checkbox"
             checked={portraits}
             onChange={(e) => setPortraits(e.target.checked)}
           />
-          Generate character portraits for majors
+          Draw a portrait of each main character
         </label>
       </div>
 
-      <ErrorNotice error={submitError} prefix="Create failed" />
+      <ErrorNotice error={submitError} prefix="Could not start the book" />
 
       <div className="row">
         <button className="primary" disabled={!canCreate} onClick={onCreate}>
-          {submitting ? "Creating…" : "Create book"}
+          {submitting ? "Starting…" : "Make this book"}
         </button>
         <button onClick={() => navigate({ name: "list" })}>Cancel</button>
-        {!sourceReady && <span className="muted">Add a source to continue.</span>}
+        {!sourceReady && <span className="muted">Pick a book first.</span>}
       </div>
     </section>
   );
@@ -322,18 +349,18 @@ function GutendexSearch({
       <form className="row" onSubmit={run}>
         <input
           type="search"
-          aria-label="gutendex query"
+          aria-label="book search"
           value={q}
           onChange={(e) => setQ(e.target.value)}
-          placeholder="Search Project Gutenberg…"
+          placeholder="Type a book title, e.g. Dracula"
           style={{ minWidth: 260 }}
         />
         <button type="submit" disabled={loading || !q.trim()}>
           {loading ? "Searching…" : "Search"}
         </button>
       </form>
-      <ErrorNotice error={error} prefix="Gutendex search failed" />
-      {results && results.length === 0 && <p className="muted">No matches.</p>}
+      <ErrorNotice error={error} prefix="Book search failed" />
+      {results && results.length === 0 && <p className="muted">No matches — try a different title.</p>}
       {results && results.length > 0 && (
         <table style={{ marginTop: 6 }}>
           <tbody>
@@ -349,8 +376,8 @@ function GutendexSearch({
                 <td>
                   {r.title}
                   <div className="muted" style={{ fontSize: 12 }}>
-                    {r.authors.join(", ") || "unknown author"} · #{r.id}
-                    {!r.download_url && " · no plain-text edition"}
+                    {r.authors.join(", ") || "unknown author"}
+                    {!r.download_url && " · can’t be used (no text version available)"}
                   </div>
                 </td>
               </tr>

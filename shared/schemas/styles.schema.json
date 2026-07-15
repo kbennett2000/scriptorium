@@ -14,7 +14,7 @@
         "description": "One style.",
         "type": "object",
         "additionalProperties": false,
-        "required": ["id", "name", "consistency_friendly", "prefix", "suffix", "negative", "portrait_prefix", "params"],
+        "required": ["id", "name", "consistency_friendly", "imagegen_style", "prefix", "suffix", "negative", "portrait_prefix", "params"],
         "properties": {
           "id": {
             "description": "Stable style id referenced by meta.style_id.",
@@ -24,6 +24,11 @@
           "name": {
             "description": "Human-readable style name for the picker.",
             "type": "string",
+            "minLength": 1
+          },
+          "imagegen_style": {
+            "description": "The imagegen-service style preset name to forward on /generate to apply that style's LoRA (e.g. 'oil painting'), or null for prompt-only styles that carry no LoRA (DESIGN §10, ADR-0013).",
+            "type": ["string", "null"],
             "minLength": 1
           },
           "consistency_friendly": {

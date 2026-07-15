@@ -151,21 +151,33 @@ def test_scene_boundary_tiebreak_prefers_earlier_seq_on_equal_salience() -> None
     assert "0005" not in by_id  # equal salience → earlier seq kept
 
 
-# --- tiny-work degradation (DESIGN §8 step 4) -------------------------------
+# --- short books honor chapters + density (no more tiny-work collapse) ------
 
 
-def test_tiny_work_is_page1_plus_argmax() -> None:
-    scores = [_score(s, salience=0.2) for s in range(1, 7)]  # 6 pages < 8
-    scores[3] = _score(4, salience=0.95)  # argmax at page 4
-    plates = select(scores, _structure_from(scores), PRESETS["classic"])
-    by_id = {p.page_id: p for p in plates}
-    assert set(by_id) == {"0001", "0004"}
-    assert by_id["0001"].reason == "chapter_open"
+def test_short_multichapter_book_gets_a_plate_per_chapter() -> None:
+    # 4 one-page chapters — each chapter opener is a mandatory mark (min_gap=1 for lavish).
+    scores = [_score(s, salience=0.2, chapter=s) for s in range(1, 5)]
+    plates = select(scores, _structure_from(scores), PRESETS["lavish"])
+    assert [p.page_id for p in plates] == ["0001", "0002", "0003", "0004"]
+    assert all(p.reason == "chapter_open" for p in plates)
 
 
-def test_tiny_work_dedupes_when_argmax_is_page1() -> None:
-    scores = [_score(1, salience=0.95)] + [_score(s, salience=0.2) for s in range(2, 7)]
-    plates = select(scores, _structure_from(scores), PRESETS["classic"])
+def test_density_still_changes_count_for_short_books() -> None:
+    # A 6-page single chapter with one salient page: lavish fills, classic/sparse fit within
+    # max_gap so they stay at the sole opener. Density is no longer a no-op below 8 pages.
+    scores = [_score(s, salience=0.2) for s in range(1, 7)]
+    scores[3] = _score(4, salience=0.95)  # a strong page mid-book
+    struct = _structure_from(scores)
+    lavish = {p.page_id for p in select(scores, struct, PRESETS["lavish"])}
+    classic = {p.page_id for p in select(scores, struct, PRESETS["classic"])}
+    assert lavish == {"0001", "0004"}   # gap 1->6 exceeds lavish max_gap(3) → fills the strong page
+    assert classic == {"0001"}          # gap 1->6 within classic max_gap(6) → no fill
+    assert lavish > classic
+
+
+def test_single_page_book_still_yields_one_plate() -> None:
+    scores = [_score(1, salience=0.2)]
+    plates = select(scores, _structure_from(scores), PRESETS["lavish"])
     assert [p.page_id for p in plates] == ["0001"]
     assert plates[0].reason == "chapter_open"
 

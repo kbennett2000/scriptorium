@@ -38,6 +38,7 @@ from pathlib import Path
 from typing import Any
 
 from ... import schemas
+from ...selection.segment import even_segments
 from ...styles import get_style
 from ..job import Job, JobState
 from ..tts_client import TtsClient
@@ -102,13 +103,34 @@ def _load_cast(cfg: Any, job: Job) -> dict:
     return _read_json(path) if path.is_file() else {"characters": []}
 
 
-def _selected_page_ids(cfg: Any, job: Job) -> list[str]:
-    """Page ids of the ``status:"selected"`` plates, in selection order."""
+def _selected_plates(cfg: Any, job: Job) -> list[dict]:
+    """The ``status:"selected"`` plates, in selection order, normalized to explicit ids.
+
+    Each record is ``{plate_id, page_id, segment_index}``. ``plate_id`` is the filename stem: the
+    bare ``page_id`` for a page's first/only illustration, or ``{page_id}-N`` for an evenly-spaced
+    extra (pictures-per-scene, DESIGN §8).
+    """
     path = _selection_path(cfg, job)
     if not path.is_file():
         return []
     doc = _read_json(path)
-    return [p["page_id"] for p in doc.get("plates", []) if p.get("status") == "selected"]
+    return [
+        {
+            "plate_id": p.get("plate_id", p["page_id"]),
+            "page_id": p["page_id"],
+            "segment_index": int(p.get("segment_index", 0)),
+        }
+        for p in doc.get("plates", [])
+        if p.get("status") == "selected"
+    ]
+
+
+def _segments_per_page(plates: list[dict]) -> dict[str, int]:
+    """How many selected plates each page carries (= its segment count for even splitting)."""
+    counts: dict[str, int] = {}
+    for rec in plates:
+        counts[rec["page_id"]] = counts.get(rec["page_id"], 0) + 1
+    return counts
 
 
 # --- pure assembly helpers (string-tested against DESIGN §10 / TTS §7.5) -----
@@ -247,9 +269,10 @@ class PromptsDerive:
     is_gpu = True
 
     def units(self, job: Job, cfg: Any) -> list[Unit]:
-        # Selected pages (GPU/TTS), then the CPU pseudo-plates. Cover is always produced; portraits
-        # only when enabled. Trailing order mirrors P3's merge unit.
-        units = [Unit(id=pid) for pid in _selected_page_ids(cfg, job)]
+        # Selected plates (GPU/TTS) — one unit per plate id, so a page's evenly-spaced extras
+        # (`0007-2`, …) are their own units — then the CPU pseudo-plates. Cover is always produced;
+        # portraits only when enabled. Trailing order mirrors P3's merge unit.
+        units = [Unit(id=rec["plate_id"]) for rec in _selected_plates(cfg, job)]
         units.append(Unit(id=COVER_UNIT_ID))
         if _portraits_enabled(job):
             units += [
@@ -275,22 +298,31 @@ class PromptsDerive:
         if unit.id.startswith(PORTRAIT_PREFIX):
             self._write_portrait(cfg, job, unit.id)
             return
-        await self._derive_page(cfg, job, unit.id)
+        await self._derive_plate(cfg, job, unit.id)
 
-    # --- per-page LLM derivation -------------------------------------------
+    # --- per-plate LLM derivation ------------------------------------------
 
-    async def _derive_page(self, cfg: Any, job: Job, page_id: str) -> None:
-        page = _read_json(_pages_dir(cfg, job) / f"{page_id}.json")
+    async def _derive_plate(self, cfg: Any, job: Job, plate_id: str) -> None:
+        """Derive one plate's prompt from *its own segment* of the page (causality-safe: the
+        segment is a sub-range of that page's text). For a single-image page the segment is the
+        whole page, so this is identical to the pre-feature per-page derivation."""
+        plates = _selected_plates(cfg, job)
+        rec = next((r for r in plates if r["plate_id"] == plate_id), None)
+        if rec is None:  # pragma: no cover - units() only emits selected plate ids
+            return
+        page = _read_json(_pages_dir(cfg, job) / f"{rec['page_id']}.json")
+        n_segments = _segments_per_page(plates)[rec["page_id"]]
+        segment = even_segments(page["text"], n_segments)[rec["segment_index"]]
         options = illustration_options(page, _load_cast(cfg, job), job.bake_config.get("era"))
-        output, meta = await TtsClient(cfg).transform_with_meta(TRANSFORM, page["text"], options)
+        output, meta = await TtsClient(cfg).transform_with_meta(TRANSFORM, segment.text, options)
 
         warnings = meta.get("warnings") or []
         if warnings:
-            job.prompt_warnings[page_id] = list(warnings)
+            job.prompt_warnings[plate_id] = list(warnings)
 
-        doc = _draft(page_id, output["prompt"], derived=output)
+        doc = _draft(plate_id, output["prompt"], derived=output)
         schemas.validate("prompt", doc)
-        _write_json(_prompts_dir(cfg, job) / f"{page_id}.json", doc)
+        _write_json(_prompts_dir(cfg, job) / f"{plate_id}.json", doc)
 
     # --- CPU pseudo-plates (DESIGN §10) ------------------------------------
 
