@@ -18,6 +18,8 @@ import httpx
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 
+from .artsets.api import router as artsets_router
+from .artsets.phase import SetRender
 from .bake.api import router as admin_router
 from .bake.phases.p1_mentions import CastMentions, MentionsEnter
 from .bake.phases.p2_cast import CastCanonicalize, CastReduce
@@ -56,6 +58,9 @@ BAKE_PIPELINE = [
     RenderEnter(),
     Render(),
     Publish(),
+    # Per-user picture-set render (ADR-0014) — a side lifecycle on the same single worker; its
+    # unique `from_state` (set_rendering) means it never collides with the book pipeline.
+    SetRender(),
 ]
 
 _PROBE_TIMEOUT_S = 2.0
@@ -90,6 +95,7 @@ app.include_router(admin_router)
 app.include_router(review_router)
 app.include_router(library_router)
 app.include_router(sync_router)
+app.include_router(artsets_router)
 
 
 async def _probe(url: str | None) -> dict[str, bool]:

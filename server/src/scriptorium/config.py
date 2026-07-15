@@ -76,6 +76,13 @@ class Config:
         return self.data_dir / "sync"
 
     @property
+    def artsets_dir(self) -> Path:
+        """Root of per-user picture "sets" (``artsets/{user}/{book}/{set_id}/``, DESIGN §8,
+        ADR-0014). Private per household profile and additive — outside ``library/`` so the
+        immutable published bundle is never touched. Holds each set's images + manifest."""
+        return self.data_dir / "artsets"
+
+    @property
     def users_file(self) -> Path:
         """Household profiles file (``users.json``, DESIGN §14). May be absent on a
         fresh box — the users loader falls back to a committed dev sample."""

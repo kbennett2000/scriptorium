@@ -1404,3 +1404,71 @@ extra "beats"): even spacing = deterministic paragraph segmentation, no GPU/TTS 
 reader **148** + admin-ui green (tsc/eslint/vitest); `gen-types` deterministic; schemas/types in
 sync. Existing bundles (The Time Machine) unchanged. Not yet committed (awaiting owner go-ahead).
 Owner must **re-bake** Detective Brown (immutable) to see the new behavior.
+
+## M1 follow-up — Private picture "Sets", Phase 1: model + "Pictures" menu (2026-07-14)
+
+Owner wants art **private per person** with **multiple "Sets" per book** (create in a new style
+or re-roll; delete). Full design + phasing in the plan file; this is **Phase 1 of 4** — the
+schemas, a read-only listing, and a visible switcher shell. No generation, no per-account image
+storage yet (those are Phases 2–4). The **words stay locked**; only pictures become swappable.
+
+- **Schemas + types.** New `shared/schemas/artset.schema.json` (one set: book_id, user_id,
+  set_id `^(default|set-[0-9a-f]{12})$`, kind default/style/reroll, label, optional style_id/
+  source_revision, status, created) and `artset-list.schema.json` (per-(user,book) list +
+  `active_set_id` + set summaries; the synthetic `default` entry needs no timestamp). Added both to
+  `schemas.SCHEMA_KINDS` (+ 4 valid/invalid fixtures for the parametrized `test_schemas`). Regen
+  `shared/types` → only `artset.d.ts`/`artset-list.d.ts` + index (deterministic).
+- **Server.** New `scriptorium/artsets/` module + `GET /api/artsets/{user}/{book}` returning the
+  Default-only list, schema-validated, with the sync API's `{user}`/`{book}` traversal guards.
+  Router wired in `app.py`.
+- **Reader.** New `reader/src/artsets/`: `activeSet.ts` (per-(user,book) active-set persisted
+  locally at `artsets-active/{user}/{book}.json`, default `"default"`, offline), `useActiveSet`
+  hook, and a **"Pictures"** overlay `SetPicker` (lists sets, marks the active one "In use"),
+  reachable from the reader toolbar. No network anywhere in the module (ESLint fence intact);
+  `platesByPage`/page text untouched — Phase 1 switch is a no-op on the images by design.
+- **Single port (owner request).** Built `reader/dist` + `admin-ui/dist` and restarted the server;
+  everything now serves from **:8720** (`/` reader, `/admin` admin, `/api/*`). Stopped the two Vite
+  dev servers (5173/5174) so there is exactly one URL. (Single-port serving is the existing S11
+  design; the two ports were only the dev-preview servers.)
+
+**Done-state:** server ruff clean + **326 pytest**; reader **154** + admin-ui green (tsc/eslint/
+vitest); `gen-types` deterministic (only intended additions); schemas/types in sync. Live: the new
+endpoint returns the Default set on :8720 and the reader's Pictures menu opens offline. Not yet
+committed (awaiting owner go-ahead). ADR-0014 (private art sets) lands with Phase 2 generation.
+
+## M1 follow-up — Private picture "Sets", Phase 2: server-side make / delete (2026-07-14)
+
+**Phase 2 of 4** (see the plan): the server engine that generates a private picture set for an
+already-published book — in a chosen style or a re-roll — through the single-worker runner, and
+deletes one. No reader download/switch yet (Phases 3–4); no new schemas. ADR-0014 records the design.
+
+- **Storage/config.** New `cfg.artsets_dir` → `artsets/{user}/{book}/{set_id}/`; a set holds `set.json`
+  (schema `artset`), `manifest.json` (reuses the `manifest` schema), per-picture provenance, and its
+  `images/…`. `set_id = set-<12 hex>` (resolver-safe).
+- **State machine (`bake/job.py`).** New `SET_RENDERING` (a GPU state) + distinct terminal `SET_DONE`,
+  wired **explicitly** in `_build_transitions` (kept off the book `_CHAIN`) with `→SET_DONE` / `→FAILED`
+  / `→WAITING_GPU` edges — the mandatory failure/park edges the runner's handlers need. `SET_DONE` added
+  to `TERMINAL_STATES` + the runner's skip.
+- **Set render phase (`artsets/phase.py`).** `SetRender` (`set_rendering → set_done`, is_gpu) mirrors P7:
+  a leading `__unload__` (TTS unload + imagegen health → `waiting_gpu`), one unit per non-retired page
+  plate (from the book's resident `selection.json`) + `cover` + `portrait-{slug}` per major cast, a
+  trailing `__finalize__` (manifest + flip `set.json` to `ready`). Reuses the render **pure functions**
+  (`wrap_prompt`/`_asset_spec`/`render_to_spec`, P5 `assemble_cover`/`assemble_portrait`) with the set
+  dir as the explicit root — **not** `render_plate` (which hard-codes `job.book_id`). Page prompts are
+  the book's approved, style-neutral prompts; cover/portrait re-assembled in the set's style; seed folds
+  `set_id` so a re-roll differs. Registered in `app.py` `BAKE_PIPELINE` (unique `from_state`).
+- **Service + endpoints (`artsets/service.py` + `api.py`).** `POST /api/artsets/{user}/{book}`
+  (`kind` style|reroll, style_id?, label?) validates the style, writes `set.json` (generating), enqueues
+  a job id `{book}#{set_id}` (server-internal — `#` never in a URL segment). `DELETE …/{set_id}` refuses
+  `default`, removes the job + subtree. `GET` upgraded to scan real sets + reconcile a stalled
+  `generating` against its job. The **create action is the review-gate approval** (ADR-0014) — no bypass.
+
+**Tests:** drive `Runner([SetRender(FakeImagegen())])` over a seeded published book → set dir gets a web
+image per plate + cover + portrait, schema-valid manifest, `set.json` ready, style prefix in provenance;
+re-roll seed differs; `unload` 503 parks `waiting_gpu` then resumes; state-machine edges; endpoints
+create/list/delete + 400/404 guards. **Immutability proof:** `library/{book}` byte-identical across
+create + render + delete; no `work/{book}`; the book's own job id untouched.
+
+**Done-state:** server ruff clean + **336 pytest** (offline, FakeImagegen); reader/admin-ui unchanged &
+green; `gen-types` deterministic (Phase 2 adds no schema). Not yet committed (awaiting owner go-ahead).
+Not user-visible yet — the reader "make/switch a set" UX is Phases 3–4.

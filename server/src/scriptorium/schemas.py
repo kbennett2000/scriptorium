@@ -15,7 +15,7 @@ import jsonschema
 
 from .config import load_config
 
-# The eleven schema kinds and their file names (all live in shared/schemas).
+# The schema kinds and their file names (all live in shared/schemas).
 SCHEMA_KINDS: tuple[str, ...] = (
     "meta",
     "structure",
@@ -28,6 +28,8 @@ SCHEMA_KINDS: tuple[str, ...] = (
     "positions",
     "users",
     "styles",
+    "artset",
+    "artset-list",
 )
 
 

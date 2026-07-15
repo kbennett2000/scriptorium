@@ -1,0 +1,13 @@
+{
+  "book_id": "usr-4feb0ab87a05",
+  "user_id": "kris",
+  "active_set_id": "set-BADID",
+  "sets": [
+    {
+      "set_id": "default",
+      "kind": "default",
+      "label": "Default",
+      "status": "ready"
+    }
+  ]
+}

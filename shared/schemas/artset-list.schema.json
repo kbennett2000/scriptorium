@@ -1,0 +1,67 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://scriptorium.local/schemas/artset-list.schema.json",
+  "title": "artset-list",
+  "description": "The list of one user's picture sets for one book (sync/artsets/{user}/{book}.json), plus which set is active. Always includes the synthetic 'default' set. Syncs like annotations — server-authoritative merge (a later cycle adds tombstones). A set only changes how the book's illustrations look, never the page text/layout.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["book_id", "user_id", "active_set_id", "sets"],
+  "properties": {
+    "book_id": {
+      "description": "Permanent book identifier these sets illustrate.",
+      "type": "string",
+      "pattern": "^(pg-[0-9]+|usr-[0-9a-f]{12})$"
+    },
+    "user_id": {
+      "description": "Id of the household profile that owns these sets (matches users[].id).",
+      "type": "string",
+      "minLength": 1
+    },
+    "active_set_id": {
+      "description": "Which set the reader currently displays. 'default' or a 'set-<hex>' id.",
+      "type": "string",
+      "pattern": "^(default|set-[0-9a-f]{12})$"
+    },
+    "sets": {
+      "description": "Summaries of this user's sets for the book, including the synthetic 'default' entry.",
+      "type": "array",
+      "items": {
+        "description": "One set summary.",
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["set_id", "kind", "label", "status"],
+        "properties": {
+          "set_id": {
+            "type": "string",
+            "pattern": "^(default|set-[0-9a-f]{12})$"
+          },
+          "kind": {
+            "type": "string",
+            "enum": ["default", "style", "reroll"]
+          },
+          "label": {
+            "type": "string",
+            "minLength": 1
+          },
+          "style_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "source_revision": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "status": {
+            "type": "string",
+            "enum": ["generating", "ready", "failed"]
+          },
+          "created": {
+            "description": "ISO-8601 UTC creation timestamp. Absent for the synthetic default set.",
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      }
+    }
+  }
+}

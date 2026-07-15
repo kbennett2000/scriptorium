@@ -1,0 +1,56 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://scriptorium.local/schemas/artset.schema.json",
+  "title": "artset",
+  "description": "One per-user picture set for one book (artsets/{user}/{book}/{set_id}/set.json). A set changes only HOW a book's illustrations look, never WHICH pages are illustrated or where — that layout lives in the book's shared, immutable selection.json and is identical for every set. Sets are private per household profile and additive: they never touch the published bundle (DESIGN §8, ADR-0014). The synthetic 'default' set is the shipped bundle art and has no set.json on disk.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["book_id", "user_id", "set_id", "kind", "label", "status", "created"],
+  "properties": {
+    "book_id": {
+      "description": "Permanent book identifier this set illustrates.",
+      "type": "string",
+      "pattern": "^(pg-[0-9]+|usr-[0-9a-f]{12})$"
+    },
+    "user_id": {
+      "description": "Id of the household profile that owns this set (matches users[].id).",
+      "type": "string",
+      "minLength": 1
+    },
+    "set_id": {
+      "description": "Set identifier. 'default' is the shipped bundle art; a personal set is 'set-' + 12 hex. Hex-only after 'set-' can never collide with the -rN revision-variant suffix.",
+      "type": "string",
+      "pattern": "^(default|set-[0-9a-f]{12})$"
+    },
+    "kind": {
+      "description": "How the set was made: 'default' (shipped art), 'style' (re-illustrated in a chosen style), or 'reroll' (same style, fresh pictures).",
+      "type": "string",
+      "enum": ["default", "style", "reroll"]
+    },
+    "label": {
+      "description": "Human-facing name shown in the reader's Pictures menu (e.g. 'Default', 'Watercolour', 'Re-roll 2').",
+      "type": "string",
+      "minLength": 1
+    },
+    "style_id": {
+      "description": "Art style this set was rendered in (matches a styles.json id). Absent for the default set.",
+      "type": "string",
+      "minLength": 1
+    },
+    "source_revision": {
+      "description": "The book revision whose frozen selection/prompts this set derived from.",
+      "type": "integer",
+      "minimum": 1
+    },
+    "status": {
+      "description": "Lifecycle: 'generating' while the render job runs, 'ready' once all images exist, 'failed' if it errored.",
+      "type": "string",
+      "enum": ["generating", "ready", "failed"]
+    },
+    "created": {
+      "description": "ISO-8601 UTC creation timestamp.",
+      "type": "string",
+      "format": "date-time"
+    }
+  }
+}

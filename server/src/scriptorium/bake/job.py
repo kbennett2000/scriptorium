@@ -47,6 +47,12 @@ class JobState:
     WAITING_GPU = "waiting_gpu"
     PAUSED = "paused"
     FAILED = "failed"
+    # Per-user picture-set render (DESIGN §8, ADR-0014) — a self-contained side lifecycle,
+    # deliberately OFF the book _CHAIN so it is never spliced into the book pipeline. A set job
+    # renders in SET_RENDERING (a GPU state; parks on waiting_gpu) and ends at the distinct terminal
+    # SET_DONE (reusing PUBLISHED would conflate set jobs with published books in /health + UI).
+    SET_RENDERING = "set_rendering"
+    SET_DONE = "set_done"
 
 
 # The forward chain (DESIGN §7.3). ``LEGAL_TRANSITIONS[a]`` = states reachable from ``a``
@@ -79,11 +85,14 @@ GPU_STATES: frozenset[str] = frozenset(
         JobState.LEDGER_RUNNING,
         JobState.PROMPTS_RUNNING,
         JobState.RENDERING,
+        JobState.SET_RENDERING,
     }
 )
 
 # Terminal states: nothing advances out of them.
-TERMINAL_STATES: frozenset[str] = frozenset({JobState.PUBLISHED, JobState.FAILED})
+TERMINAL_STATES: frozenset[str] = frozenset(
+    {JobState.PUBLISHED, JobState.FAILED, JobState.SET_DONE}
+)
 
 # States a running worker can be actively processing (i.e. can be paused / failed / park
 # for GPU). Everything on the chain except the terminal PUBLISHED, plus waiting_gpu itself.
@@ -95,6 +104,11 @@ def _build_transitions() -> dict[str, set[str]]:
     table[JobState.WAITING_GPU] = set()
     table[JobState.PAUSED] = set()
     table[JobState.FAILED] = set()
+    # Picture-set render side lifecycle (ADR-0014): seed its keys HERE, before the GPU_STATES pass
+    # below adds SET_RENDERING -> waiting_gpu (and waiting_gpu -> SET_RENDERING). Its only outcomes
+    # are SET_DONE (terminal) or FAILED (bug-class); SET_DONE has no outbound edges.
+    table[JobState.SET_RENDERING] = {JobState.SET_DONE, JobState.FAILED}
+    table[JobState.SET_DONE] = set()
 
     # Forward chain edges.
     for a, b in zip(_CHAIN, _CHAIN[1:], strict=False):

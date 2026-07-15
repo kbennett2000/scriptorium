@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { Page as PageDoc, Selection, Structure } from "@scriptorium/shared";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -133,6 +133,16 @@ describe("Reader", () => {
     render(<Reader reader={second.reader} storage={storage} bookId={BOOK} onExit={() => {}} />);
     // Reopened at the saved current position (page 2), not back at page 1.
     await waitFor(() => expect(screen.getByText("2 / 2")).toBeInTheDocument());
+  });
+
+  it("opens a Pictures menu showing the Default set", async () => {
+    const { reader } = makeFakeReader();
+    render(<Reader reader={reader} storage={new MemoryStorage()} bookId={BOOK} onExit={() => {}} />);
+    await screen.findByText("The Winter Quay");
+    await userEvent.click(screen.getByRole("button", { name: "Pictures" }));
+    const dialog = await screen.findByRole("dialog", { name: "Pictures" });
+    expect(within(dialog).getByText("Default")).toBeInTheDocument();
+    expect(within(dialog).getByLabelText("In use")).toBeInTheDocument();
   });
 });
 

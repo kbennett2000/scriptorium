@@ -157,6 +157,7 @@ class Runner:
                 JobState.PAUSED,
                 JobState.FAILED,
                 JobState.PUBLISHED,
+                JobState.SET_DONE,
             ):
                 continue
             if job.state == JobState.WAITING_GPU:

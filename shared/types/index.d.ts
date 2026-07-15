@@ -5,6 +5,8 @@
  */
 
 export * from "./annotations";
+export * from "./artset-list";
+export * from "./artset";
 export * from "./cast";
 export * from "./manifest";
 export * from "./meta";

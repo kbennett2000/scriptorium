@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
-import type { Annotations, Cast, Page as PageDoc, Positions, Selection, Structure } from "@scriptorium/shared";
+import type { Annotations, ArtsetList, Cast, Page as PageDoc, Positions, Selection, Structure } from "@scriptorium/shared";
 
+import { DEFAULT_SET_ID, SetPicker, useActiveSet } from "../artsets";
 import { CastPage } from "../cast";
 import { SearchPanel } from "../search/SearchPanel";
 import {
@@ -82,7 +83,16 @@ export function Reader({
   const [maxSeq, setMaxSeq] = useState(1);
   const [searchOpen, setSearchOpen] = useState(false);
   const [castOpen, setCastOpen] = useState(false);
+  const [picsOpen, setPicsOpen] = useState(false);
   const autoCastShown = useRef(false);
+  // Which picture set is displayed (DESIGN §8, ADR-0014). Every book starts on the synthetic
+  // "default" set = its shipped art; personal sets (create/delete + the image-source swap) arrive in
+  // later cycles. Phase 1 wires the per-profile choice + the "Pictures" switcher.
+  const { activeSetId, chooseSet } = useActiveSet(storage, user, bookId);
+  const sets = useMemo<ArtsetList["sets"]>(
+    () => [{ set_id: DEFAULT_SET_ID, kind: "default", label: "Default", status: "ready" }],
+    [],
+  );
   const [pageDoc, setPageDoc] = useState<PageDoc | null>(null);
   const [lightboxSrc, setLightboxSrc] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -610,6 +620,14 @@ export function Reader({
           )}
           <button
             type="button"
+            className="reader-pics-btn"
+            aria-label="Pictures"
+            onClick={() => setPicsOpen(true)}
+          >
+            Pictures
+          </button>
+          <button
+            type="button"
             className={`reader-bookmark${bookmarked ? " on" : ""}`}
             aria-pressed={bookmarked}
             aria-label={bookmarked ? "Remove bookmark" : "Add bookmark"}
@@ -746,6 +764,18 @@ export function Reader({
           cast={cast}
           furthestSeq={furthestSeq}
           onClose={() => setCastOpen(false)}
+        />
+      )}
+
+      {picsOpen && (
+        <SetPicker
+          sets={sets}
+          activeSetId={activeSetId}
+          onChoose={(id) => {
+            void chooseSet(id);
+            setPicsOpen(false);
+          }}
+          onClose={() => setPicsOpen(false)}
         />
       )}
     </section>
