@@ -67,6 +67,28 @@ def test_missing_binaries_degrade_to_unknown(monkeypatch) -> None:
     assert out["text_model"]["loaded"] is None
 
 
+def test_util_reports_peak_across_a_burst(monkeypatch) -> None:
+    # The card pulses during generation; a single sample can catch a trough. probe_gpu samples a
+    # short burst and must report the PEAK util (so busy work never reads near-idle).
+    monkeypatch.setattr(gpu_probe, "_SAMPLE_GAP_S", 0.0)  # no real sleeping in the test
+    seq = [2, 75, 8]  # a pulsing card: peak is 75 (values repeat if sampled more than 3×)
+    calls = {"n": 0}
+
+    def run(argv):
+        if argv and argv[0] == "nvidia-smi":
+            util = seq[calls["n"] % len(seq)]
+            calls["n"] += 1
+            return f"{util}, 7100, 12227\n"
+        if argv and argv[0] == "ollama":
+            return _OLLAMA_GPU
+        return None
+
+    monkeypatch.setattr(gpu_probe, "_run", run)
+    out = gpu_probe.probe_gpu()
+    assert out["gpu"]["util_percent"] == 75  # the peak, not the 2% trough
+    assert out["summary"] == "gpu"
+
+
 def test_endpoint_never_500s(monkeypatch) -> None:
     from fastapi.testclient import TestClient
 

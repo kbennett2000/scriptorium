@@ -10,9 +10,15 @@ UI shows "unknown". The two shell calls go through :func:`_run`, which tests mon
 from __future__ import annotations
 
 import subprocess
+import time
 from typing import Any
 
 _TIMEOUT_S = 3.0
+
+# The GPU pulses between bursts during LLM generation, so a single instantaneous sample can catch an
+# idle trough and make busy work look stalled. Sample a short burst and report the PEAK utilisation.
+_SAMPLES = 5
+_SAMPLE_GAP_S = 0.08
 
 
 def _run(argv: list[str]) -> str | None:
@@ -106,9 +112,29 @@ def _summary(gpu: dict[str, Any], text_model: dict[str, Any]) -> str:
     return "unknown"
 
 
+def _sample_gpu() -> dict[str, Any]:
+    """Sample ``nvidia-smi`` a few times over a fraction of a second and report the reading with the
+    **peak** ``util_percent`` (memory from that same sample). This stops the live badge flashing a
+    scary near-zero number while the card is actually flat-out between bursts. If the card is
+    absent/unreadable it degrades exactly as a single read would."""
+    argv = ["nvidia-smi", "--query-gpu=utilization.gpu,memory.used,memory.total",
+            "--format=csv,noheader,nounits"]
+    samples: list[dict[str, Any]] = []
+    for i in range(_SAMPLES):
+        sample = _gpu(_run(argv))
+        samples.append(sample)
+        if not sample["present"]:
+            break  # no GPU / unreadable — no point sampling further
+        if i < _SAMPLES - 1:
+            time.sleep(_SAMPLE_GAP_S)
+    readable = [s for s in samples if s["present"] and s["util_percent"] is not None]
+    if not readable:
+        return samples[0]  # present-but-unparsed, or absent — same degradation as before
+    return max(readable, key=lambda s: s["util_percent"])
+
+
 def probe_gpu() -> dict[str, Any]:
     """The admin ``/gpu`` payload. Best-effort; every field degrades to ``None``/``unknown``."""
-    gpu = _gpu(_run(["nvidia-smi", "--query-gpu=utilization.gpu,memory.used,memory.total",
-                     "--format=csv,noheader,nounits"]))
+    gpu = _sample_gpu()
     text_model = _text_model(_run(["ollama", "ps"]))
     return {"gpu": gpu, "text_model": text_model, "summary": _summary(gpu, text_model)}
