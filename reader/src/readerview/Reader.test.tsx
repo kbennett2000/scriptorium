@@ -3,6 +3,9 @@ import userEvent from "@testing-library/user-event";
 import type { Page as PageDoc, Selection, Structure } from "@scriptorium/shared";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import type { Manifest } from "@scriptorium/shared";
+
+import { readActiveSet } from "../artsets";
 import { MemoryStorage } from "../shell";
 import type { BundleReader } from "./BundleReader";
 import { Reader } from "./Reader";
@@ -142,7 +145,55 @@ describe("Reader", () => {
     await userEvent.click(screen.getByRole("button", { name: "Pictures" }));
     const dialog = await screen.findByRole("dialog", { name: "Pictures" });
     expect(within(dialog).getByText("Default")).toBeInTheDocument();
-    expect(within(dialog).getByLabelText("In use")).toBeInTheDocument();
+    expect(within(dialog).getByText("✓ In use")).toBeInTheDocument();
+  });
+
+  it("switching to a resident set swaps the plate's image source", async () => {
+    const USER = "kris";
+    const SET = "set-0123456789ab";
+    const { reader } = makeFakeReader();
+    const storage = new MemoryStorage();
+    // Seed a resident personal set (image + local manifest) and a cached list that includes it, so the
+    // offline Pictures menu lists it. The set's plate image differs from the book's base plate.
+    const plate = "images/web/plates/0001.webp";
+    await storage.writeBytes(`artsets/${USER}/${BOOK}/${SET}/${plate}`, new Uint8Array([7, 7, 7]));
+    const manifest: Manifest = {
+      book_id: BOOK,
+      revision: 1,
+      bundle_version: 1,
+      files: [{ path: plate, sha256: "0".repeat(64), bytes: 3 }],
+      reader_required: ["images/web/**"],
+      total_bytes_reader: 3,
+    };
+    await storage.writeText(
+      `artsets/${USER}/${BOOK}/${SET}/manifest.local.json`,
+      JSON.stringify(manifest),
+    );
+    await storage.writeText(
+      `artsets-active/${USER}/${BOOK}.list.json`,
+      JSON.stringify({
+        book_id: BOOK,
+        user_id: USER,
+        active_set_id: "default",
+        sets: [
+          { set_id: "default", kind: "default", label: "Default", status: "ready" },
+          { set_id: SET, kind: "style", label: "Engraving", status: "ready" },
+        ],
+      }),
+    );
+
+    render(<Reader reader={reader} storage={storage} bookId={BOOK} user={USER} onExit={() => {}} />);
+    await screen.findByText("The Winter Quay");
+    // Before switching, the plate renders the book's base image.
+    const plateImg = () => screen.getByAltText("Plate for page 1") as HTMLImageElement;
+    await waitFor(() => expect(plateImg().src).toContain("blob:fake-plate"));
+
+    await userEvent.click(screen.getByRole("button", { name: "Pictures" }));
+    await userEvent.click(await screen.findByRole("button", { name: "Engraving Use" }));
+
+    // The set becomes active and the plate now resolves through the set reader (URL.createObjectURL).
+    await waitFor(async () => expect(await readActiveSet(storage, USER, BOOK)).toBe(SET));
+    await waitFor(() => expect(plateImg().src).toContain("blob:x"));
   });
 });
 

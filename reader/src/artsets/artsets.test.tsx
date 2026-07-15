@@ -34,26 +34,43 @@ describe("activeSet persistence", () => {
 
 describe("SetPicker", () => {
   const SETS = [
-    { set_id: "default", kind: "default" as const, label: "Default", status: "ready" as const },
+    {
+      set_id: "default",
+      kind: "default" as const,
+      label: "Default",
+      status: "ready" as const,
+      residency: "resident" as const,
+    },
   ];
+  const noop = () => {};
+  const base = {
+    styles: [],
+    online: true,
+    busy: false,
+    error: null,
+    onChoose: noop,
+    onCreate: noop,
+    onDelete: noop,
+    onClose: noop,
+  };
 
   it("lists the sets and marks the active one 'In use'", () => {
-    render(
-      <SetPicker sets={SETS} activeSetId="default" onChoose={() => {}} onClose={() => {}} />,
-    );
+    render(<SetPicker {...base} sets={SETS} activeSetId="default" />);
     expect(screen.getByRole("dialog", { name: "Pictures" })).toBeInTheDocument();
     expect(screen.getByText("Default")).toBeInTheDocument();
-    expect(screen.getByLabelText("In use")).toBeInTheDocument();
+    expect(screen.getByText("✓ In use")).toBeInTheDocument();
   });
 
-  it("reports the chosen set and closes", async () => {
+  it("reports the chosen set", async () => {
     const onChoose = vi.fn();
-    const onClose = vi.fn();
-    render(
-      <SetPicker sets={SETS} activeSetId="default" onChoose={onChoose} onClose={onClose} />,
-    );
+    render(<SetPicker {...base} sets={SETS} activeSetId="default" onChoose={onChoose} />);
     await userEvent.click(screen.getByRole("button", { name: /Default/ }));
     expect(onChoose).toHaveBeenCalledWith("default");
+  });
+
+  it("closes on Done", async () => {
+    const onClose = vi.fn();
+    render(<SetPicker {...base} sets={SETS} activeSetId="default" onClose={onClose} />);
     await userEvent.click(screen.getByRole("button", { name: "Done" }));
     expect(onClose).toHaveBeenCalled();
   });

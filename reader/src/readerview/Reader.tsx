@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
-import type { Annotations, ArtsetList, Cast, Page as PageDoc, Positions, Selection, Structure } from "@scriptorium/shared";
+import type { Annotations, Cast, Manifest, Page as PageDoc, Positions, Selection, Structure } from "@scriptorium/shared";
 
-import { DEFAULT_SET_ID, SetPicker, useActiveSet } from "../artsets";
+import { DEFAULT_SET_ID, SetPicker, useArtsets } from "../artsets";
 import { CastPage } from "../cast";
 import { SearchPanel } from "../search/SearchPanel";
 import {
@@ -25,9 +25,11 @@ import {
   type Span,
 } from "../annotations";
 import { useBackHandler, type Storage } from "../shell";
+import { HttpArtsetApi, HttpArtsetClient, setState } from "../shelf";
 import { SYNC_EVENT, SyncStatusBadge, type SyncStatus } from "../sync";
 import type { BundleReader } from "./BundleReader";
 import { Lightbox } from "./Lightbox";
+import { SetImageBundleReader } from "./SetImageBundleReader";
 import { edgeTapAction } from "./nav";
 import { Page, type PagePlate } from "./Page";
 import { paragraphIndexForChar, paragraphStarts, splitParagraphs, throttle, topVisibleChar } from "./pagetext";
@@ -85,14 +87,15 @@ export function Reader({
   const [castOpen, setCastOpen] = useState(false);
   const [picsOpen, setPicsOpen] = useState(false);
   const autoCastShown = useRef(false);
-  // Which picture set is displayed (DESIGN §8, ADR-0014). Every book starts on the synthetic
-  // "default" set = its shipped art; personal sets (create/delete + the image-source swap) arrive in
-  // later cycles. Phase 1 wires the per-profile choice + the "Pictures" switcher.
-  const { activeSetId, chooseSet } = useActiveSet(storage, user, bookId);
-  const sets = useMemo<ArtsetList["sets"]>(
-    () => [{ set_id: DEFAULT_SET_ID, kind: "default", label: "Default", status: "ready" }],
-    [],
-  );
+  // Which picture set is displayed (DESIGN §8, ADR-0014): Default (shipped art) or one of this
+  // profile's private sets. useArtsets owns the list + make/switch/delete; the active choice drives the
+  // image source (`effectiveReader`) below. A set changes only how pictures look — never the words,
+  // layout, or anchors, so text/JSON always read through the base book `reader`.
+  const artsetApi = useMemo(() => new HttpArtsetApi(), []);
+  const artsetDownload = useMemo(() => new HttpArtsetClient(), []);
+  const artsets = useArtsets(artsetApi, artsetDownload, storage, user, bookId, picsOpen);
+  const { activeSetId } = artsets;
+  const [effectiveReader, setEffectiveReader] = useState<BundleReader>(reader);
   const [pageDoc, setPageDoc] = useState<PageDoc | null>(null);
   const [lightboxSrc, setLightboxSrc] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -222,6 +225,41 @@ export function Reader({
 
   // Release the reader's object URLs (and any pending flash timer) when the surface unmounts.
   useEffect(() => () => reader.dispose(), [reader]);
+
+  // Point image reads at the active picture set (ADR-0014 Phase 4). Default (or a not-yet-downloaded
+  // set) → the base book `reader`; a resident personal set → a SetImageBundleReader that draws images
+  // from artsets/{user}/{book}/{setId}/ while delegating all text/JSON to the book. Swapping the reader
+  // instance re-resolves every Plate (its effect keys on `reader`). The set reader is disposed when the
+  // choice changes or the surface unmounts; the base reader is owned by its own dispose effect above.
+  useEffect(() => {
+    let live = true;
+    let built: SetImageBundleReader | null = null;
+    if (activeSetId === DEFAULT_SET_ID) {
+      setEffectiveReader(reader);
+    } else {
+      void (async () => {
+        try {
+          if ((await setState(storage, user, bookId, activeSetId)) !== "resident") {
+            if (live) setEffectiveReader(reader); // not downloaded yet — stay on Default art
+            return;
+          }
+          const root = `artsets/${user}/${bookId}/${activeSetId}`;
+          const manifest = JSON.parse(
+            await storage.readText(`${root}/manifest.local.json`),
+          ) as Manifest;
+          if (!live) return;
+          built = new SetImageBundleReader(reader, storage, root, manifest);
+          setEffectiveReader(built);
+        } catch {
+          if (live) setEffectiveReader(reader);
+        }
+      })();
+    }
+    return () => {
+      live = false;
+      if (built) built.dispose();
+    };
+  }, [activeSetId, reader, storage, user, bookId]);
   useEffect(() => () => {
     if (flashTimer.current) clearTimeout(flashTimer.current);
   }, []);
@@ -670,7 +708,7 @@ export function Reader({
         {pageDoc && (
           <Page
             page={pageDoc}
-            reader={reader}
+            reader={effectiveReader}
             chapterTitle={chapterTitle}
             plates={currentPlates}
             onOpenLightbox={setLightboxSrc}
@@ -760,7 +798,7 @@ export function Reader({
 
       {castOpen && cast && (
         <CastPage
-          reader={reader}
+          reader={effectiveReader}
           cast={cast}
           furthestSeq={furthestSeq}
           onClose={() => setCastOpen(false)}
@@ -769,12 +807,15 @@ export function Reader({
 
       {picsOpen && (
         <SetPicker
-          sets={sets}
+          sets={artsets.sets}
+          styles={artsets.styles}
           activeSetId={activeSetId}
-          onChoose={(id) => {
-            void chooseSet(id);
-            setPicsOpen(false);
-          }}
+          online={artsets.online}
+          busy={artsets.busy}
+          error={artsets.error}
+          onChoose={(id) => void artsets.choose(id)}
+          onCreate={(kind, styleId) => void artsets.create(kind, styleId)}
+          onDelete={(id) => void artsets.remove(id)}
           onClose={() => setPicsOpen(false)}
         />
       )}

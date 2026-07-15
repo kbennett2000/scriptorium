@@ -1505,3 +1505,40 @@ only its subtree.
 **Done-state:** server ruff clean + **347 pytest**; reader eslint + tsc clean + **158 vitest** (network
 fence intact); `gen-types` deterministic (Phase 3 adds no schema). Not user-visible yet — Phase 4 wires
 the picker's create/switch/download/delete and the `BundleReader` image-source swap.
+
+---
+
+## M1 follow-up — Private picture "Sets", Phase 4: reader multi-set switching (2026-07-14)
+
+**Phase 4 of 4 — the payoff.** In the reader's "Pictures" menu Kris can now **make** a new set (a chosen
+art style, or "same style, fresh pictures"), watch it get made → downloaded → switched automatically,
+**switch** any set (instant + offline once resident), and **delete** one — all private to his profile.
+Entirely reader-side: **no server or schema changes** (Phases 1–3 built every endpoint; `/api/admin/styles`
+already lists the catalog). First cycle where the whole feature is usable on screen.
+
+- **Image-source swap (`readerview/SetImageBundleReader.ts`).** A `BundleReader` that delegates every
+  `readJson` to the book bundle (a set never changes words/layout/anchors) but resolves `imageUrl` from the
+  set's resident folder `artsets/{user}/{book}/{setId}/`. `Reader` holds an `effectiveReader` — the base
+  book reader on Default, a `SetImageBundleReader` on a resident personal set — and passes it to
+  `Page`/`CastPage`. Because `Plate`'s effect keys on the reader instance, swapping `effectiveReader`
+  re-resolves every plate; `platesByPage`/`selection.json` are untouched. The set reader disposes only its
+  own object URLs.
+- **Control client (`shelf/artsetApi.ts`, `HttpArtsetApi`).** list/create/delete + `/api/admin/styles`
+  catalog, in `shelf/` so the ESLint network fence stays green (reuses `ApiError`).
+- **State machine (`artsets/useArtsets.ts`).** Owns the menu's data: the server list merged with each set's
+  local residency; **create → poll (~2 s) until ready → auto-`artsetCheckout` → auto-switch**; delete
+  (server + local subtree, reverting to Default if active); and an **offline fallback** — a locally-cached
+  list filtered to Default + already-downloaded sets, make/delete disabled — so reading a resident set never
+  needs the network. `SetPicker` upgraded to a per-row action (Use / Download & use / Making… / failed) +
+  ＋ New set (style sheet) + Delete; new CSS.
+
+**Tests (all reader-side, offline, behaviour/shape only):** `artsetApi` (URL/verb/parse/ApiError via a
+stubbed fetch); `SetImageBundleReader` (JSON from book, images from set, null when absent, dispose scope);
+`SetPicker`+`useArtsets` (make→generating→ready→auto-download→active; style vs re-roll body; delete reverts
+to Default; offline note + disabled make); a `Reader` integration test proving a switch **changes the
+plate's image `src`** from the book blob to the set blob. The create action stays the review-gate approval;
+no new AI text.
+
+**Done-state:** reader eslint + tsc clean + **172 vitest** (network fence intact); server ruff clean +
+**347 pytest** (unchanged); `gen-types` deterministic (no schema). Reader **dist rebuilt** so the one-port
+app on :8720 serves the new UI. The feature is now end-to-end usable in the reader.

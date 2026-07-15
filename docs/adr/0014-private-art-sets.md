@@ -75,8 +75,8 @@ approve step, and no inline/off-runner render (unlike `regen_published_plate`).
 - The composite `#` job id is **server-internal only** — it is disk-safe but a URL-fragment
   delimiter; routes carry `user`/`book`/`set_id` separately and compose the id server-side.
 - **Delivered in phases:** Phase 1 (schemas + reader "Pictures" menu showing Default), Phase 2
-  (server-side create/generate/delete), and Phase 3 (private offline download) are done; reader
-  multi-set switching (the picker wiring + image-source swap) follows in Phase 4.
+  (server-side create/generate/delete), Phase 3 (private offline download), and Phase 4 (reader
+  multi-set switching — the payoff) are done. Phase 5 (polish) is optional.
 
 ## Phase 3 — private offline delivery
 
@@ -96,3 +96,24 @@ checkout contract: skip-if-already-good, verify-and-retry each file, and write `
 **last** (the resumable Resident marker). It lives in `shelf/` because that (with `sync/`) is the reader's
 only sanctioned network boundary (ESLint-enforced). Orphan-set pruning on book- or profile-removal is
 deferred to Phase 5; `removeSet` handles the explicit per-set case today.
+
+## Phase 4 — reader multi-set switching (the payoff)
+
+The "Pictures" menu becomes fully interactive, all reader-side (no server/schema change; the CRUD +
+`/api/admin/styles` catalog endpoints already exist). Three pieces:
+
+- **The image-source swap.** `SetImageBundleReader` (readerview/) implements `BundleReader` by delegating
+  every `readJson` to the book bundle — a set never changes words, layout, or anchors — while resolving
+  `imageUrl` from the set's resident folder. `Reader` holds an `effectiveReader`: the base book reader on
+  Default (or a not-yet-downloaded set), or a `SetImageBundleReader` on a resident personal set. Because
+  `Plate`'s effect keys on the reader instance, swapping `effectiveReader` re-resolves every plate — that
+  is the entire switch mechanism, no change to `platesByPage`/`selection.json`. The set reader disposes
+  its own object URLs on switch/unmount; the base reader stays owned by its creator.
+- **The control client + state machine.** `shelf/artsetApi.ts` (`HttpArtsetApi`) adds list/create/delete
+  + style-catalog fetches (in `shelf/`, network-fence-clean). `artsets/useArtsets.ts` owns the menu's data:
+  the server list merged with each set's local residency; **create → poll until ready → auto-download →
+  auto-switch**; delete (server + local subtree, reverting to Default if active); and an **offline
+  fallback** (a locally-cached list filtered to Default + already-downloaded sets, with make/delete
+  disabled) so reading a resident set never needs the network.
+- **Privacy is still LAN-trust, not auth** (ADR-0005): the `{user}` path segment is the only boundary,
+  exactly as for annotations. The create click remains the review-gate approval — no new AI text.

@@ -1,24 +1,49 @@
-import type { ArtsetList } from "@scriptorium/shared";
+import { useState } from "react";
+
+import type { SetRow } from "./useArtsets";
+import type { StyleOption } from "../shelf";
+import { DEFAULT_SET_ID } from "./activeSet";
 
 // The reader's "Pictures" menu (DESIGN §8, ADR-0014): choose which set of illustrations to view for
-// this book. Every book starts on "Default" (the shipped art). It's a full-screen overlay — NOT a
-// page injected into the reading order — so positions/anchors and the byte-stable pagination are
-// untouched; a set only changes which images the reading surface shows. Fully offline. Creating and
-// deleting personal sets arrive in later cycles; this is the switcher.
+// this book, and make/delete your own private sets. Every book starts on "Default" (the shipped art).
+// It's a full-screen overlay — NOT a page injected into the reading order — so positions/anchors and the
+// byte-stable pagination are untouched; a set only changes which images the reading surface shows.
+// Presentational: all data + actions come from useArtsets. Reading a resident set is fully offline;
+// making/downloading/deleting need the home server (disabled + explained when it's unreachable).
 
-type SetSummary = ArtsetList["sets"][number];
+function primaryLabel(row: SetRow, active: boolean): string {
+  if (active) return "✓ In use";
+  if (row.status === "generating") return "Making your pictures…";
+  if (row.status === "failed") return "Couldn’t make this one";
+  if (row.residency === "resident") return "Use";
+  return "Download & use";
+}
 
 export function SetPicker({
   sets,
+  styles,
   activeSetId,
+  online,
+  busy,
+  error,
   onChoose,
+  onCreate,
+  onDelete,
   onClose,
 }: {
-  sets: SetSummary[];
+  sets: SetRow[];
+  styles: StyleOption[];
   activeSetId: string;
+  online: boolean;
+  busy: boolean;
+  error: string | null;
   onChoose: (setId: string) => void;
+  onCreate: (kind: "style" | "reroll", styleId?: string) => void;
+  onDelete: (setId: string) => void;
   onClose: () => void;
 }) {
+  const [adding, setAdding] = useState(false);
+
   return (
     <section className="setpicker" role="dialog" aria-label="Pictures">
       <div className="setpicker-bar">
@@ -27,9 +52,19 @@ export function SetPicker({
           Done
         </button>
       </div>
+
+      {!online && (
+        <p className="setpicker-note">
+          Connect to your home server to make or download picture sets. Sets already on this device
+          still work.
+        </p>
+      )}
+      {error && <p className="setpicker-error">{error}</p>}
+
       <ul className="setpicker-list">
         {sets.map((s) => {
           const active = s.set_id === activeSetId;
+          const chooseable = active || s.status === "ready";
           return (
             <li
               key={s.set_id}
@@ -40,19 +75,76 @@ export function SetPicker({
                 type="button"
                 className="setpicker-choose"
                 aria-pressed={active}
+                disabled={!chooseable || busy}
                 onClick={() => onChoose(s.set_id)}
               >
                 <span className="setpicker-label">{s.label}</span>
-                {active && (
-                  <span className="setpicker-inuse" aria-label="In use">
-                    ✓ In use
-                  </span>
-                )}
+                <span className="setpicker-action">{primaryLabel(s, active)}</span>
               </button>
+              {s.progress && (
+                <span className="setpicker-progress" aria-live="polite">
+                  Downloading… {s.progress.done}/{s.progress.total}
+                </span>
+              )}
+              {s.set_id !== DEFAULT_SET_ID && (
+                <button
+                  type="button"
+                  className="setpicker-delete"
+                  aria-label={`Delete ${s.label}`}
+                  disabled={!online || busy}
+                  onClick={() => onDelete(s.set_id)}
+                >
+                  Delete
+                </button>
+              )}
             </li>
           );
         })}
       </ul>
+
+      {online &&
+        (adding ? (
+          <div className="setpicker-new" role="group" aria-label="New picture set">
+            <p className="setpicker-new-title">Pick a look for a new set:</p>
+            <button
+              type="button"
+              className="setpicker-style"
+              disabled={busy}
+              onClick={() => {
+                onCreate("reroll");
+                setAdding(false);
+              }}
+            >
+              Same style, fresh pictures
+            </button>
+            {styles.map((st) => (
+              <button
+                key={st.id}
+                type="button"
+                className="setpicker-style"
+                disabled={busy}
+                onClick={() => {
+                  onCreate("style", st.id);
+                  setAdding(false);
+                }}
+              >
+                {st.name}
+              </button>
+            ))}
+            <button type="button" className="setpicker-cancel" onClick={() => setAdding(false)}>
+              Cancel
+            </button>
+          </div>
+        ) : (
+          <button
+            type="button"
+            className="setpicker-add"
+            disabled={busy}
+            onClick={() => setAdding(true)}
+          >
+            ＋ New set
+          </button>
+        ))}
     </section>
   );
 }

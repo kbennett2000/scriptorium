@@ -18,6 +18,8 @@ export {
   removeSet,
   setState,
 } from "./artsetCheckout";
+export type { ArtsetApi, CreateSetBody, StyleOption } from "./artsetApi";
+export { HttpArtsetApi } from "./artsetApi";
 export {
   matchesAny,
   resolveReaderFiles,

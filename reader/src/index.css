@@ -790,6 +790,102 @@ span.hl {
   font-size: 0.8rem;
   color: var(--muted);
 }
+.setpicker-entry {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+.setpicker-choose {
+  flex: 1 1 auto;
+}
+.setpicker-choose:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+.setpicker-action {
+  flex: 0 0 auto;
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+.setpicker-entry.active .setpicker-action {
+  color: var(--accent, #2a7);
+}
+.setpicker-delete {
+  flex: 0 0 auto;
+  font-size: 0.8rem;
+  padding: 0.3rem 0.6rem;
+  background: transparent;
+  border: 1px solid var(--hairline);
+  border-radius: 0.4rem;
+  color: var(--muted);
+  cursor: pointer;
+}
+.setpicker-delete:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.setpicker-progress {
+  flex: 0 0 auto;
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+.setpicker-note,
+.setpicker-error {
+  margin: 0.6rem 0.9rem 0;
+  max-width: 40rem;
+  font-size: 0.9rem;
+  color: var(--muted);
+}
+.setpicker-error {
+  color: #c0392b;
+}
+.setpicker-add {
+  margin: 0.4rem 0.9rem 2rem;
+  padding: 0.8rem 1rem;
+  background: transparent;
+  border: 1px dashed var(--hairline);
+  border-radius: 0.5rem;
+  color: inherit;
+  font-size: 1rem;
+  cursor: pointer;
+  text-align: left;
+  max-width: 40rem;
+}
+.setpicker-new {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  margin: 0.4rem 0.9rem 2rem;
+  max-width: 40rem;
+}
+.setpicker-new-title {
+  margin: 0.2rem 0;
+  font-size: 0.9rem;
+  color: var(--muted);
+}
+.setpicker-style {
+  padding: 0.8rem 1rem;
+  background: transparent;
+  border: 1px solid var(--hairline);
+  border-radius: 0.5rem;
+  color: inherit;
+  font-size: 1rem;
+  cursor: pointer;
+  text-align: left;
+}
+.setpicker-style:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.setpicker-cancel {
+  align-self: flex-start;
+  margin-top: 0.2rem;
+  padding: 0.4rem 0.2rem;
+  background: transparent;
+  border: none;
+  color: var(--muted);
+  cursor: pointer;
+}
 
 .reader-search-btn,
 .reader-cast-btn,
