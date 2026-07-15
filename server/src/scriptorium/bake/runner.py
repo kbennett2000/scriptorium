@@ -32,6 +32,7 @@ import httpx
 
 from ..config import Config
 from . import job as jobmod
+from .approve import ApprovalBlocked, approve_job
 from .job import Job, JobState
 from .phases.base import GpuUnavailable, Phase, UnitFailed
 
@@ -166,10 +167,22 @@ class Runner:
                 job.save(self.cfg)
             elif self.phase_for(job.state) is None:
                 # A resting state with no worker phase (e.g. prompts_draft awaits the human
-                # review gate). There is nothing to run, so skip it rather than spend the
-                # single per-tick slot on a no-op — otherwise one job parked at review would
+                # review gate). Normally there is nothing to run, so skip it rather than spend
+                # the single per-tick slot on a no-op — otherwise one job parked at review would
                 # starve every newer runnable job behind it.
-                continue
+                #
+                # AUTO_APPROVE (ADR-0015): on a single-user LAN box the owner's "make this book"
+                # click IS the approval, so apply the identical review-gate logic automatically
+                # and let the now-``approved`` job advance to render this same tick. Not a bypass
+                # — ``approve_job`` runs the same missing-prompt guard; a plate without a prompt
+                # raises and the job stays parked for a human. Default off preserves invariant #4.
+                if not (self.cfg.auto_approve
+                        and job.state in (JobState.PROMPTS_DRAFT, JobState.IN_REVIEW)):
+                    continue
+                try:
+                    approve_job(self.cfg, job)
+                except (ApprovalBlocked, ValueError):
+                    continue  # cannot auto-approve → leave parked for the human gate
             await self.advance_job(job)
             return  # single worker: one job advances per tick
 

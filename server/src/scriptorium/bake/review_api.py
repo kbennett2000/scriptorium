@@ -29,6 +29,7 @@ from ..selection.reselect import reselect
 from ..selection.segment import expand_choices
 from ..styles import load_styles
 from . import job as jobmod
+from .approve import ApprovalBlocked, approve_job
 from .job import Job, JobState
 from .phases.base import GpuUnavailable
 from .phases.p7_render import render_plate
@@ -305,37 +306,23 @@ def edit_cast(book_id: str, slug: str, body: CastEditBody) -> dict:
 
 @router.post("/books/{book_id}/approve")
 def approve(book_id: str) -> dict:
-    """Lock the shot list → ``approved``. Refuses if any renderable plate lacks a prompt (§11.1)."""
+    """Lock the shot list → ``approved``. Refuses if any renderable plate lacks a prompt (§11.1).
+
+    The approval rules live in :func:`.approve.approve_job` so the auto-approve runner path
+    (``AUTO_APPROVE``, ADR-0015) applies the exact same gate; here we just translate its errors
+    into HTTP status codes.
+    """
     cfg = load_config()
     job = _require(book_id)
-    if job.state not in _REVIEW_STATES:
-        raise HTTPException(status_code=409, detail=f"cannot approve from {job.state}")
-    book = cfg.work_dir / book_id
-    sel = _read_json(book / "selection.json")
-    prompts_dir = book / "prompts"
-
-    # Every plate that will render (selected/approved, or any manual) must already have a prompt.
-    missing = sorted({
-        p["page_id"] for p in sel["plates"]
-        if (p["status"] in ("selected", "approved") or p.get("reason") == "manual")
-        and not (prompts_dir / f"{p['page_id']}.json").is_file()
-    })
-    if missing:
+    try:
+        approve_job(cfg, job)
+    except ValueError as exc:  # not in a reviewable state
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except ApprovalBlocked as exc:  # a renderable plate has no prompt
         raise HTTPException(
             status_code=422,
-            detail={"error": "selected plates missing prompts", "page_ids": missing},
-        )
-
-    for plate in sel["plates"]:
-        if plate["status"] == "selected":
-            plate["status"] = "approved"
-    schemas.validate("selection", sel)
-    _write_json(book / "selection.json", sel)
-
-    if job.state == JobState.PROMPTS_DRAFT:
-        job.transition(JobState.IN_REVIEW)  # transient waypoint (see plan / CYCLE-LOG S9a)
-    job.transition(JobState.APPROVED)
-    job.save(cfg)
+            detail={"error": "selected plates missing prompts", "page_ids": exc.page_ids},
+        ) from exc
     return job.to_dict()
 
 

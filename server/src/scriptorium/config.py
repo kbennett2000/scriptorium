@@ -42,6 +42,11 @@ class Config:
     gpu_wol_enabled: bool
     runner_tick_s: int
     shared_dir: Path
+    # When true the runner auto-approves a job resting at ``prompts_draft`` instead of waiting
+    # for the human review gate (ADR-0015). Default false preserves invariant #4 ("no plate
+    # rendered before approval") and every test; the single-user LAN dev box opts in via
+    # ``AUTO_APPROVE=1``.
+    auto_approve: bool = False
     # Built SPA dirs for the two static mounts (S11). Defaulted so tests that
     # construct Config directly need not supply them; load_config sets them from env.
     reader_dist: Path = field(default_factory=lambda: _REPO_ROOT / "reader" / "dist")
@@ -108,6 +113,7 @@ def load_config() -> Config:
         gpu_mac=os.environ.get("GPU_MAC") or None,
         gpu_wol_enabled=_env_bool("GPU_WOL_ENABLED", False),
         runner_tick_s=_env_int("RUNNER_TICK_S", 120),
+        auto_approve=_env_bool("AUTO_APPROVE", False),
         shared_dir=shared_dir,
         reader_dist=reader_dist,
         admin_dist=admin_dist,

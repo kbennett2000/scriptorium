@@ -1575,3 +1575,40 @@ logs (not raises) on an unwritable one.
 **Done-state:** server ruff clean + **355 pytest**; reader eslint + tsc clean + **172 vitest**; reader
 **dist rebuilt**; server **relaunched on :8720 with the correct data dir** — health 200, all 6 books listed,
 a smoke create returned 200 (then deleted), `GET /admin` → 307. Books restored, 500s gone, links fixed.
+
+---
+
+## M1 fix — optional auto-approve of the review gate (`AUTO_APPROVE`) + live GPU/service wiring (2026-07-14)
+
+**Context.** Owner runs the whole system on one machine as the only user with a local (free, fast) GPU,
+and asked to remove the review step ("it's pointless"). Also caught two live ops issues while a book
+("The Sun Also Rises", pg-67138) was baking: it parked at `waiting_gpu`, and the text step was pegging the
+CPU while the GPU sat idle.
+
+**Ops fixes (no code).**
+- The :8720 server had been relaunched **without `TTS_URL`/`IMAGEGEN_URL`**, so it couldn't see the local
+  GPU services (text-transform on :8712, imagegen on :8189) and parked every GPU-bound job. Relaunched with
+  both URLs → health `ok`, book un-parked and resumed `mentions_running`.
+- The text model (ollama `qwen3.5:9b`) was running **98% on CPU** because ComfyUI was squatting on ~6.9 GB
+  of the 12 GB card, leaving too little VRAM. Freed ComfyUI's memory (`POST /free`) + unloaded the model
+  (`ollama stop`) so it reloaded **100% on GPU** (util 77–98%, ~195 W; CPU load on it fell ~660%→~90%). This
+  is the single-GPU "one program at a time" tradeoff the design already handles on the render side
+  (P7 unloads TTS before render) — noted as a future auto-hand-off improvement.
+
+**Feature — `AUTO_APPROVE` (ADR-0015).** Opt-in env flag (default **false**). When on, the single runner
+auto-approves a job resting at `prompts_draft`/`in_review` and lets it advance to render on the same tick.
+Not a bypass: the approval logic was extracted to `bake/approve.py::approve_job` and is now the **one**
+implementation both the human `POST …/approve` endpoint and the runner use — same missing-prompt guard
+(a renderable plate without a prompt still refuses and leaves the job parked for a human). Default-off keeps
+invariant #4 ("no plate rendered before approval") and every existing test byte-identical; the dev box opts
+in via `AUTO_APPROVE=1`. Reversible by dropping the env var.
+
+**Files.** `bake/approve.py` (new, shared logic); `bake/review_api.py` (endpoint delegates to it, identical
+409/422/200 behavior); `config.py` (`auto_approve` field + `AUTO_APPROVE` env); `bake/runner.py` (tick
+auto-approves when the flag is on); `docs/adr/0015-auto-approve.md`; `tests/test_auto_approve.py` (runner
+wiring: on → advances past the gate + locks the shot list; default off → stays parked; missing prompt → still
+refused on the auto path).
+
+**Done-state.** server ruff clean + **358 pytest** (3 new); no reader/admin/schema changes (no type regen
+needed); server **relaunched on :8720** with `SCRIPTORIUM_DATA` + `TTS_URL` + `IMAGEGEN_URL` + `AUTO_APPROVE=1`
+— health `ok`, text on GPU, book resuming and set to flow straight through to render.
