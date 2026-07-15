@@ -1704,3 +1704,35 @@ instant and catching an idle trough between LLM bursts.
 **peak** util (memory from that sample). Absent/unreadable cards degrade exactly as before (i5 →
 "unknown"). New `test_util_reports_peak_across_a_burst`. server ruff clean + 388 pytest; server
 relaunched (badge now reads the true ~78%, book advanced cast → ledger cleanly on resume).
+
+## M1 fix — blank front-matter pages get nonsense pictures (ADR-0017: prune the table of contents) (2026-07-15)
+
+**Symptom (Kris, on A Tale of Two Cities).** Pages showing a picture with **no story text**, and
+**nonsensical pictures** (a floating book with golden threads = a literal drawing of the section
+title "Book the Second — the Golden Thread").
+
+**Root cause.** The book prints its own **table of contents**, and the H1 heading regex matches every
+`CHAPTER <numeral> <title>` contents line → ~42 phantom **bodyless** chapters at the front → the
+paginator emits one **blank page** per empty chapter (`word_count 0`) → P3 called `scene-update` on the
+blank text → the model **hallucinated** a beat + salience → selection illustrated it. The real section
+dividers (`Book the First--Recalled to Life`) use a *word* numeral, so the numbered heuristics missed
+them and a divider got absorbed as a contents entry's fake body. NOT the density work (that's fine).
+
+**Fix (two layers; selection engine untouched).** Ingest (`ingest/base.py`): `_section_headings`
+detects short standalone `^(BOOK|PART|CANTO|VOLUME)` divider lines (bracketed by blanks) and merges
+them with the numbered headings; `_prune_headings` then drops bodyless contents entries and **folds a
+bodyless section divider into its section's first real chapter title** (a divider survives only if the
+next chapter has a body — discards the contents-list copy, keeps the body one). Safety net
+(`bake/phases/p3_ledger.py`): a page with empty/whitespace text is written a **neutral ledger**
+(salience 0.0, empty beat) and the model call is **skipped** — any stray blank page can never be
+selected or illustrated. On the real #98 text: **45 chapters** (was 90), **0 blank pages** (was 42),
+~135.5k words preserved, "Book the First/Second/Third" kept as headings.
+
+**Files.** server: `ingest/base.py`, `bake/phases/p3_ledger.py`,
+`tests/fixtures/sources/pg_toc.txt` (new), `tests/test_ingest.py` (+TOC/divider test),
+`tests/test_phases_ledger.py` (+empty-page neutral-ledger test). docs: `scriptorium-DESIGN.md` §5.1,
+ADR-0017.
+
+**Done-state.** server ruff clean + pytest green (+2). Verified end-to-end against the live Gutenberg
+#98 text (ingest→paginate: 0 empty pages, 45 chapters, part titles preserved). Published #98 is frozen
+(immutability) → **Kris will re-make the book himself** to pick up the fix; not re-baked here.

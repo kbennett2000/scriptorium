@@ -225,6 +225,37 @@ def test_gap_rule_inherits_predecessor_and_annotates(tmp_path) -> None:
     assert page4_call["prior"] == _ledger_fixture("0002")
 
 
+# --- empty page: neutral ledger, no transform call (ADR-0017 safety net) -----
+
+
+@respx.mock
+def test_empty_page_gets_neutral_ledger_without_a_transform_call(tmp_path) -> None:
+    # A blank page (e.g. a section-divider page) must not be sent to the model: it would
+    # hallucinate a beat + salience that later gets illustrated. It gets a neutral ledger
+    # (salience 0.0, empty beat) so selection can never pick it.
+    cfg = _cfg(tmp_path)
+    _seed_job(cfg)
+    p3 = cfg.work_dir / "b" / "pages" / "0003.json"
+    page = json.loads(p3.read_text("utf-8"))
+    page["text"], page["word_count"] = "", 0
+    p3.write_text(json.dumps(page), encoding="utf-8")
+
+    calls: list[dict[str, Any]] = []
+    respx.post(_SCENE_URL).mock(side_effect=_recording_handler(calls))
+
+    job = _drive(cfg, _runner(cfg), stop_states={JobState.LEDGER_DONE})
+    assert job.state == JobState.LEDGER_DONE
+
+    # No transform was issued for the blank page.
+    assert "0003" not in [c["pid"] for c in calls]
+    # Its ledger is neutral: zero salience, empty beat → never illustrated.
+    l3 = _page_ledger(cfg, "0003")
+    assert l3["visual_salience"] == 0.0
+    assert l3["best_visual_beat"] == ""
+    # The non-blank pages were still processed normally.
+    assert {"0001", "0002", "0004", "0005", "0006"} <= {c["pid"] for c in calls}
+
+
 # --- waiting_gpu: scene-update 503 parks on ledger_running then resumes ------
 
 

@@ -106,6 +106,37 @@ def test_heuristics_applied_in_order_first_win():
     assert [c.title for c in chapters] == ["CHAPTER 1", "CHAPTER 2"]
 
 
+# --- table of contents / section dividers (ADR-0017) -----------------------
+
+def test_table_of_contents_pruned_and_part_titles_kept():
+    # A book that prints its own contents list (each `CHAPTER N Title` line matches the
+    # H1 heading regex) must NOT turn every contents line into an empty chapter/page.
+    # The real Part dividers ("Book the Second--...", word-numeral so H1 misses them)
+    # are kept, folded into their section's first chapter.
+    from scriptorium.ingest.base import RawBook
+    from scriptorium.paginate import paginate
+
+    book = gutenberg.load(
+        SourceSpec(kind="gutenberg", gutenberg_id=98, text=_read("pg_toc.txt"))
+    )
+    assert book.warnings == []
+    # Real chapter count (Alpha, Beta, Gamma), not the contents-inflated count.
+    assert len(book.chapters) == 3
+    # No bodyless chapters survive — those become blank pages + nonsense illustrations.
+    assert all(c.paragraphs for c in book.chapters)
+    # Part dividers are preserved as headings on each section's first chapter.
+    titles = [c.title for c in book.chapters]
+    assert any(t and "Book the First" in t for t in titles)
+    assert any(t and "Book the Second" in t for t in titles)
+
+    # End-to-end: pagination of the pruned book yields no empty (word_count 0) page.
+    paginated = paginate(
+        RawBook(book_id=book.book_id, source_kind=book.source_kind,
+                chapters=book.chapters, title=book.title)
+    )
+    assert all(p["word_count"] > 0 for p in paginated.pages)
+
+
 # --- warnings ---------------------------------------------------------------
 
 def test_missing_markers_sets_boilerplate_warning():

@@ -175,6 +175,12 @@ class LedgerScenes:
             return
         page_ids = _page_ids(cfg, job)
         page = _read_json(_pages_dir(cfg, job) / f"{unit.id}.json")
+        if not page["text"].strip():
+            # A blank page (e.g. a section-divider page) has nothing to describe; asking the
+            # model would hallucinate a beat and salience, which would then get illustrated.
+            # Give it a neutral ledger (salience 0.0, empty beat) so it is never selected.
+            _write_json(ledgers_dir(cfg, job) / f"{unit.id}.json", dict(_NEUTRAL_LEDGER))
+            return
         options: dict[str, Any] = {
             "prior_ledger": _prior_ledger(cfg, job, unit.id, page_ids),
             "cast_names": _cast_names(cfg, job),

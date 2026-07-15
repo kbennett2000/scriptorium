@@ -206,6 +206,7 @@ Anchors are **character offsets into the page's immutable `text`** (UTF-16 code-
   2. Standalone Roman-numeral lines `^[IVXLC]+\.?$`
   3. Standalone ALL-CAPS lines ≤ 60 chars surrounded by blank lines
   If all fail → single chapter titled by the book, and the job carries a `chapters_undetected` warning; **the admin UI's chapter editor (S9) lets a human insert/adjust chapter breaks before phase P1 runs** — chapter breaks happen pre-bake, so fixing them is cheap.
+- **Front-matter / table-of-contents pruning (ADR-0017).** Heuristic 1 matches every `CHAPTER <numeral> <title>` line, so a book that prints its own contents list would turn each contents line into a bodyless chapter → a blank page → a nonsense illustration. After segmenting, prune: drop any bodyless heading (a contents entry / stray title), and fold a bodyless **section divider** (`Book the Second--the Golden Thread` — named, no numeral, so the numbered heuristics miss it; matched separately as a short `^(BOOK|PART|CANTO|VOLUME)` line bracketed by blanks) into the title of its section's first real chapter. A divider only survives if the *next* chapter has a body, which cleanly discards the divider's contents-list copy while keeping the one in the body. Net: no bodyless chapters/pages; Part titles preserved as headings.
 - Metadata (title/author/language) from Gutendex; overridable in bake config.
 
 ### 5.2 `markdown` adapter

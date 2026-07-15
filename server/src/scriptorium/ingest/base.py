@@ -143,6 +143,9 @@ def split_paragraphs(text: str) -> list[str]:
 
 _H1 = re.compile(r"^(CHAPTER|Chapter|BOOK|PART|CANTO)\s+([IVXLC]+|\d+)\b.*$")
 _H2 = re.compile(r"^[IVXLC]+\.?$")
+# A section divider names a Part of the work but carries no chapter numeral (e.g.
+# "Book the Second--the Golden Thread"), so the numbered heuristics never see it.
+_SECTION = re.compile(r"^(BOOK|PART|CANTO|VOLUME)\b", re.IGNORECASE)
 
 
 def _headings_h1(lines: list[str]) -> list[tuple[int, str]]:
@@ -182,6 +185,36 @@ def _headings_h3(lines: list[str]) -> list[tuple[int, str]]:
     return out
 
 
+def _section_headings(lines: list[str]) -> list[tuple[int, str]]:
+    """Standalone section-divider lines like ``Book the Second--the Golden Thread``.
+
+    These name a Part of the work but have no chapter numeral, so the numbered
+    heuristics miss them. Require a short line bracketed by blank lines (as in H3) so a
+    prose sentence beginning ``Part of…`` is never mistaken for a divider.
+    """
+    out = []
+    last = len(lines) - 1
+    for i, raw in enumerate(lines):
+        line = raw.strip()
+        if not line or len(line) > 60 or not _SECTION.match(line):
+            continue
+        above_blank = i == 0 or lines[i - 1].strip() == ""
+        below_blank = i == last or lines[i + 1].strip() == ""
+        if above_blank and below_blank:
+            out.append((i, line))
+    return out
+
+
+def _merge_headings(
+    numbered: list[tuple[int, str]], dividers: list[tuple[int, str]]
+) -> list[tuple[int, str]]:
+    """Union numbered headings with section dividers, ordered by line index."""
+    seen = {i for i, _ in numbered}
+    merged = list(numbered) + [(i, t) for i, t in dividers if i not in seen]
+    merged.sort(key=lambda pair: pair[0])
+    return merged
+
+
 def _chapters_from_headings(
     lines: list[str], headings: list[tuple[int, str]]
 ) -> list[Chapter]:
@@ -198,6 +231,41 @@ def _chapters_from_headings(
     return chapters
 
 
+def _is_part_divider(title: str | None) -> bool:
+    """A ``BOOK``/``PART``/``CANTO``/``VOLUME`` label — a section, not a numbered chapter."""
+    return bool(title) and bool(_SECTION.match(title.strip()))
+
+
+def _prune_headings(chapters: list[Chapter]) -> list[Chapter]:
+    """Drop table-of-contents artifacts and fold Part-divider labels into real chapters.
+
+    ``_H1`` matches every ``CHAPTER <numeral> <title>`` line, so a book that prints its
+    own table of contents (e.g. Gutenberg's *A Tale of Two Cities*) yields one *bodyless*
+    chapter per contents line — junk that later becomes a blank page and a hallucinated
+    illustration. Walk the detected chapters and:
+
+    - keep every chapter that has body paragraphs, prefixing a pending Part label into
+      its title;
+    - hold a bodyless ``BOOK``/``PART``/``CANTO`` heading as a *pending* label — it
+      survives only if the very next chapter is a real one (a real divider sits just
+      before its section's first chapter; a contents-list divider is followed by more
+      bodyless lines, which clear it);
+    - drop any other bodyless heading (a contents entry / stray title) and clear pending.
+    """
+    pruned: list[Chapter] = []
+    pending: str | None = None
+    for ch in chapters:
+        if ch.paragraphs:
+            title = f"{pending} — {ch.title}" if pending and ch.title else (pending or ch.title)
+            pruned.append(Chapter(title=title, paragraphs=ch.paragraphs))
+            pending = None
+        elif _is_part_divider(ch.title):
+            pending = ch.title  # tentative: kept only if the next chapter has a body
+        else:
+            pending = None  # a bodyless contents entry / stray heading → discard
+    return pruned
+
+
 def detect_chapters(
     text: str, book_title: str | None = None
 ) -> tuple[list[Chapter], list[str]]:
@@ -208,10 +276,15 @@ def detect_chapters(
     lets a human fix breaks pre-bake).
     """
     lines = text.split("\n")
+    dividers = _section_headings(lines)
     for detector in (_headings_h1, _headings_h2, _headings_h3):
         headings = detector(lines)
         if len(headings) >= 2:
-            return _chapters_from_headings(lines, headings), []
+            merged = _merge_headings(headings, dividers)
+            chapters = _prune_headings(_chapters_from_headings(lines, merged))
+            if len(chapters) >= 2:
+                return chapters, []
+            break  # headings were all front-matter/contents junk → single-chapter fallback
     return [Chapter(title=book_title, paragraphs=split_paragraphs(text))], [
         WARN_CHAPTERS_UNDETECTED
     ]
