@@ -19,6 +19,7 @@ from scriptorium.selection.engine import (
     PRESETS,
     PageScore,
     Params,
+    effective_params,
     page_score_fields,
     select,
 )
@@ -56,6 +57,59 @@ def _structure_from(scores: list[PageScore]) -> dict:
             for ci, pids in sorted(chapters.items())
         ]
     }
+
+
+# --- illustration-richness dial (effective_params, ADR-0016) ----------------
+
+
+@pytest.mark.parametrize("preset", ["lavish", "classic", "sparse"])
+def test_effective_params_identity_at_one(preset: str) -> None:
+    # n=1 must return the preset unchanged so single-picture bakes stay byte-identical.
+    assert effective_params(PRESETS[preset], 1) is PRESETS[preset]
+    assert effective_params(PRESETS[preset], 0) is PRESETS[preset]  # clamped to ≥1
+
+
+def test_effective_params_scaling_table() -> None:
+    # The worked examples from ADR-0016 (min_gap, max_gap only; other fields pass through).
+    def gaps(preset: str, n: int) -> tuple[int, int]:
+        p = effective_params(PRESETS[preset], n)
+        return (p.min_gap, p.max_gap)
+
+    assert gaps("classic", 2) == (1, 3)
+    assert gaps("classic", 3) == (1, 2)
+    assert gaps("classic", 9) == (1, 2)  # floors at every ~1–2 pages
+    assert gaps("sparse", 2) == (2, 6)
+    assert gaps("lavish", 2) == (1, 2)
+
+
+@pytest.mark.parametrize("preset", ["lavish", "classic", "sparse"])
+@pytest.mark.parametrize("n", [1, 2, 3, 5, 9])
+def test_effective_params_preserves_fill_window_invariant(preset: str, n: int) -> None:
+    # The engine's fill windows rely on max_gap ≥ 2·min_gap; scaling must never break it.
+    p = effective_params(PRESETS[preset], n)
+    assert p.min_gap >= 1
+    assert p.max_gap >= 2 * p.min_gap
+    # Non-density fields are untouched.
+    assert p.salience_floor == PRESETS[preset].salience_floor
+    assert p.chapter_open == PRESETS[preset].chapter_open
+    assert p.scene_boundary == PRESETS[preset].scene_boundary
+
+
+def test_richer_dial_selects_more_evenly_spread_plates() -> None:
+    # Over the synthetic field, a higher dial yields strictly more plates, still one per page and
+    # still obeying min_gap — the even-spread guarantee, no clustering.
+    scores, structure = _load_synthetic()
+    base = select(scores, structure, effective_params(PRESETS["classic"], 1))
+    richer = select(scores, structure, effective_params(PRESETS["classic"], 3))
+    assert len(richer) > len(base)
+
+    r_ids = [int(p.page_id) for p in richer]
+    assert r_ids == sorted(r_ids)
+    assert len(r_ids) == len(set(r_ids))  # distinct pages — never two pictures on one page
+    eff = effective_params(PRESETS["classic"], 3)
+    assert all(b - a >= eff.min_gap for a, b in zip(r_ids, r_ids[1:], strict=False))
+    # No compound/segment fields exist on engine output at all (one picture per page).
+    assert all(p.plate_id is None and p.anchor is None and p.segment_index is None for p in richer)
 
 
 # --- properties over the synthetic 120-page field ---------------------------

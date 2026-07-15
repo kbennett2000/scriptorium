@@ -18,7 +18,7 @@ from scriptorium.app import app
 from scriptorium.bake import job as jobmod
 from scriptorium.bake.job import Job, JobState
 from scriptorium.config import load_config
-from scriptorium.selection.engine import PRESETS, PageScore, select
+from scriptorium.selection.engine import PRESETS, PageScore, effective_params, select
 
 _N = 12  # two chapters of six pages → past the tiny-work threshold, so presets bite.
 
@@ -63,7 +63,7 @@ def _fresh_ids(pages, preset: str) -> set[str]:
     return {c.page_id for c in select(_scores(pages), _structure(), PRESETS[preset])}
 
 
-def _seed(tmp_path: Path, *, preset: str, state: str) -> str:
+def _seed(tmp_path: Path, *, preset: str, state: str, images_per_scene: int = 1) -> str:
     book_id = "resel"
     cfg = load_config()
     work = cfg.work_dir / book_id
@@ -78,7 +78,8 @@ def _seed(tmp_path: Path, *, preset: str, state: str) -> str:
         "plates": [{"page_id": c.page_id, "reason": c.reason, "salience": c.salience,
                     "status": "selected", "added_in_revision": 1} for c in fresh],
     }), encoding="utf-8")
-    Job(id=book_id, book_id=book_id, state=state, started=True).save(cfg)
+    Job(id=book_id, book_id=book_id, state=state, started=True,
+        bake_config={"density_preset": preset, "images_per_scene": images_per_scene}).save(cfg)
     return book_id
 
 
@@ -104,6 +105,20 @@ def test_reselect_sparser_drops_never_rendered_plates(client, tmp_path) -> None:
     ids = {p["page_id"] for p in r.json()["plates"]}
     assert ids == _fresh_ids(_pages(), "sparse")
     assert len(ids) < seeded  # never-rendered non-chosen plates were dropped
+
+
+def test_reselect_applies_richness_dial(client, tmp_path) -> None:
+    # ADR-0016: reselect must scale the preset by images_per_scene exactly as P4 does (parity), and
+    # produce only bare single-picture plates (no per-page clustering).
+    book_id = _seed(tmp_path, preset="classic", state=JobState.PROMPTS_DRAFT, images_per_scene=3)
+    r = client.post(f"/api/admin/books/{book_id}/reselect", json={"density_preset": "classic"})
+    assert r.status_code == 200, r.text
+    doc = r.json()
+    eff = effective_params(PRESETS["classic"], 3)
+    assert doc["params"]["min_gap"] == eff.min_gap and doc["params"]["max_gap"] == eff.max_gap
+    expected = {c.page_id for c in select(_scores(_pages()), _structure(), eff)}
+    assert {p["page_id"] for p in doc["plates"]} == expected
+    assert all("plate_id" not in p and "anchor" not in p for p in doc["plates"])
 
 
 def test_reselect_guarded_past_approval(client, tmp_path) -> None:

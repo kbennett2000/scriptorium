@@ -176,49 +176,47 @@ def test_phase_is_idempotent_when_selection_exists(tmp_path) -> None:
     assert _selection(cfg) == sentinel  # untouched
 
 
-def test_images_per_scene_expands_a_selected_page_evenly(tmp_path) -> None:
-    cfg = _cfg(tmp_path)
-    # One selected page with 3 paragraphs; ask for 3 pictures per scene.
-    page = {
-        "id": "0001", "seq": 1, "chapter": 1,
-        "text": "First para.\n\nSecond para.\n\nThird para.", "word_count": 6,
-        "ledger": _ledger(False, 0.7),
-    }
-    structure = {"chapters": [{"index": 1, "title": "I", "page_ids": ["0001"]}]}
-    _seed_pages(cfg, [page], structure,
-                bake_config={"density_preset": "lavish", "images_per_scene": 3})
-
-    job = _drive(cfg, _runner(cfg), stop_states={JobState.SELECTED})
-    assert job.state == JobState.SELECTED
-
-    doc = _selection(cfg)
-    schemas.validate("selection", doc)
-    plates = doc["plates"]
-    assert len(plates) == 3
-    # Base plate keeps the bare page_id (no plate_id/anchor) and its original reason.
-    assert plates[0]["page_id"] == "0001" and "plate_id" not in plates[0]
-    assert plates[0]["reason"] == "chapter_open"
-    # Extras carry compound ids, ascending anchors, and the 'segment' reason.
-    assert [p.get("plate_id") for p in plates] == [None, "0001-2", "0001-3"]
-    assert [p.get("segment_index") for p in plates] == [None, 1, 2]
-    anchors = [p["anchor"] for p in plates[1:]]
-    assert anchors == sorted(anchors) and anchors[0] > 0
-
-
-def test_images_per_scene_capped_at_paragraph_count(tmp_path) -> None:
-    cfg = _cfg(tmp_path)
-    # A single-paragraph page can hold only one picture, whatever the setting.
-    page = {"id": "0001", "seq": 1, "chapter": 1, "text": "Only one paragraph.",
-            "word_count": 3, "ledger": _ledger(False, 0.7)}
-    structure = {"chapters": [{"index": 1, "title": "I", "page_ids": ["0001"]}]}
-    _seed_pages(cfg, [page], structure,
-                bake_config={"density_preset": "lavish", "images_per_scene": 5})
-
+def test_richness_dial_selects_more_evenly_spread_pages(tmp_path) -> None:
+    # ADR-0016: a higher illustration-richness dial tightens the spacing so more *distinct* pages
+    # are selected (one picture each), evenly spread — never N pictures clustered on one page.
+    cfg = _cfg(tmp_path / "base")
+    _seed_pages(cfg, _PAGES, _STRUCTURE, bake_config={"density_preset": "classic"})
     _drive(cfg, _runner(cfg), stop_states={JobState.SELECTED})
-    doc = _selection(cfg)
-    schemas.validate("selection", doc)
-    assert len(doc["plates"]) == 1
-    assert "plate_id" not in doc["plates"][0]
+    base = _selection(cfg)
+
+    cfg3 = _cfg(tmp_path / "rich")
+    _seed_pages(cfg3, _PAGES, _STRUCTURE,
+                bake_config={"density_preset": "classic", "images_per_scene": 3})
+    job = _drive(cfg3, _runner(cfg3), stop_states={JobState.SELECTED})
+    assert job.state == JobState.SELECTED
+    rich = _selection(cfg3)
+    schemas.validate("selection", rich)
+
+    # The effective (scaled) params are what get written — self-describing selection.json.
+    assert rich["params"]["min_gap"] == 1 and rich["params"]["max_gap"] == 2
+    # Strictly more plates than the un-scaled run.
+    assert len(rich["plates"]) > len(base["plates"])
+    # Every plate is a bare single-picture page: no compound id / anchor / segment_index.
+    for p in rich["plates"]:
+        assert "plate_id" not in p and "anchor" not in p and "segment_index" not in p
+    # Distinct pages, sorted, ≥ the effective min_gap apart (no clustering, even spread).
+    ids = [int(p["page_id"]) for p in rich["plates"]]
+    assert ids == sorted(ids) and len(ids) == len(set(ids))
+    assert all(b - a >= 1 for a, b in zip(ids, ids[1:], strict=False))
+
+
+def test_richness_dial_one_is_byte_identical_to_default(tmp_path) -> None:
+    # images_per_scene=1 (and absent) must be byte-identical — regression guard for existing bakes.
+    cfg_absent = _cfg(tmp_path / "absent")
+    _seed_pages(cfg_absent, _PAGES, _STRUCTURE, bake_config={"density_preset": "classic"})
+    _drive(cfg_absent, _runner(cfg_absent), stop_states={JobState.SELECTED})
+
+    cfg_one = _cfg(tmp_path / "one")
+    _seed_pages(cfg_one, _PAGES, _STRUCTURE,
+                bake_config={"density_preset": "classic", "images_per_scene": 1})
+    _drive(cfg_one, _runner(cfg_one), stop_states={JobState.SELECTED})
+
+    assert _selection(cfg_one) == _selection(cfg_absent)
 
 
 def test_fixture_pipeline_selection_is_schema_valid(tmp_path) -> None:

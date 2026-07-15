@@ -62,7 +62,7 @@ export interface Meta {
    */
   density_preset: "lavish" | "classic" | "sparse";
   /**
-   * How many illustrations to weave, evenly spaced, into each selected scene (DESIGN §8 'pictures per scene'). 1 = one image per scene (the default and pre-feature behavior). Capped per scene at its paragraph count. Optional/absent means 1 (back-compat with bundles baked before the feature).
+   * Illustration-richness dial (DESIGN §8). Tightens the selection engine's page spacing so a higher value selects proportionally more distinct pages, one picture each, spread evenly across the whole book. 1 = the preset's default spacing (byte-identical to a single-picture bake). Optional/absent means 1. (Prior meaning: N clustered pictures per scene page — retired in ADR-0016.)
    */
   images_per_scene?: number;
   /**

@@ -24,7 +24,7 @@ from pydantic import BaseModel
 from .. import schemas
 from ..config import Config, load_config
 from ..render.imagegen import ImagegenClient, RealImagegenClient
-from ..selection.engine import PRESETS, PageScore, select
+from ..selection.engine import PRESETS, PageScore, effective_params, select
 from ..selection.reselect import reselect
 from ..selection.segment import expand_choices
 from ..styles import load_styles
@@ -338,12 +338,12 @@ def do_reselect(book_id: str, body: ReselectBody) -> dict:
 
     book = cfg.work_dir / book_id
     structure = _read_json(book / "structure.json")
-    params = PRESETS[body.density_preset]
-    # Re-run page selection, then apply the same pictures-per-scene expansion P4 uses, so the
-    # diff below compares like plate shapes (compound extras included).
+    # Apply the same illustration-richness scaling P4 uses, so re-turning the density knob
+    # reproduces P4's even-spread placement (one picture per page; expand_choices n=1 is identity).
     n_per_scene = max(1, int((job.bake_config or {}).get("images_per_scene", 1)))
+    params = effective_params(PRESETS[body.density_preset], n_per_scene)
     fresh = expand_choices(
-        select(_page_scores(book_id), structure, params), _page_texts(book_id), n_per_scene
+        select(_page_scores(book_id), structure, params), _page_texts(book_id), 1
     )
 
     sel_path = book / "selection.json"

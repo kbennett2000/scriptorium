@@ -125,6 +125,31 @@ PRESETS: dict[str, Params] = {
 }
 
 
+def effective_params(params: Params, images_per_scene: int) -> Params:
+    """Tighten a preset's spacing so a higher *illustration-richness* dial yields more plates.
+
+    The "pictures per scene" knob (``images_per_scene``, ≥1) used to split a single page into that
+    many clustered images. It now feeds the engine's own even-spacing mechanism instead: dividing
+    ``min_gap``/``max_gap`` by the dial selects proportionally more *distinct* pages, still spread
+    evenly across the book (one picture per page). ``salience_floor`` and the mark toggles are
+    unchanged — only the density scales.
+
+    Two guarantees:
+
+    - ``n == 1`` returns ``params`` **unchanged**, so a single-picture bake stays byte-identical.
+    - ``max_gap ≥ 2·min_gap`` is preserved (the engine's fill windows rely on it — see the module
+      docstring), so scaling never produces an unfillable region.
+    """
+    n = max(1, images_per_scene)
+    if n == 1:
+        return params
+    min_gap = max(1, round(params.min_gap / n))
+    max_gap = max(round(params.max_gap / n), 2 * min_gap)
+    return Params(
+        min_gap, max_gap, params.salience_floor, params.chapter_open, params.scene_boundary
+    )
+
+
 # --- internal ---------------------------------------------------------------
 
 

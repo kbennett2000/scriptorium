@@ -269,9 +269,9 @@ export function NewBookWizard() {
         </div>
       </div>
 
-      {/* 5. Pictures per scene */}
+      {/* 5. Illustration richness */}
       <div className="wizard-step">
-        <h3>5 · Pictures per scene</h3>
+        <h3>5 · How richly illustrated</h3>
         <div className="row">
           <label>
             <input
@@ -286,8 +286,8 @@ export function NewBookWizard() {
             />
           </label>
           <span className="muted">
-            More pictures woven evenly through each scene. 1 = one per scene. (A scene can hold
-            at most as many pictures as it has paragraphs.)
+            Higher = more pictures, spaced evenly through the whole book. 1 = the density preset's
+            default.
           </span>
         </div>
       </div>

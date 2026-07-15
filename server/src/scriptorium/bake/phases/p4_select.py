@@ -24,7 +24,7 @@ from pathlib import Path
 from typing import Any
 
 from ... import schemas
-from ...selection.engine import PRESETS, PageScore, PlateChoice, select
+from ...selection.engine import PRESETS, PageScore, PlateChoice, effective_params, select
 from ...selection.segment import expand_choices
 from ..job import Job, JobState
 from .base import Unit
@@ -140,17 +140,20 @@ class P4Select:
         preset = job.bake_config.get("density_preset", _DEFAULT_PRESET)
         if preset not in PRESETS:
             preset = _DEFAULT_PRESET
-        params = PRESETS[preset]
+        # The illustration-richness dial tightens the engine's spacing so a higher setting selects
+        # more *distinct* pages, spread evenly across the book (rather than clustering N pictures on
+        # one page). `images_per_scene == 1` leaves the preset unchanged — byte-identical output.
+        params = effective_params(PRESETS[preset], _images_per_scene(job))
 
         structure_path = _structure_path(cfg, job)
         structure = _read_json(structure_path) if structure_path.is_file() else {"chapters": []}
 
         chosen = select(_page_scores(cfg, job), structure, params)
 
-        # Expand each selected page into up to `images_per_scene` evenly-spaced illustrations. The
-        # engine chose *which* pages (text-free); segmentation needs the page text, so it happens
-        # here in P4. A scene yields at most one plate per paragraph.
-        expanded = expand_choices(chosen, _page_texts(cfg, job), _images_per_scene(job))
+        # One picture per selected page (the per-page split is retired: N pictures now come from N
+        # evenly-spread pages, not N slices of one). expand_choices(..., 1) is the identity pass,
+        # kept so the plate shape stays defined in one place.
+        expanded = expand_choices(chosen, _page_texts(cfg, job), 1)
 
         doc = {
             "preset": preset,

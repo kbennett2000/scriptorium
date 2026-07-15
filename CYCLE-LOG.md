@@ -1656,3 +1656,39 @@ no reader/schema changes (`shared/types` clean after regen); admin **dist rebuil
 **relaunched** with `SCRIPTORIUM_DATA`+`TTS_URL`+`IMAGEGEN_URL`+`AUTO_APPROVE=1` — `/health` ok,
 `/api/admin/gpu` live (`summary:"gpu"`), and the text phase running on the GPU via the automatic
 hand-off (no manual intervention).
+
+## M1 fix — illustrations spread evenly (ADR-0016: `images_per_scene` is a density dial, not a per-page multiplier) (2026-07-15)
+
+**Symptom (Kris, on The Sun Also Rises).** With more than one picture per scene, all the pictures
+piled up at the *start* of the scene (a few sentences apart), then a long run of text had none.
+
+**Root cause.** The selection **engine** already spreads illustration pages evenly, but the
+"pictures per scene" step (`selection/segment.py` `even_segments`/`expand_choices`) split **one
+~550-word page** into N slices and hung **all N pictures on that single page**. A page is only a few
+paragraphs, so they clustered at its top and the rest of the scene got nothing. The reader renders
+faithfully — no reader change.
+
+**Fix (density dial).** New pure `effective_params(params, images_per_scene)` in
+`selection/engine.py` scales the effective preset tighter (`min_gap ← round(min/n)`,
+`max_gap ← max(round(max/n), 2·min_gap)`), so a higher dial makes the engine's own even-spacing
+mechanism select proportionally **more distinct pages**, one picture each, spread across the whole
+book. `n == 1` returns the preset unchanged → **byte-identical** to a single-picture bake;
+`max_gap ≥ 2·min_gap` (the fill-window invariant) is preserved. Applied at both selection call sites
+— `p4_select.run_unit` and `review_api.do_reselect` — each now `expand_choices(..., 1)` (identity) and
+writes the **effective** params into `selection.json`. The per-page split is retired for new work;
+`segment.py` stays as the `n=1` identity path and to read already-published bundles' compound plates.
+Engine stays text-free (spoiler invariant intact). Published bundles untouched (immutability).
+
+**Copy.** Wizard step 5 "Pictures per scene" → **"How richly illustrated"** ("Higher = more pictures,
+spaced evenly through the whole book"); `meta.schema.json` description updated (regen `shared/types`).
+
+**Files.** server: `selection/engine.py` (+`effective_params`), `bake/phases/p4_select.py`,
+`bake/review_api.py`, `tests/test_selection_engine.py` (+scaling/invariant/spread tests),
+`tests/test_phases_p4.py` (rewrote the two per-page tests → even-spread + n=1 byte-identical),
+`tests/test_reselect_api.py` (+parity test). shared: `schemas/meta.schema.json` + `types/meta.d.ts`.
+admin-ui: `features/books/NewBookWizard.tsx`. docs: `scriptorium-DESIGN.md` §8, ADR-0016.
+
+**Done-state.** server ruff clean + **387 pytest** (+6); admin-ui eslint + tsc clean + vitest green;
+`shared/types` in sync after regen; admin **dist rebuilt**; server **relaunched** (`/health` ok).
+Live proof (deployed package): dial 1 → 9 pictures (gaps up to 6 pages); dial 3 → 26 pictures every
+1–2 pages, evenly spread, **no page carrying two** — no clustering, no empty tail.

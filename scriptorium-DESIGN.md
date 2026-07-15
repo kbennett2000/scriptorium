@@ -297,6 +297,14 @@ Pure function: `select(pages: [PageScore], structure, params) -> [PlateChoice]` 
 4. Tiny-work degradation: if total pages < 8 → exactly {page 1} ∪ {argmax salience} (dedup); presets ignored.
 5. Output reasons per plate (`chapter_open|scene_boundary|fill`).
 
+**Illustration richness (`images_per_scene`).** A book-level dial (≥1, default 1) for *how densely
+to illustrate*. It scales the effective preset tighter — `min_gap ← round(min_gap/n)`,
+`max_gap ← max(round(max_gap/n), 2·min_gap)` (`effective_params`) — so a higher value makes the same
+even-spacing engine select proportionally more **distinct** pages, one picture each, spread across the
+whole book. `n=1` leaves the preset unchanged (byte-identical to a single-picture bake); the effective
+params are what get written to `selection.json`. (Superseded ADR-0016: earlier this knob split one page
+into `n` clustered pictures, which piled illustrations at a scene's opening page — retired.)
+
 **Re-selection** (density knob re-turned later): run fresh, then diff against existing `selection.json`: new choices are added (`status: selected`, `added_in_revision: current+1`); previously rendered plates not re-chosen become `retired` (files kept — additive invariant); previously rendered plates re-chosen stay `rendered` (no re-render). Only `selected` plates flow to P5/P7.
 
 Manual overrides in review (§11.3) add/remove with `reason: "manual"`; manual removals of never-rendered plates simply delete the entry.
