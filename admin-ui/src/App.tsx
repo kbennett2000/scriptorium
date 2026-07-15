@@ -18,6 +18,8 @@ export function App() {
         <nav>
           <a onClick={() => navigate({ name: "list" })}>Books</a>
           <a onClick={() => navigate({ name: "wizard" })}>New Book</a>
+          {/* Back to the reading app — the reader and admin are two screens on the same address. */}
+          <a href="/">Library →</a>
         </nav>
       </header>
       <main>

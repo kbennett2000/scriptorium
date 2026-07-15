@@ -25,9 +25,10 @@ from ..ingest.base import (
     archive_source,
     read_source,
 )
+from ..library.purge import purge_book
 from ..paginate import PaginatedBook, paginate
 from . import job as jobmod
-from .job import Job, JobState
+from .job import GPU_STATES, Job, JobState
 
 router = APIRouter(prefix="/api/admin")
 
@@ -159,6 +160,25 @@ def list_books() -> dict:
 def get_book(book_id: str) -> dict:
     job = _require(book_id)
     return job.to_dict()
+
+
+@router.delete("/books/{book_id}")
+def delete_book(book_id: str) -> dict:
+    """Permanently delete a book and EVERYTHING it owns (bundle, work, jobs, every profile's picture
+    sets + sync data). Owner-initiated + irreversible. Refuses while the book is rendering."""
+    cfg = load_config()
+    job = jobmod.load(cfg, book_id)
+    if job is None and not (cfg.library_dir / book_id).is_dir():
+        raise HTTPException(status_code=404, detail=f"no such book {book_id!r}")
+    if job is not None and job.state in GPU_STATES:
+        raise HTTPException(
+            status_code=409, detail=f"book is busy ({job.state}); try again once it settles"
+        )
+    try:
+        removed = purge_book(cfg, book_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {"deleted": book_id, "removed": removed}
 
 
 @router.put("/books/{book_id}/chapters")

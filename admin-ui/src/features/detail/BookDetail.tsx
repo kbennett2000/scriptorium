@@ -1,6 +1,7 @@
 import { useState } from "react";
 
 import {
+  deleteBook,
   editChapters,
   getBook,
   pauseJob,
@@ -190,7 +191,58 @@ function BookDetailBody({ job, reload }: { job: Job; reload: () => void }) {
 
       {/* Chapter editor — pre-P1 only */}
       {job.state === "ingested" && <ChapterEditor bookId={job.book_id} onSaved={reload} />}
+
+      <DangerZone job={job} />
     </>
+  );
+}
+
+// Permanent deletion. Irreversible and wide-reaching (the bundle, every profile's private picture
+// sets, and everyone's highlights/notes for this book all go), so it's gated behind a typed
+// confirmation — the operator must type the exact book title before the button enables.
+function DangerZone({ job }: { job: Job }) {
+  const [confirm, setConfirm] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<unknown>(null);
+  const title = job.title || "(untitled)";
+
+  async function remove() {
+    setBusy(true);
+    setError(null);
+    try {
+      await deleteBook(job.book_id);
+      navigate({ name: "list" });
+    } catch (err) {
+      setError(err);
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="panel danger">
+      <h3 style={{ marginTop: 0 }}>Delete this book permanently</h3>
+      <p className="muted" style={{ marginTop: 0 }}>
+        This removes the book for good — its pictures, <strong>everyone’s</strong> private picture
+        sets for it, and <strong>everyone’s</strong> highlights and notes. This cannot be undone. To
+        confirm, type the book’s title: <code>{title}</code>
+      </p>
+      <div className="row">
+        <input
+          aria-label="type the title to confirm deletion"
+          value={confirm}
+          onChange={(e) => setConfirm(e.target.value)}
+          placeholder={title}
+        />
+        <button
+          className="destructive"
+          disabled={busy || confirm !== title}
+          onClick={() => void remove()}
+        >
+          {busy ? "Deleting…" : "Delete permanently"}
+        </button>
+      </div>
+      <ErrorNotice error={error} prefix="Delete failed" />
+    </div>
   );
 }
 

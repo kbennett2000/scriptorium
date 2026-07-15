@@ -68,6 +68,12 @@ body {
   opacity: 0.8;
   margin-bottom: 0.75rem;
 }
+.shelf-admin-link {
+  margin-left: auto;
+  color: var(--accent, #2a5db0);
+  text-decoration: none;
+  font-weight: 600;
+}
 .shelf-error {
   color: #b00020;
   font-size: 0.85rem;

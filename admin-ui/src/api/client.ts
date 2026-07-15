@@ -76,6 +76,10 @@ export const startJob = (id: string) => request<Job>("POST", `/jobs/${id}/start`
 export const pauseJob = (id: string) => request<Job>("POST", `/jobs/${id}/pause`);
 export const resumeJob = (id: string) => request<Job>("POST", `/jobs/${id}/resume`);
 
+/** Permanently delete a book and everything it owns (bundle, jobs, every profile's sets + notes). */
+export const deleteBook = (id: string) =>
+  request<{ deleted: string; removed: string[] }>("DELETE", `/books/${id}`);
+
 // --- review gate (bake/review_api.py) ---------------------------------------
 
 export const searchGutendex = (q: string) =>

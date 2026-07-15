@@ -127,6 +127,20 @@ button.primary:hover:not(:disabled) {
 button.danger {
   color: var(--error);
 }
+button.destructive {
+  background: var(--error);
+  color: #fff;
+  border-color: var(--error);
+}
+button.destructive:hover:not(:disabled) {
+  background: #a01020;
+}
+.panel.danger {
+  border-color: var(--error);
+}
+.panel.danger h3 {
+  color: var(--error);
+}
 
 input[type="text"],
 input[type="search"],

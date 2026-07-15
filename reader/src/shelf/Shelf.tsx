@@ -88,6 +88,10 @@ export function Shelf() {
         <button type="button" onClick={() => void load()}>
           Refresh
         </button>
+        {/* The reader and the book workshop are two screens on the same address; link across. */}
+        <a className="shelf-admin-link" href="/admin">
+          Make books →
+        </a>
       </div>
       {error && <p className="shelf-error">{error}</p>}
       <ul className="shelf-list">
