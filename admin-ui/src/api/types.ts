@@ -34,6 +34,22 @@ export type JobStateName =
 // A recorded per-unit failure (bake/runner.py). Opaque runtime shape — treated as untyped.
 export type FailedUnit = Record<string, unknown>;
 
+// GET /api/admin/gpu (server: gpu_probe.probe_gpu) — best-effort; fields degrade to null/"unknown".
+export interface GpuStatus {
+  gpu: {
+    present: boolean;
+    util_percent: number | null;
+    mem_used_mib: number | null;
+    mem_total_mib: number | null;
+  };
+  text_model: {
+    loaded: boolean | null;
+    name: string | null;
+    processor: "gpu" | "cpu" | "mixed" | null;
+  };
+  summary: "gpu" | "cpu" | "idle" | "unknown";
+}
+
 // GET /api/admin/books/{id} and each item of GET /api/admin/books — Job.to_dict() (bake/api.py).
 export interface Job {
   id: string;

@@ -1612,3 +1612,47 @@ refused on the auto path).
 **Done-state.** server ruff clean + **358 pytest** (3 new); no reader/admin/schema changes (no type regen
 needed); server **relaunched on :8720** with `SCRIPTORIUM_DATA` + `TTS_URL` + `IMAGEGEN_URL` + `AUTO_APPROVE=1`
 — health `ok`, text on GPU, book resuming and set to flow straight through to render.
+
+---
+
+## M1 — automatic single-GPU hand-off + live bake visibility (CPU/GPU badge, auto-refresh, step status) (2026-07-14)
+
+**Why.** On this single-GPU box the LLM (text) and SDXL/ComfyUI (images) can't both stay resident.
+The system already unloads the LLM before rendering (P7), but nothing freed ComfyUI before the *text*
+phases — so after a render, ComfyUI kept ~7 GB and the LLM spilled onto the CPU (pegged CPU, idle
+GPU). It had to be cleared by hand and recurred. Owner also asked the bake page to self-refresh, show
+where each long step is at, and indicate CPU-vs-GPU.
+
+**Automatic GPU hand-off (server).** New best-effort `runner.free_imagegen_gpu(cfg)`: before a *text*
+GPU phase runs, discover ComfyUI's URL from imagegen-service `/health` and POST its `/free` — the
+mirror of P7's "unload TTS before render" (§7.4 / ADR-0009). Phases carry `gpu_kind` (default
+`"text"`; `Render` and `SetRender` set `"image"`) so render phases, which need SDXL resident, are
+never freed. Injectable on `Runner` (like `sleep`/`wake`/`gpu_gate`); with `IMAGEGEN_URL` unset it's
+a no-op, so existing tests are unaffected. Verified live: after The Raven rendered, The Sun Also Rises
+resumed the text phases with the LLM on the GPU (ComfyUI auto-released 6.9 GB → 316 MB) — no manual
+step.
+
+**Live GPU/CPU status (server).** New `scriptorium/gpu_probe.py` (best-effort `nvidia-smi` + `ollama
+ps` parse; never raises) behind `GET /api/admin/gpu` → `{gpu:{present,util_percent,mem_*},
+text_model:{loaded,name,processor}, summary:"gpu"|"cpu"|"idle"|"unknown"}`. Degrades to "unknown" on a
+box without those tools (e.g. the i5).
+
+**Bake page visibility (admin-ui `BookDetail`).** (1) Auto-refresh: polls the job every 3.5 s while
+active (not at published/failed/paused) — no more clicking Refresh. (2) Per-step status: a plain
+"⏳ Working on: <friendly phase>… (Xs on this step · refreshing automatically)" line, and the
+milestone row now lights up the step being *worked toward* (so a `*_running` state shows ▸ on its
+target milestone), plus a "✓ Done" line when published. (3) CPU/GPU badge next to the state: green
+"⚡ GPU · N%", amber "⚠ CPU (slow)" for the spill, grey idle/unknown — polled from `/api/admin/gpu`,
+best-effort (errors just clear it).
+
+**Files.** server: `bake/runner.py` (free_imagegen_gpu + wiring), `bake/phases/p7_render.py` +
+`artsets/phase.py` (`gpu_kind="image"`), `gpu_probe.py` (new), `bake/api.py` (`GET /gpu`),
+`tests/test_runner.py` (+2 hand-off tests), `tests/test_gpu_probe.py` (new). admin-ui:
+`api/types.ts` (`GpuStatus`), `api/client.ts` (`getGpuStatus`), `features/detail/BookDetail.tsx`
+(effects + activity line + milestone + badge), `test/smoke.test.tsx` (`/gpu` mock).
+
+**Done-state.** server ruff clean + **366 pytest** (+8); admin-ui eslint + tsc clean + vitest green;
+no reader/schema changes (`shared/types` clean after regen); admin **dist rebuilt**; server
+**relaunched** with `SCRIPTORIUM_DATA`+`TTS_URL`+`IMAGEGEN_URL`+`AUTO_APPROVE=1` — `/health` ok,
+`/api/admin/gpu` live (`summary:"gpu"`), and the text phase running on the GPU via the automatic
+hand-off (no manual intervention).

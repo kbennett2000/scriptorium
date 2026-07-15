@@ -17,6 +17,7 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
 from ..config import Config, load_config
+from ..gpu_probe import probe_gpu
 from ..ingest import base as ingest
 from ..ingest.base import (
     Chapter,
@@ -148,6 +149,12 @@ def create_book(body: CreateBookBody) -> dict:
     except ValueError as exc:  # unknown kind / bad source
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return {"book_id": job.book_id, "state": job.state, "warnings": job.warnings}
+
+
+@router.get("/gpu")
+def gpu_status() -> dict:
+    """Best-effort GPU/CPU status for the admin UI's live indicator (never 500s; see gpu_probe)."""
+    return probe_gpu()
 
 
 @router.get("/books")

@@ -92,6 +92,13 @@ function installFetch(state: MockState) {
         ],
       });
     }
+    if (method === "GET" && path === "/api/admin/gpu") {
+      return json({
+        gpu: { present: true, util_percent: 80, mem_used_mib: 7000, mem_total_mib: 12227 },
+        text_model: { loaded: true, name: "qwen3.5:9b", processor: "gpu" },
+        summary: "gpu",
+      });
+    }
     if (method === "GET" && path === "/api/admin/books") {
       return json({ books: [] });
     }

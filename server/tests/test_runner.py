@@ -163,6 +163,50 @@ def test_review_gated_job_does_not_starve_newer_jobs(tmp_path) -> None:
     assert jobmod.load(cfg, "fresh").state == JobState.MENTIONS_RUNNING
 
 
+# --- GPU hand-off: free the image GPU before a text phase (single-GPU sequencing) ---------
+
+
+def test_text_gpu_phase_frees_the_image_gpu_first(tmp_path) -> None:
+    # A text/LLM GPU phase must release the image GPU (ComfyUI) before running so the LLM gets
+    # the card. FakeGpuDown is a text GPU phase (no gpu_kind → "text").
+    cfg = _cfg(tmp_path)
+    _started_job(cfg, JobState.PROMPTS_RUNNING)
+    freed: list[Config] = []
+
+    async def gate_up(_c: Config) -> bool:
+        return True
+
+    async def spy_free(c: Config) -> None:
+        freed.append(c)
+
+    runner = Runner(cfg, [FakeGpuDown(down=False)], sleep=_noop_sleep,
+                    gpu_gate=gate_up, free_image_gpu=spy_free)
+    asyncio.run(runner.tick())
+
+    assert len(freed) == 1  # freed the image GPU exactly once, before the units
+    assert jobmod.load(cfg, "b").state == JobState.PROMPTS_DRAFT
+
+
+def test_image_gpu_phase_does_not_free_the_card_it_needs(tmp_path) -> None:
+    # A render phase (gpu_kind="image") needs SDXL resident, so the runner must NOT free it.
+    cfg = _cfg(tmp_path)
+    _started_job(cfg, JobState.PROMPTS_RUNNING)
+    phase = FakeGpuDown(down=False)
+    phase.gpu_kind = "image"  # mark as a render-style phase
+    freed: list[Config] = []
+
+    async def gate_up(_c: Config) -> bool:
+        return True
+
+    async def spy_free(c: Config) -> None:
+        freed.append(c)
+
+    runner = Runner(cfg, [phase], sleep=_noop_sleep, gpu_gate=gate_up, free_image_gpu=spy_free)
+    asyncio.run(runner.tick())
+
+    assert freed == []  # the image GPU was left loaded
+
+
 # --- WoL helper -------------------------------------------------------------
 
 

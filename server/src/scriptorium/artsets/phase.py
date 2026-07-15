@@ -105,6 +105,7 @@ class SetRender:
     from_state = JobState.SET_RENDERING
     to_state = JobState.SET_DONE
     is_gpu = True
+    gpu_kind = "image"  # needs SDXL/ComfyUI resident — the runner must NOT free the image GPU here
 
     def __init__(self, client: ImagegenClient | None = None) -> None:
         # Injected for tests (FakeImagegen); production builds the real client from config.

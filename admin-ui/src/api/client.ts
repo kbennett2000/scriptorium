@@ -9,6 +9,7 @@ import type {
   CreateBookBody,
   CreateBookResponse,
   DensityPreset,
+  GpuStatus,
   GutendexResult,
   Job,
   Prompt,
@@ -63,6 +64,9 @@ export const listBooks = () =>
   request<{ books: Job[] }>("GET", "/books").then((r) => r.books);
 
 export const getBook = (id: string) => request<Job>("GET", `/books/${id}`);
+
+// Best-effort GPU/CPU status for the live indicator (never 500s server-side).
+export const getGpuStatus = () => request<GpuStatus>("GET", "/gpu");
 
 export const createBook = (body: CreateBookBody) =>
   request<CreateBookResponse>("POST", "/books", body);

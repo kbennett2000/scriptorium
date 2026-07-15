@@ -1,15 +1,16 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 import {
   deleteBook,
   editChapters,
   getBook,
+  getGpuStatus,
   pauseJob,
   resumeJob,
   startJob,
 } from "../../api/client";
 import { ErrorNotice, errorText, Loading, Notice, useAsync } from "../../components/common";
-import type { Job, JobStateName } from "../../api/types";
+import type { GpuStatus, Job, JobStateName } from "../../api/types";
 import { navigate } from "../../routes";
 
 // The ordered bake milestones (bake/job.py chain). Off-chain states (waiting_gpu/paused/failed) are
@@ -33,10 +34,68 @@ const CHAIN_ORDER: JobStateName[] = [
 const REVIEW_STATES: JobStateName[] = ["prompts_draft", "in_review", "approved"];
 const POSTRENDER_STATES: JobStateName[] = ["rendering", "rendered", "published"];
 
+// States where the bake is not moving on its own: done, dead, or held. Everything else is "active"
+// and the page auto-refreshes so you can watch it progress without clicking Refresh.
+const AT_REST: JobStateName[] = ["published", "failed", "paused"];
+function isActive(state: JobStateName): boolean {
+  return !AT_REST.includes(state);
+}
+
+// Plain-language "what's happening now" for each milestone we could be working toward.
+const MILESTONE_ACTIVITY: Record<string, string> = {
+  ingested: "Reading the book",
+  cast_done: "Finding the characters",
+  ledger_done: "Reading the scenes",
+  selected: "Choosing which moments to illustrate",
+  prompts_draft: "Writing the picture instructions",
+  approved: "Getting it approved",
+  rendered: "Drawing the pictures",
+  published: "Packaging the finished book",
+};
+
 function reached(current: JobStateName, milestone: JobStateName): boolean {
   const ci = CHAIN_ORDER.indexOf(current);
   const mi = CHAIN_ORDER.indexOf(milestone);
   return ci >= 0 && mi >= 0 && ci >= mi;
+}
+
+// The first milestone not yet reached = the one the bake is currently working toward (so a
+// `*_running` state lights up the milestone it will produce). -1 once everything is reached.
+function activeMilestoneIndex(state: JobStateName): number {
+  return MILESTONES.findIndex((m) => !reached(state, m.state));
+}
+
+function fmtElapsed(ms: number): string {
+  const s = Math.max(0, Math.floor(ms / 1000));
+  if (s < 60) return `${s}s`;
+  return `${Math.floor(s / 60)}m ${s % 60}s`;
+}
+
+// The live CPU/GPU indicator. Green when the text brain is on the graphics card, amber when it has
+// spilled onto the CPU (slow) — the very failure mode this page is meant to make visible.
+function GpuBadge({ status }: { status: GpuStatus | null }) {
+  if (!status) return null;
+  const look = {
+    gpu: { label: "⚡ GPU", bg: "#e9f6ee", fg: "#1c7a3a", bd: "#a6d6b8" },
+    cpu: { label: "⚠ CPU (slow)", bg: "#fdeede", fg: "#9a5b00", bd: "#f0cfa0" },
+    idle: { label: "GPU idle", bg: "#eef", fg: "#667", bd: "#dde" },
+    unknown: { label: "GPU —", bg: "#eee", fg: "#999", bd: "#ddd" },
+  }[status.summary];
+  const util = status.gpu.util_percent;
+  const showUtil = util != null && status.summary !== "unknown";
+  const title = status.text_model.name
+    ? `${status.text_model.name} on ${status.text_model.processor ?? "?"}`
+    : "no text model loaded";
+  return (
+    <span
+      className="badge"
+      title={title}
+      style={{ background: look.bg, color: look.fg, borderColor: look.bd }}
+    >
+      {look.label}
+      {showUtil ? ` · ${util}%` : ""}
+    </span>
+  );
 }
 
 export function BookDetail({ id }: { id: string }) {
@@ -57,6 +116,43 @@ export function BookDetail({ id }: { id: string }) {
 function BookDetailBody({ job, reload }: { job: Job; reload: () => void }) {
   const [busy, setBusy] = useState(false);
   const [actionError, setActionError] = useState<unknown>(null);
+  const [gpu, setGpu] = useState<GpuStatus | null>(null);
+  const [now, setNow] = useState(() => Date.now());
+  const [stepSince, setStepSince] = useState(() => Date.now());
+
+  const active = isActive(job.state);
+
+  // Auto-refresh while the bake is in motion: pull the job every few seconds (and tick the clock
+  // for the elapsed readout) so progress is visible without clicking Refresh. Stops at rest.
+  useEffect(() => {
+    if (!active) return;
+    const id = setInterval(() => {
+      reload();
+      setNow(Date.now());
+    }, 3500);
+    return () => clearInterval(id);
+  }, [active, reload]);
+
+  // Reset the "time on this step" clock whenever the phase changes.
+  useEffect(() => {
+    setStepSince(Date.now());
+    setNow(Date.now());
+  }, [job.state]);
+
+  // Poll the CPU/GPU indicator independently (cheap, best-effort — errors just clear the badge).
+  useEffect(() => {
+    let alive = true;
+    const tick = () =>
+      getGpuStatus()
+        .then((s) => alive && setGpu(s))
+        .catch(() => alive && setGpu(null));
+    tick();
+    const id = setInterval(tick, 3500);
+    return () => {
+      alive = false;
+      clearInterval(id);
+    };
+  }, []);
 
   async function control(fn: () => Promise<Job>) {
     setBusy(true);
@@ -79,7 +175,10 @@ function BookDetailBody({ job, reload }: { job: Job; reload: () => void }) {
     <>
       <div className="spread">
         <h2>{job.title || "(untitled)"}</h2>
-        <span className="badge state">{job.state}</span>
+        <div className="row" style={{ gap: 6 }}>
+          <GpuBadge status={gpu} />
+          <span className="badge state">{job.state}</span>
+        </div>
       </div>
       <div className="muted mono" style={{ marginBottom: 12 }}>{job.book_id}</div>
 
@@ -92,26 +191,47 @@ function BookDetailBody({ job, reload }: { job: Job; reload: () => void }) {
       {/* Phase progress */}
       <div className="panel">
         <h3 style={{ marginTop: 0 }}>Progress</h3>
-        <div className="row">
-          {MILESTONES.map((m) => {
-            const done = reached(job.state, m.state);
-            const current = job.state === m.state;
-            return (
-              <span
-                key={m.state}
-                className="badge"
-                style={{
-                  background: current ? "#e5edf7" : done ? "#e9f6ee" : "#eee",
-                  color: current ? "#2a5db0" : done ? "#1c7a3a" : "#999",
-                  borderColor: current ? "#bcd0ea" : done ? "#a6d6b8" : "#ddd",
-                }}
-              >
-                {done ? "✓ " : current ? "▸ " : "· "}
-                {m.label}
-              </span>
-            );
-          })}
-        </div>
+        {(() => {
+          const activeIdx = activeMilestoneIndex(job.state);
+          const activity = activeIdx >= 0 ? MILESTONE_ACTIVITY[MILESTONES[activeIdx].state] : null;
+          return (
+            <>
+              {active && activity && (
+                <p style={{ marginTop: 0, marginBottom: 10, color: "#2a5db0", fontWeight: 600 }}>
+                  ⏳ Working on: {activity}…{" "}
+                  <span className="muted" style={{ fontWeight: 400 }}>
+                    ({fmtElapsed(now - stepSince)} on this step · refreshing automatically)
+                  </span>
+                </p>
+              )}
+              {job.state === "published" && (
+                <p style={{ marginTop: 0, marginBottom: 10, color: "#1c7a3a", fontWeight: 600 }}>
+                  ✓ Done — the book is published.
+                </p>
+              )}
+              <div className="row">
+                {MILESTONES.map((m, i) => {
+                  const done = reached(job.state, m.state);
+                  const inProgress = active && !done && i === activeIdx;
+                  return (
+                    <span
+                      key={m.state}
+                      className="badge"
+                      style={{
+                        background: inProgress ? "#e5edf7" : done ? "#e9f6ee" : "#eee",
+                        color: inProgress ? "#2a5db0" : done ? "#1c7a3a" : "#999",
+                        borderColor: inProgress ? "#bcd0ea" : done ? "#a6d6b8" : "#ddd",
+                      }}
+                    >
+                      {done ? "✓ " : inProgress ? "▸ " : "· "}
+                      {m.label}
+                    </span>
+                  );
+                })}
+              </div>
+            </>
+          );
+        })()}
       </div>
 
       {/* Job controls */}
