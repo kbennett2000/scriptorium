@@ -1692,3 +1692,15 @@ admin-ui: `features/books/NewBookWizard.tsx`. docs: `scriptorium-DESIGN.md` §8,
 `shared/types` in sync after regen; admin **dist rebuilt**; server **relaunched** (`/health` ok).
 Live proof (deployed package): dial 1 → 9 pictures (gaps up to 6 pages); dial 3 → 26 pictures every
 1–2 pages, evenly spread, **no page carrying two** — no clustering, no empty tail.
+
+## M1 fix — CPU/GPU badge samples a burst (no more false "stalled") (2026-07-15)
+
+**Symptom (Kris, on A Tale of Two Cities in cast_running).** Badge showed "⚡ GPU · 2%" and the step
+sat at 6m+, looking stalled. Live check proved it was fine: 295/295 mention pages done, cast.json
+being written that second, GPU at 75–78%. The "2%" was `probe_gpu` reading `nvidia-smi` at a single
+instant and catching an idle trough between LLM bursts.
+
+**Fix.** `gpu_probe._sample_gpu` now samples nvidia-smi a short burst (5×, ~0.3s) and reports the
+**peak** util (memory from that sample). Absent/unreadable cards degrade exactly as before (i5 →
+"unknown"). New `test_util_reports_peak_across_a_burst`. server ruff clean + 388 pytest; server
+relaunched (badge now reads the true ~78%, book advanced cast → ledger cleanly on resume).
