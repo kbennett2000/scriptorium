@@ -1542,3 +1542,36 @@ no new AI text.
 **Done-state:** reader eslint + tsc clean + **172 vitest** (network fence intact); server ruff clean +
 **347 pytest** (unchanged); `gen-types` deterministic (no schema). Reader **dist rebuilt** so the one-port
 app on :8720 serves the new UI. The feature is now end-to-end usable in the reader.
+
+---
+
+## M1 fix — data-dir misconfig (500s + "books vanished") + /admin trailing-slash 404 (2026-07-14)
+
+**Symptoms Kris saw:** creating a book → "Could not start the book: Internal Server Error"; the reader's
+"Make books →" link → a "Not Found" page; and all previously-made books gone from the list.
+
+**Root cause (one problem behind two of the three symptoms).** A prior server restart launched uvicorn
+**without `SCRIPTORIUM_DATA`**, so `config.py` fell back to the packaged default `/var/lib/scriptorium`
+([config.py:104]) — a path that doesn't exist and the `kb` user can't create. The server was therefore
+reading an empty `library/` (books "vanished") and every write (`create book`, `save reading position`)
+hit `PermissionError` on `mkdir` → HTTP 500 (server log: `sync/api.py:87 _atomic_write`). **No data was
+lost** — the real library was intact at `/home/kb/scriptorium-data/` the whole time (6 books + jobs). Fix
+= relaunch with `SCRIPTORIUM_DATA=/home/kb/scriptorium-data` (the documented M1 dir). Not a code bug; an
+ops misconfiguration from the earlier restart.
+
+**Second, independent bug — `/admin` 404.** The admin SPA is mounted at `/admin` and Starlette only serves
+it under `/admin/`; a bare `/admin` (the reader's link, or a typed URL) 404s. Two-part fix: the reader link
+now points at `/admin/` ([Shelf.tsx:92]), **and** a server route `GET /admin` → `307 /admin/` so a typed
+address also works ([app.py], registered before the static mount so the explicit route wins).
+
+**Hardening so this can't silently recur.** New `_check_data_dir` runs at startup: it tries to create the
+data dir and, if it can't, logs one clear ERROR naming the path and `SCRIPTORIUM_DATA` — turning a stream
+of confusing per-request 500s into one obvious boot-time line. The default is unchanged (correct for the
+deployed i5 box, ADR-0007).
+
+**Tests:** `test_app_static.py` — `/admin` → 307 `/admin/`; `_check_data_dir` creates a missing dir and
+logs (not raises) on an unwritable one.
+
+**Done-state:** server ruff clean + **355 pytest**; reader eslint + tsc clean + **172 vitest**; reader
+**dist rebuilt**; server **relaunched on :8720 with the correct data dir** — health 200, all 6 books listed,
+a smoke create returned 200 (then deleted), `GET /admin` → 307. Books restored, 500s gone, links fixed.

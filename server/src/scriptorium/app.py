@@ -11,11 +11,13 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import json
+import logging
 from collections.abc import AsyncIterator
 from typing import Any
 
 import httpx
 from fastapi import FastAPI
+from fastapi.responses import RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
 from .artsets.api import router as artsets_router
@@ -64,6 +66,7 @@ BAKE_PIPELINE = [
 ]
 
 _PROBE_TIMEOUT_S = 2.0
+_log = logging.getLogger("scriptorium")
 
 
 @contextlib.asynccontextmanager
@@ -165,6 +168,36 @@ async def health() -> dict[str, Any]:
         }
 
 
+@app.get("/admin", include_in_schema=False)
+async def admin_slash_redirect() -> RedirectResponse:
+    """Redirect the slashless ``/admin`` to ``/admin/``.
+
+    The admin SPA is mounted at ``/admin`` (see :func:`_mount_static`), and Starlette only serves
+    it under the trailing slash — a bare ``/admin`` otherwise 404s, which bites anyone who types the
+    address or follows an old link. This explicit route is registered before the mount so it wins.
+    """
+    return RedirectResponse("/admin/", status_code=307)
+
+
+def _check_data_dir(cfg: Config) -> None:
+    """Warn loudly at startup if the data dir is missing and can't be created.
+
+    The default (``/var/lib/scriptorium``, ADR-0007) is correct for the deployed i5 box but is
+    unwritable on a dev machine where ``SCRIPTORIUM_DATA`` was left unset — in which case every
+    write (create a book, save a reading position) 500s with a bare ``PermissionError``. Surfacing
+    it once here makes the misconfiguration obvious at boot instead of as scattered request errors.
+    """
+    try:
+        cfg.data_dir.mkdir(parents=True, exist_ok=True)
+    except OSError as exc:
+        _log.error(
+            "data dir %s is not usable (%s). Set SCRIPTORIUM_DATA to a writable path "
+            "(dev: SCRIPTORIUM_DATA=~/scriptorium-data). Writes will fail until then.",
+            cfg.data_dir,
+            exc,
+        )
+
+
 def _mount_static(app: FastAPI, cfg: Config) -> None:
     """Mount the two built SPAs: admin-ui at ``/admin`` and the reader PWA at ``/`` (S11).
 
@@ -179,4 +212,5 @@ def _mount_static(app: FastAPI, cfg: Config) -> None:
             app.mount(path, StaticFiles(directory=directory, html=True), name=name)
 
 
+_check_data_dir(load_config())
 _mount_static(app, load_config())

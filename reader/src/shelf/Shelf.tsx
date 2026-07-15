@@ -89,7 +89,7 @@ export function Shelf() {
           Refresh
         </button>
         {/* The reader and the book workshop are two screens on the same address; link across. */}
-        <a className="shelf-admin-link" href="/admin">
+        <a className="shelf-admin-link" href="/admin/">
           Make books →
         </a>
       </div>
