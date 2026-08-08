@@ -31,7 +31,10 @@ const SELECTION: Selection = {
 };
 
 const PAGES: Record<string, PageDoc> = {
-  "0001": { id: "0001", seq: 1, chapter: 1, text: "Para one.\n\nPara two.\n\nPara three.", word_count: 6 },
+  "0001": {
+    id: "0001", seq: 1, chapter: 1, text: "Para one.\n\nPara two.\n\nPara three.", word_count: 6,
+    ledger: { best_visual_beat: "A lantern sways on the frozen quay." },
+  },
   "0002": { id: "0002", seq: 2, chapter: 1, text: "Second page.\n\nAnother paragraph.", word_count: 4 },
 };
 
@@ -78,6 +81,18 @@ describe("Reader", () => {
     expect(await screen.findByAltText("Plate for page 1")).toBeInTheDocument();
     await waitFor(() => expect(paraCount(container)).toBe(3));
     expect(screen.getByText("1 / 2")).toBeInTheDocument();
+  });
+
+  it("captions the base plate with the page's depicted-moment beat, and drops it on a plateless page", async () => {
+    const { reader } = makeFakeReader();
+    render(<Reader reader={reader} storage={new MemoryStorage()} bookId={BOOK} onExit={() => {}} />);
+    const cap = await screen.findByText("A lantern sways on the frozen quay.");
+    expect(cap.tagName.toLowerCase()).toBe("figcaption");
+    expect(cap).toHaveClass("plate-caption");
+    // Page 2 has no visible plate (retired) and no beat → no caption element.
+    await userEvent.click(screen.getByRole("button", { name: "Next" }));
+    await waitFor(() => expect(screen.getByText("2 / 2")).toBeInTheDocument());
+    expect(screen.queryByText("A lantern sways on the frozen quay.")).not.toBeInTheDocument();
   });
 
   it("navigates to the next page: no header, retired plate hidden, new paragraphs", async () => {

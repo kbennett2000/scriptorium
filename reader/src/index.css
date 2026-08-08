@@ -165,6 +165,15 @@ body {
   height: auto;
   cursor: zoom-in;
 }
+.plate-caption {
+  margin: 0.4rem 0 0;
+  font-family: var(--reader-font);
+  font-size: calc(0.85rem * var(--reader-font-scale));
+  line-height: 1.4;
+  font-style: italic;
+  text-align: center;
+  color: var(--muted, #6b6b6b);
+}
 .page-text {
   font-family: var(--reader-font);
   font-size: calc(1.05rem * var(--reader-font-scale));

@@ -1775,3 +1775,26 @@ seed-text >3 words). docs: ADR-0018.
 unchanged (byte-stability held). Published #28054 is frozen (immutability) → **Kris will re-make the
 book himself**; not re-baked here. Cycles 2 (picture captions) and 3 (character-face de-duplication)
 follow as their own sessions.
+
+## M1 — Cycle 2: picture captions in the reader (2026-08-08)
+
+**Request.** Kris asked for a short line under each illustration telling the reader which moment of
+the page the picture depicts.
+
+**Approach (reader-only; no schema/bundle/pipeline change).** The depicted-moment text already
+exists: each page's scene ledger carries `best_visual_beat`, a human-readable sentence derived from
+that page's own text (spoiler-safe, ADR-0008), stored on `pages/*.json` and already shipped to the
+offline reader. `Page.tsx` reads `page.ledger.best_visual_beat` (opaque provenance in the schema, so
+read narrowly) and passes it as a `caption` to the **base (top) plate** only — one beat per page, so
+extra segment-plates on a multi-image page render uncaptioned. `Plate.tsx` renders it as a
+`<figcaption className="plate-caption">` inside the existing `<figure>`; `.plate-caption` styled muted
++ italic + centered in `index.css`. Because the beat is already in every published bundle, captions
+appear on **already-baked** books too — no re-bake needed.
+
+**Files.** reader: `readerview/Plate.tsx` (caption prop + figcaption), `readerview/Page.tsx` (read
+beat, caption base plate; fixed the extras `.map` to not pass the array index as caption),
+`index.css` (`.plate-caption`), `readerview/Reader.test.tsx` (+caption present-on-base /
+absent-on-plateless test).
+
+**Done-state.** reader eslint clean, tsc clean, vitest green (173 passed). Zero-online read path and
+byte-stability untouched (no data written; caption is derived from existing page data at render time).

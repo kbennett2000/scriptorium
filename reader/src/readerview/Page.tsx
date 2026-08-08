@@ -53,12 +53,18 @@ export function Page({
   const paragraphs = splitParagraphs(page.text);
   const starts = paragraphStarts(paragraphs);
 
+  // The page's depicted-moment line (scene ledger's best_visual_beat) captions the base plate. The
+  // ledger is opaque provenance in the schema, so read the one field narrowly. Derived from this
+  // page's own text only → spoiler-safe. One beat per page → only the base (top) plate is captioned.
+  const beat = (page.ledger as { best_visual_beat?: string } | undefined)?.best_visual_beat?.trim();
+  const caption = beat ? beat : null;
+
   // A stable 1-based slot per plate (for a distinguishable alt); a lone plate keeps the legacy alt.
   const slotOf = new Map(plates.map((p, i) => [p.plateId, i + 1]));
   const altFor = (p: PagePlate) =>
     plates.length === 1 ? `Plate for page ${page.seq}` : `Plate ${slotOf.get(p.plateId)} for page ${page.seq}`;
-  const renderPlate = (p: PagePlate) => (
-    <Plate key={p.plateId} reader={reader} relPath={p.relPath} alt={altFor(p)} onOpen={onOpenLightbox} />
+  const renderPlate = (p: PagePlate, cap: string | null = null) => (
+    <Plate key={p.plateId} reader={reader} relPath={p.relPath} alt={altFor(p)} caption={cap} onOpen={onOpenLightbox} />
   );
 
   // Resolve each plate to the paragraph it precedes. Anchor 0 (base image) → the top, above the text.
@@ -78,7 +84,7 @@ export function Page({
   return (
     <article className="page" data-page-seq={page.seq}>
       {chapterTitle && <h2 className="chapter-title">{chapterTitle}</h2>}
-      {topPlates.map(renderPlate)}
+      {topPlates.map((p, i) => renderPlate(p, i === 0 ? caption : null))}
       <div className="page-text">
         {paragraphs.map((para, i) => {
           const runs = paintParagraph(para, starts[i], annotations);
@@ -86,7 +92,7 @@ export function Page({
           const plain = runs.length <= 1 && !runs[0]?.color;
           return (
             <Fragment key={i}>
-              {(platesBeforePara.get(i) ?? []).map(renderPlate)}
+              {(platesBeforePara.get(i) ?? []).map((p) => renderPlate(p))}
               <p className="page-para" style={{ whiteSpace: "pre-line" }}>
                 {plain
                   ? para

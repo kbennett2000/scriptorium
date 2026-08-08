@@ -6,16 +6,22 @@ import type { BundleReader } from "./BundleReader";
 // from the BundleReader as a local object/data URL — never a network fetch. Tap → lightbox (handled by
 // the parent via onOpen). Renders nothing if the reader has no image for this page (e.g. a plate whose
 // web derivative isn't resident); retired plates are filtered out before this component is used.
+//
+// `caption` is the page's depicted-moment line (the scene ledger's `best_visual_beat`, derived only
+// from this page's own text — spoiler-safe). It renders as a <figcaption> under the image so the
+// reader knows which moment of the page the picture shows. Absent/blank → no caption element.
 
 export function Plate({
   reader,
   relPath,
   alt,
+  caption = null,
   onOpen,
 }: {
   reader: BundleReader;
   relPath: string;
   alt: string;
+  caption?: string | null;
   onOpen: (src: string) => void;
 }) {
   const [src, setSrc] = useState<string | null>(null);
@@ -48,6 +54,7 @@ export function Plate({
           }
         }}
       />
+      {caption && <figcaption className="plate-caption">{caption}</figcaption>}
     </figure>
   );
 }
