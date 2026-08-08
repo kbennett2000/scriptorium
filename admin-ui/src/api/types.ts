@@ -72,6 +72,7 @@ export interface Job {
   server_now?: string;
   seconds_since_activity?: number;
   expecting_progress?: boolean;
+  unattended?: boolean;
 }
 
 // GET /api/admin/books/{id}/review (bake/review_api.py get_review).

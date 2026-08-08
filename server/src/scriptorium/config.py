@@ -47,6 +47,11 @@ class Config:
     # rendered before approval") and every test; the single-user LAN dev box opts in via
     # ``AUTO_APPROVE=1``.
     auto_approve: bool = False
+    # When true a freshly-ingested job is marked ``started`` immediately, so the runner advances it
+    # without a human clicking Start (ADR-0020). Default false preserves the pre-P1 chapter-edit
+    # window and every test; the single-user LAN dev box opts in via ``AUTO_START=1``. Pairs with
+    # ``AUTO_APPROVE`` for a full unattended "kick off → wake to a done book" run.
+    auto_start: bool = False
     # Built SPA dirs for the two static mounts (S11). Defaulted so tests that
     # construct Config directly need not supply them; load_config sets them from env.
     reader_dist: Path = field(default_factory=lambda: _REPO_ROOT / "reader" / "dist")
@@ -114,6 +119,7 @@ def load_config() -> Config:
         gpu_wol_enabled=_env_bool("GPU_WOL_ENABLED", False),
         runner_tick_s=_env_int("RUNNER_TICK_S", 120),
         auto_approve=_env_bool("AUTO_APPROVE", False),
+        auto_start=_env_bool("AUTO_START", False),
         shared_dir=shared_dir,
         reader_dist=reader_dist,
         admin_dist=admin_dist,

@@ -1863,3 +1863,41 @@ smoke test green. Also: relaunched the :8720 server as a **systemd --user servic
 (`scriptorium-server.service`) with SCRIPTORIUM_DATA + TTS_URL + IMAGEGEN_URL so it survives session
 teardown and always runs the committed code — the root cause of the "re-made but still broken" report
 was a long-lived uvicorn holding pre-fix code.
+
+## M1 — Cycle 5: unattended "kick off → wake to a done book" + honest status (ADR-0020) (2026-08-08)
+
+**Request.** Kris wants to load a book, set settings, kick it off, and wake up to a finished book —
+without the Start click, the review-gate approval, or a status timer that ticks whether or not
+anything is happening. (On "safety": agreed there is none — local single-user tool; the only real
+cost of skipping approval is a wasted overnight render or a wrong image frozen into an immutable
+book. The current gate can't surface either anyway — raw prompts, no context — so it's friction with
+no payoff. Making it *useful* is deferred; see below.)
+
+**Findings.** The pipeline has two human halts: **Start** (`ingested`, `started=False` — no auto
+path existed) and **Approve** (the review gate — already automatable via the sanctioned, default-off
+`AUTO_APPROVE`, ADR-0015). After approve, render + publish already run unattended.
+
+**Fix.**
+- Server: new opt-in `auto_start` flag (env `AUTO_START`, `config.py`, default false, mirrors
+  `auto_approve`); `bake/api.py run_p0` sets `job.started=True` when on (still ingests+paginates
+  first; closes the pre-P1 chapter-edit window — the documented tradeoff). ADR-0020. With
+  `AUTO_START=1` **and** `AUTO_APPROVE=1`, a created book runs itself to `published`, no clicks.
+- Status honesty: `progress.status_extras` now also returns `unattended` (= auto_start && auto_approve).
+  Admin `BookDetail.tsx` drives the activity line off the server's `expecting_progress` instead of
+  `isActive`: it only says "⏳ Working on… (timer · updated Ns ago)" when the runner is actually
+  advancing; otherwise it shows an honest "⏸ Waiting to start / Waiting for your approval / Waiting…"
+  and an "Unattended — starts and finishes on its own" note. No more ticking clock implying work.
+
+**Deferred (Kris's ask, needs go-ahead — NOT built this cycle):** make the review gate *meaningful*
+so an OPTIONAL approval is worth using — show the picture plan in plain language (per illustrated
+page: the `best_visual_beat` caption, which characters appear, the page-text snippet) and/or render
+a few sample plates before committing the full batch, instead of a wall of raw prompts.
+
+**Ops.** Relaunched `scriptorium-server.service` (systemd --user) with `AUTO_START=1 AUTO_APPROVE=1`
+(+ existing SCRIPTORIUM_DATA/TTS_URL/IMAGEGEN_URL) so the running box is fully unattended.
+
+**Files.** server: `config.py`, `bake/api.py`, `bake/progress.py`, `tests/test_auto_start.py` (new),
+`docs/adr/0020-auto-start.md` (new). admin-ui: `features/detail/BookDetail.tsx`, `api/types.ts`.
+
+**Done-state.** server ruff clean + pytest green (416 passed, +3); admin-ui tsc + eslint clean, smoke
+green. Both flags default off → default behavior byte-identical; the running box opts in.

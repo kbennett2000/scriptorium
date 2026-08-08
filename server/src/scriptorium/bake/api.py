@@ -135,6 +135,10 @@ def run_p0(cfg: Config, body: CreateBookBody) -> Job:
         warnings=list(raw.warnings),
     )
     job.transition(JobState.INGESTED)
+    # Unattended mode (ADR-0020): mark the freshly-ingested job started so the runner advances it
+    # without a Start click. Off by default (keeps the pre-P1 chapter-edit window).
+    if cfg.auto_start:
+        job.started = True
     job.save(cfg)
     return job
 

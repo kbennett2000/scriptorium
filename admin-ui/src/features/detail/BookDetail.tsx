@@ -211,17 +211,30 @@ function BookDetailBody({ job, reload }: { job: Job; reload: () => void }) {
         {(() => {
           const activeIdx = activeMilestoneIndex(job.state);
           const activity = activeIdx >= 0 ? MILESTONE_ACTIVITY[MILESTONES[activeIdx].state] : null;
+          // Only claim "working" when the SERVER says the runner should be advancing; otherwise say
+          // plainly what it's waiting for — a ticking clock must never imply work that isn't happening.
+          const working = !!job.expecting_progress;
+          const awaitingApproval = job.state === "prompts_draft" || job.state === "in_review";
+          const waitingLabel =
+            job.state === "published" || job.state === "waiting_gpu" || job.state === "failed"
+              ? null
+              : !job.started
+                ? "Waiting to start"
+                : awaitingApproval
+                  ? "Waiting for your approval"
+                  : active && !working
+                    ? "Waiting…"
+                    : null;
           return (
             <>
-              {active && activity && (
+              {working && activity && (
                 <>
                   <p style={{ marginTop: 0, marginBottom: hasBar ? 6 : 10, color: "#2a5db0", fontWeight: 600 }}>
                     ⏳ Working on: {activity}…{" "}
                     {hasBar && <span>{prog!.units_done} / {prog!.units_total}{" "}</span>}
                     <span className="muted" style={{ fontWeight: 400 }}>
-                      ({fmtElapsed(now - stepSince)} on this step
-                      {job.expecting_progress && ` · updated ${Math.round(sinceActivity)}s ago`}
-                      {" · refreshing automatically)"}
+                      ({fmtElapsed(now - stepSince)} on this step · updated {Math.round(sinceActivity)}s ago
+                      · refreshing automatically)
                     </span>
                   </p>
                   {hasBar && (
@@ -231,9 +244,20 @@ function BookDetailBody({ job, reload }: { job: Job; reload: () => void }) {
                   )}
                 </>
               )}
+              {!working && waitingLabel && (
+                <p className="muted" style={{ marginTop: 0, marginBottom: 10, fontWeight: 600 }}>
+                  ⏸ {waitingLabel}
+                  {awaitingApproval && " — use Open Review below."}
+                </p>
+              )}
               {job.state === "published" && (
                 <p style={{ marginTop: 0, marginBottom: 10, color: "#1c7a3a", fontWeight: 600 }}>
                   ✓ Done — the book is published.
+                </p>
+              )}
+              {job.unattended && active && (
+                <p className="muted" style={{ marginTop: 0, marginBottom: 10, fontSize: 12 }}>
+                  Unattended — this book starts itself and finishes on its own; no clicks needed.
                 </p>
               )}
               <div className="row">

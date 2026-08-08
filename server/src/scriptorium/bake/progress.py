@@ -106,4 +106,9 @@ def status_extras(job: Job, cfg: Any) -> dict[str, Any]:
         "server_now": now.isoformat(),
         "seconds_since_activity": max(0.0, since),
         "expecting_progress": bool(job.started) and job.state not in _NOT_EXPECTING,
+        # True when the server runs fully hands-off (ADR-0020 + ADR-0015): a new book starts itself
+        # and clears the review gate on its own, so the UI can tell the owner no click is coming.
+        "unattended": bool(
+            getattr(cfg, "auto_start", False) and getattr(cfg, "auto_approve", False)
+        ),
     }
