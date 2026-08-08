@@ -1798,3 +1798,39 @@ absent-on-plateless test).
 
 **Done-state.** reader eslint clean, tsc clean, vitest green (173 passed). Zero-online read path and
 byte-stability untouched (no data written; caption is derived from existing page data at render time).
+
+## M1 — Cycle 3: character faces — alias safety + junk filtering (ADR-0019) (2026-08-08)
+
+**Symptom (Karamazov #28054).** One person → many faces (Dmitri = Dmitri Fyodorovitch = "Mitya"
+became 3 characters/portraits; Alyosha appeared as an old general under "Alexey Fyodorovitch"), plus
+junk cast entries ("me", "peasant", "old-woman", "another-female-figure").
+
+**Root cause (in the pure reducer `bake/reduce_cast.py`).** Rule 2c (single-token subset) had no
+defense against a shared patronymic token ("Fyodorovitch" ⊂ both brothers); the same-page
+co-occurrence guard over-fired on given-name/full-name variants that appear together (splitting one
+person); and the only junk filter was bare subject pronouns (omitting "me"), with `is_person` never
+removing a group from `cast.json`.
+
+**Fix (server-side, deterministic; a false MERGE is worse than a false split).**
+- **A1 junk:** `_STOP_NAMES` extends the pre-grouping drop to all pronoun/indefinite whole-names
+  (catches "me"); `_drop_junk_groups` (before the major flag) drops a group that is single-page AND
+  all-lowercase-generic (capitalization is the signal — real names/roles are title-cased; "the
+  Morlocks" and recurring lowercase roles survive).
+- **A2 patronymic safety (merge-reducing only):** rule 2c never merges on a token shared by ≥2 full
+  names.
+- **A3 containment merge:** an unambiguous *proper* containment (subset token in exactly one longer
+  full name, e.g. "Dmitri" ⊂ "Dmitri Fyodorovitch") merges even across the co-occurrence guard; a
+  mere article variant ("guard"/"the guard") does NOT, so co-occurring distinct "Guards" stay apart.
+  Flag `_CONTAINMENT_OVERRIDES_GUARD` for a per-book escape hatch. `mention_pages` union kept exact.
+
+**Deferred to the external text-transform-service (separate repo — Kris's chosen follow-up).**
+Nickname/diminutive linking ("Mitya"↔"Dmitri", substring-disjoint — needs `cast-mentions` to emit
+the alias); a real character-vs-role signal; normalized depicted-vs-cast matching for the P5 warning.
+No in-repo string rule can link substring-disjoint names.
+
+**Files.** server: `bake/reduce_cast.py`, `tests/test_reduce_cast.py` (+7 tests: object/reflexive/
+indefinite drop, lowercase-junk drop vs capitalized/recurring keep, shared-patronymic no-merge,
+given-name merge across co-occurrence, junk-never-major). docs: ADR-0019, NOTES-FOR-NEXT-CYCLES.
+
+**Done-state.** server ruff clean + pytest green (398 passed, 5 deselected). No schema change; cast
+schema unaffected. Published #28054 frozen → owner re-makes to benefit.

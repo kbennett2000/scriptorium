@@ -124,3 +124,82 @@ def test_bare_pronouns_dropped_before_grouping() -> None:
     ])
     slugs = _by_slug(groups)
     assert set(slugs) == {"time-traveller"}  # every pronoun mention dropped
+
+
+# --- ADR-0019: extended stop-words, junk filtering, alias safety -------------
+
+
+def test_object_pronoun_me_dropped() -> None:
+    # "me" (object pronoun) is a stop-word now; it must not survive as a character.
+    groups = reduce_cast([
+        _page("0001", _m("me", descriptors=["the narrator"]), _m("Alyosha")),
+        _page("0002", _m("Alyosha")),
+    ])
+    slugs = _by_slug(groups)
+    assert "me" not in slugs
+    assert set(slugs) == {"alyosha"}
+
+
+def test_reflexive_and_indefinite_names_dropped() -> None:
+    groups = reduce_cast([
+        _page("0001", _m("himself"), _m("someone"), _m("nobody"), _m("Ivan")),
+        _page("0002", _m("Ivan")),
+    ])
+    assert set(_by_slug(groups)) == {"ivan"}
+
+
+def test_lowercase_generic_role_dropped_capitalized_kept() -> None:
+    # Single-page all-lowercase generic nouns are junk; capitalized designations are kept.
+    groups = reduce_cast([
+        _page("0001", _m("peasant"), _m("the Time Traveller")),
+        _page("0002", _m("old woman"), _m("another female figure"), _m("the Psychologist")),
+    ])
+    assert set(_by_slug(groups)) == {"time-traveller", "psychologist"}
+
+
+def test_lowercase_role_kept_when_recurring() -> None:
+    # A lowercase role on >= 2 pages is a real recurring referent, not junk.
+    groups = reduce_cast([
+        _page("0001", _m("mother")),
+        _page("0002", _m("mother")),
+    ])
+    assert "mother" in _by_slug(groups)
+
+
+def test_shared_patronymic_token_merges_nobody() -> None:
+    # A bare shared patronymic must never bridge two people who only share it (A2).
+    groups = reduce_cast([
+        _page("0001", _m("Dmitri Fyodorovitch")),
+        _page("0002", _m("Alexey Fyodorovitch")),
+        _page("0003", _m("Fyodorovitch")),
+    ])
+    slugs = _by_slug(groups)
+    assert len(groups) == 3
+    assert slugs["dmitri-fyodorovitch"]["mention_pages"] == ["0001"]
+    assert slugs["alexey-fyodorovitch"]["mention_pages"] == ["0002"]
+
+
+def test_given_name_merges_across_cooccurrence() -> None:
+    # "Dmitri" and "Dmitri Fyodorovitch" as distinct same-page entries are one person: an
+    # unambiguous multi-token containment merges even across the co-occurrence guard (A3).
+    groups = reduce_cast([
+        _page("0001", _m("Dmitri"), _m("Dmitri Fyodorovitch")),
+        _page("0002", _m("Dmitri Fyodorovitch")),
+    ])
+    assert len(groups) == 1
+    g = groups[0]
+    assert g["mention_pages"] == ["0001", "0002"]  # exact page union (ADR-0008)
+    assert "Dmitri" in g["aliases"]
+
+
+def test_junk_lowercase_single_page_never_survives_as_major() -> None:
+    # A single-page lowercase "peasant" is dropped, so it can never be canonicalized or portraited.
+    groups = reduce_cast([
+        _page("0001", _m("peasant"), _m("the Time Traveller")),
+        _page("0002", _m("the Time Traveller")),
+        _page("0003", _m("the Time Traveller")),
+    ])
+    slugs = _by_slug(groups)
+    assert "peasant" not in slugs
+    assert not any(g["name"] == "peasant" for g in groups)
+    assert slugs["time-traveller"]["major"] is True

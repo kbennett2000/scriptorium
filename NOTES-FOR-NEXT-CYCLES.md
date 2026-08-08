@@ -919,3 +919,19 @@ Human review of the 18 plates (spoiler half done analytically — PASS, no plate
 
 ### Runner starved newer jobs behind one parked at the review gate (fixed 2026-07-14)
 Owner added a book, hit Start, and it sat at `ingested` for minutes. Root cause: `runner.tick()` (server/src/scriptorium/bake/runner.py) advances the oldest runnable job and returns once per tick, but a job resting in a **state with no registered worker phase** — `prompts_draft` (awaits the human review gate; `phase_for()` → `None`) — was still selected and consumed the tick as a no-op, so any newer job behind it never ran. The A6 kill-test leftover `pg-1065` (parked at review) indefinitely blocked the owner's new book. **Fixed this cycle:** `tick()` now `continue`s past a job whose state has no phase (and isn't `waiting_gpu`), moving on to the next runnable job; regression test `test_review_gated_job_does_not_starve_newer_jobs`. Watch for the same class of bug if more human-gated resting states are added — any state the runner can see but has no phase for must be skipped, not consumed.
+
+## Follow-up: character identity in the external text-transform-service (from ADR-0019)
+
+The server-side cast fixes (ADR-0019: junk filtering, patronymic safety, containment merge) landed,
+but three items need the EXTERNAL `text-transform-service` (separate repo), not this tree:
+
+- **Nickname/diminutive linking** — Russian (and other) diminutives are substring-disjoint from the
+  formal name (Mitya↔Dmitri, Alyosha↔Alexey, Kolya↔Nikolai). No in-repo string rule can link them.
+  The `cast-mentions` transform must emit the diminutive in the correct mention's `aliases[]`; the
+  in-repo rule (b) alias↔name merge then unions them for free (consider whether such alias-declared
+  merges should also bypass the co-occurrence guard — corroborated version of ADR-0019 A3).
+- **Character-vs-role signal** — a real `is_character`/`kind` flag from `cast-mentions` would replace
+  the in-repo capitalization heuristic for junk ("peasant"/"old-woman").
+- **Normalized depicted-vs-cast matching** — the P5 "depicted not in cast" warning is generated
+  TTS-side by naive string equality; fold case/article/alias (also the optional in-repo `present_cast`
+  fold in `p5_prompts.py:146-151`).

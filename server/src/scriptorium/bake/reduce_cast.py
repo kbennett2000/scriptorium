@@ -25,9 +25,17 @@ Steps implemented verbatim from §7.2:
    is larger.
 7. ``slug`` = kebab-case of the de-articled name, uniquified with ``-2`` suffixes.
 
-**Deviation (approved this cycle, logged in CYCLE-LOG as a §7.2 amendment):** mentions whose
-normalized name is a bare pronoun are dropped *before* grouping — T5's live first-person
-narration surfaces unattributable ``"I"`` mentions whose descriptors can't be assigned.
+**Deviation (approved, logged in CYCLE-LOG as a §7.2 amendment):** mentions whose normalized name
+is a bare pronoun are dropped *before* grouping — T5's live first-person narration surfaces
+unattributable ``"I"`` mentions whose descriptors can't be assigned.
+
+**ADR-0019 (character alias/junk):** the pre-grouping drop is extended from subject pronouns to all
+pronoun/indefinite whole-name stop-words (``_STOP_NAMES``, catches "me"); single-page all-lowercase
+generic-noun groups are dropped after grouping (``_drop_junk_groups``, before the major flag); rule
+2c never merges on a token shared by ≥2 full names (ambiguous patronymic/surname), and merges an
+unambiguous single-superset containment even across the same-page guard. Nickname/diminutive linking
+(e.g. "Mitya"↔"Dmitri") is out of scope here — it needs the external ``cast-mentions`` transform to
+emit the alias, since no in-repo string rule can link substring-disjoint names.
 """
 
 from __future__ import annotations
@@ -41,12 +49,34 @@ _ARTICLES_HONORIFICS: frozenset[str] = frozenset(
 )
 # Slug de-articling (step 7) removes only leading articles, not honorifics.
 _SLUG_ARTICLES: frozenset[str] = frozenset({"the", "a", "an"})
-# Bare pronouns dropped before grouping (approved §7.2 deviation).
-_PRONOUNS: frozenset[str] = frozenset({"i", "he", "she", "they", "we", "you", "it"})
+# Whole-name mentions dropped before grouping (approved §7.2 deviation, extended ADR-0019). A
+# real named character is never one of these; dropping catches a stray "me"/"someone"/"this"
+# that the LLM surfaced as a mention name. Only an EXACT whole-name match is dropped.
+_STOP_NAMES: frozenset[str] = frozenset({
+    # subject / object / possessive / reflexive pronouns
+    "i", "he", "she", "they", "we", "you", "it",
+    "me", "him", "her", "us", "them",
+    "mine", "hers", "ours", "yours", "theirs",
+    "myself", "yourself", "himself", "herself", "itself",
+    "ourselves", "yourselves", "themselves",
+    # indefinite / demonstrative pronouns
+    "one", "someone", "somebody", "anyone", "anybody",
+    "everyone", "everybody", "no one", "nobody",
+    "something", "anything", "everything", "nothing",
+    "this", "that", "these", "those", "who", "whom",
+})
 
 _DESCRIPTOR_CAP = 40
 _MAJOR_PAGE_FLOOR = 3
 _MAJOR_TOP_N = 6
+# A group on fewer than this many pages whose display name is an all-lowercase generic noun
+# ("peasant", "old woman", "another female figure") is dropped as junk (ADR-0019 A1). Kept
+# deliberately tight — a capitalized name or a recurring role is never touched.
+_JUNK_MAX_PAGES = 2
+# When a single-token name is contained in EXACTLY ONE full name (unambiguous, e.g.
+# "Dmitri" ⊆ "Dmitri Fyodorovitch"), merge it even across the same-page guard (ADR-0019 A3).
+# Flip off if a specific book merges two co-occurring different people who share a given name.
+_CONTAINMENT_OVERRIDES_GUARD = True
 
 _WS = re.compile(r"\s+")
 _POSSESSIVE = re.compile(r"['’]s$", re.IGNORECASE)
@@ -120,6 +150,7 @@ def reduce_cast(pages: list[dict[str, Any]]) -> list[dict[str, Any]]:
     uf = _group(records, nodes)
 
     groups = _build_groups(records, nodes, uf)
+    groups = _drop_junk_groups(groups)  # before _mark_majors: junk can't take a major/portrait slot
     _mark_majors(groups)
     _assign_slugs(groups)
     return [_public_group(g) for g in groups]
@@ -135,8 +166,8 @@ def _collect_records(pages: list[dict[str, Any]]) -> list[_Record]:
         page_id = str(page.get("page_id", ""))
         for mention in page.get("mentions", []):
             name_norm = _norm(str(mention.get("name", "")))
-            if not name_norm or name_norm in _PRONOUNS:
-                continue  # drop empty + bare-pronoun mentions before grouping
+            if not name_norm or name_norm in _STOP_NAMES:
+                continue  # drop empty + stop-word (pronoun/indefinite) mentions before grouping
             records.append(_Record(order, page_id, mention))
             order += 1
     return records
@@ -178,21 +209,33 @@ def _group(records: list[_Record], nodes: list[str]) -> _UnionFind:
             if a in node_set and a != r.name_norm:
                 candidates.add(_pair(r.name_norm, a))
 
-    # (c) single-token subset of the other's content tokens.
+    # (c) single-token subset of the other's content tokens — patronymic-safe.
+    # A lone token contained in >= 2 distinct full names is an ambiguous shared patronymic/surname
+    # ("Fyodorovitch" in both "Dmitri Fyodorovitch" and "Alexey Fyodorovitch") and must never drive
+    # a merge (A2). A lone token contained in EXACTLY ONE full name is a candidate as before; it is
+    # additionally marked *strong* — allowed to bypass the co-occurrence guard (A3) — only for a
+    # PROPER containment, where the superset carries extra content tokens ("Dmitri" in "Dmitri
+    # Fyodorovitch"). A mere article variant ("guard" vs "the guard", same single content token) is
+    # NOT strong, so two co-occurring "Guards" still stay apart.
     content = {n: _content_tokens(n) for n in nodes}
+    strong: set[tuple[str, str]] = set()
     for x in nodes:
         xt = content[x]
         if len(xt) != 1:
             continue
         token = xt[0]
-        for y in nodes:
-            if x is y:
-                continue
-            if token in content[y]:
-                candidates.add(_pair(x, y))
+        supersets = [y for y in nodes if y != x and token in content[y]]
+        if len(supersets) != 1:
+            continue  # 0 -> nothing to merge; >=2 -> ambiguous shared token -> never merge
+        y = supersets[0]
+        pair = _pair(x, y)
+        candidates.add(pair)
+        if len(content[y]) > 1:
+            strong.add(pair)  # proper multi-token containment -> may bypass the guard (A3)
 
     for x, y in sorted(candidates, key=lambda p: (first_seen[p[0]], first_seen[p[1]])):
-        if not would_violate(x, y):
+        strong_bypass = _CONTAINMENT_OVERRIDES_GUARD and _pair(x, y) in strong
+        if strong_bypass or not would_violate(x, y):
             uf.union(x, y)
     return uf
 
@@ -309,6 +352,37 @@ def _first_display_order(recs: list[_Record], display: str) -> int:
         if r.name_display == display:
             return r.order
     return len(recs)
+
+
+# --- junk drop (ADR-0019 A1): all-lowercase generic single-page groups --------
+
+
+def _is_lowercase_generic(name: str) -> bool:
+    """True if ``name`` (after a leading article) has no capital — a generic noun, not a name.
+
+    Real named characters and the pipeline's role designations are title-cased ("the Time
+    Traveller", "the Psychologist"); junk the LLM surfaces is lowercase ("peasant", "old woman",
+    "another female figure"). Uses the *display* name so casing is meaningful.
+    """
+    tokens = name.split()
+    while tokens and tokens[0].lower() in _SLUG_ARTICLES:
+        tokens.pop(0)
+    tail = " ".join(tokens)
+    return bool(tail) and not any(ch.isupper() for ch in tail)
+
+
+def _drop_junk_groups(groups: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Drop single-page, all-lowercase generic-noun groups (conservative).
+
+    Both conditions must hold, so a capitalized name (any page count) and a recurring lowercase role
+    (>= ``_JUNK_MAX_PAGES`` pages) are always kept. ``is_person`` is deliberately NOT used: a junk
+    "peasant" is a person, and the non-person collective (e.g. "the Morlocks") must survive.
+    """
+    return [
+        g
+        for g in groups
+        if not (len(g["mention_pages"]) < _JUNK_MAX_PAGES and _is_lowercase_generic(g["name"]))
+    ]
 
 
 # --- step 5: major flag -----------------------------------------------------
