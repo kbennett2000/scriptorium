@@ -66,6 +66,12 @@ export interface Job {
   started: boolean;
   created_at: string;
   updated_at: string;
+  // Read-time progress + liveness added by GET /books/{id} (server bake/progress.py). Optional so
+  // older/other callers of the Job shape stay valid.
+  progress?: { units_done: number | null; units_total: number | null };
+  server_now?: string;
+  seconds_since_activity?: number;
+  expecting_progress?: boolean;
 }
 
 // GET /api/admin/books/{id}/review (bake/review_api.py get_review).

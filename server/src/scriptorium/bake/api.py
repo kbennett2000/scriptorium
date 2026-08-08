@@ -30,6 +30,7 @@ from ..library.purge import purge_book
 from ..paginate import PaginatedBook, paginate
 from . import job as jobmod
 from .job import GPU_STATES, Job, JobState
+from .progress import status_extras
 
 router = APIRouter(prefix="/api/admin")
 
@@ -165,8 +166,12 @@ def list_books() -> dict:
 
 @router.get("/books/{book_id}")
 def get_book(book_id: str) -> dict:
-    job = _require(book_id)
-    return job.to_dict()
+    cfg = load_config()
+    job = jobmod.load(cfg, book_id)
+    if job is None:
+        raise HTTPException(status_code=404, detail=f"no such book {book_id!r}")
+    # Additive: the raw job record plus read-time progress + liveness for the admin poll.
+    return {**job.to_dict(), **status_extras(job, cfg)}
 
 
 @router.delete("/books/{book_id}")

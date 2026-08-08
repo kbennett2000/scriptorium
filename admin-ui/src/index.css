@@ -218,6 +218,19 @@ tbody tr:hover {
   border: 1px solid var(--line);
   background: #eee;
 }
+.progress-bar {
+  height: 6px;
+  width: 100%;
+  background: #eee;
+  border: 1px solid var(--line);
+  border-radius: 3px;
+  overflow: hidden;
+}
+.progress-fill {
+  height: 100%;
+  background: var(--accent);
+  transition: width 0.4s ease;
+}
 .badge.state {
   background: #e5edf7;
   color: var(--accent);

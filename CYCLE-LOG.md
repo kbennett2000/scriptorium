@@ -1834,3 +1834,32 @@ given-name merge across co-occurrence, junk-never-major). docs: ADR-0019, NOTES-
 
 **Done-state.** server ruff clean + pytest green (398 passed, 5 deselected). No schema change; cast
 schema unaffected. Published #28054 frozen → owner re-makes to benefit.
+
+## M1 — Cycle 4: bake progress indicators + stall detection (2026-08-08)
+
+**Request.** During processing the admin screen showed only "Working on: … (Xm on this step)" — a
+client timer that keeps counting whether the bake is working or wedged, so a stall (the 67-minute
+"Finding the characters" case) looked identical to slow progress and Kris had to ask to have it
+checked.
+
+**Approach (additive; no schema/bundle change).** The runner writes one artifact per finished unit and
+`save()`s after each (so `updated_at` is already a per-unit heartbeat), and per-phase done/total is a
+cheap artifact count. Server: new `bake/progress.py` — `phase_progress(job,cfg)` returns
+`{units_done,units_total}` from on-disk counts keyed by state (mentions/ledger vs #pages;
+render vs #prompts; cast vs #majors; prompts vs selection plates+portraits+cover; `None` for
+resting/CPU phases; pseudo-units excluded; done clamped to total). `status_extras` adds `server_now`,
+`seconds_since_activity`, and `expecting_progress` (started AND not a resting/human-gate/parked
+state). `GET /api/admin/books/{id}` (`bake/api.py`) merges these onto `job.to_dict()`. Admin UI
+(`features/detail/BookDetail.tsx` + `api/types.ts` + `index.css`): a live "398 / 613" counter + a
+`.progress-bar`, an "updated Ns ago" readout, and a "no progress for N — may be waiting on a GPU
+service or stuck" warning banner (threshold 180s, generous so a single slow unit never trips it).
+
+**Files.** server: `bake/progress.py` (new), `bake/api.py` (get_book enrichment),
+`tests/test_bake_progress.py` (new — 15 tests). admin-ui: `features/detail/BookDetail.tsx`,
+`api/types.ts`, `index.css`.
+
+**Done-state.** server ruff clean + pytest green (413 passed, +15); admin-ui tsc + eslint clean,
+smoke test green. Also: relaunched the :8720 server as a **systemd --user service**
+(`scriptorium-server.service`) with SCRIPTORIUM_DATA + TTS_URL + IMAGEGEN_URL so it survives session
+teardown and always runs the committed code — the root cause of the "re-made but still broken" report
+was a long-lived uvicorn holding pre-fix code.

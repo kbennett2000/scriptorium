@@ -41,6 +41,10 @@ function isActive(state: JobStateName): boolean {
   return !AT_REST.includes(state);
 }
 
+// Seconds without any progress before we flag a possible stall. Generous so a single slow unit (one
+// image can take ~a minute) never trips it — only a real wedge (the 67-minute case) does.
+const STALL_SECS = 180;
+
 // Plain-language "what's happening now" for each milestone we could be working toward.
 const MILESTONE_ACTIVITY: Record<string, string> = {
   ingested: "Reading the book",
@@ -171,6 +175,13 @@ function BookDetailBody({ job, reload }: { job: Job; reload: () => void }) {
   const canReview = REVIEW_STATES.includes(job.state);
   const canPostRender = POSTRENDER_STATES.includes(job.state);
 
+  // Per-step progress + liveness (server-provided; see bake/progress.py).
+  const prog = job.progress;
+  const hasBar = !!prog && prog.units_total != null && prog.units_done != null;
+  const pct = hasBar ? Math.round((prog!.units_done! / Math.max(1, prog!.units_total!)) * 100) : 0;
+  const sinceActivity = job.seconds_since_activity ?? 0;
+  const stalled = !!job.expecting_progress && sinceActivity > STALL_SECS;
+
   return (
     <>
       <div className="spread">
@@ -187,6 +198,12 @@ function BookDetailBody({ job, reload }: { job: Job; reload: () => void }) {
         <Notice kind="warn">Waiting for a GPU service (parked from {job.prev_state}).</Notice>
       )}
       {job.state === "paused" && <Notice kind="warn">Paused (was {job.prev_state}).</Notice>}
+      {stalled && (
+        <Notice kind="warn">
+          No progress for {fmtElapsed(sinceActivity * 1000)} — it may be waiting on a GPU service or
+          stuck. Try Refresh; if it stays stuck, Pause then Resume.
+        </Notice>
+      )}
 
       {/* Phase progress */}
       <div className="panel">
@@ -197,12 +214,22 @@ function BookDetailBody({ job, reload }: { job: Job; reload: () => void }) {
           return (
             <>
               {active && activity && (
-                <p style={{ marginTop: 0, marginBottom: 10, color: "#2a5db0", fontWeight: 600 }}>
-                  ⏳ Working on: {activity}…{" "}
-                  <span className="muted" style={{ fontWeight: 400 }}>
-                    ({fmtElapsed(now - stepSince)} on this step · refreshing automatically)
-                  </span>
-                </p>
+                <>
+                  <p style={{ marginTop: 0, marginBottom: hasBar ? 6 : 10, color: "#2a5db0", fontWeight: 600 }}>
+                    ⏳ Working on: {activity}…{" "}
+                    {hasBar && <span>{prog!.units_done} / {prog!.units_total}{" "}</span>}
+                    <span className="muted" style={{ fontWeight: 400 }}>
+                      ({fmtElapsed(now - stepSince)} on this step
+                      {job.expecting_progress && ` · updated ${Math.round(sinceActivity)}s ago`}
+                      {" · refreshing automatically)"}
+                    </span>
+                  </p>
+                  {hasBar && (
+                    <div className="progress-bar" style={{ marginBottom: 10 }}>
+                      <div className="progress-fill" style={{ width: `${pct}%` }} />
+                    </div>
+                  )}
+                </>
               )}
               {job.state === "published" && (
                 <p style={{ marginTop: 0, marginBottom: 10, color: "#1c7a3a", fontWeight: 600 }}>
