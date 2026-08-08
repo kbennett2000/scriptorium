@@ -74,9 +74,11 @@ def _seed_job(cfg: Config, n_pages: int = 6, state: str = JobState.CAST_DONE) ->
     pages.mkdir(parents=True, exist_ok=True)
     for i in range(1, n_pages + 1):
         pid = f"{i:04d}"
+        # >3 words so the near-empty neutral-ledger backstop (p3_ledger) does not fire; the
+        # recording handler still recovers the id from the last token.
         (pages / f"{pid}.json").write_text(
             json.dumps({"id": pid, "seq": i, "chapter": 1,
-                        "text": f"PAGE {pid}", "word_count": 2}),
+                        "text": f"page body text {pid}", "word_count": 4}),
             encoding="utf-8",
         )
     # P3 reads canonical names from cast.json for the scene-update ``cast_names`` option.
@@ -230,14 +232,16 @@ def test_gap_rule_inherits_predecessor_and_annotates(tmp_path) -> None:
 
 @respx.mock
 def test_empty_page_gets_neutral_ledger_without_a_transform_call(tmp_path) -> None:
-    # A blank page (e.g. a section-divider page) must not be sent to the model: it would
-    # hallucinate a beat + salience that later gets illustrated. It gets a neutral ledger
-    # (salience 0.0, empty beat) so selection can never pick it.
+    # A blank OR near-empty page (e.g. a stray section-divider line that survived ingest) must
+    # not be sent to the model: it would hallucinate a beat + salience that later gets
+    # illustrated. It gets a neutral ledger (salience 0.0, empty beat) so selection can never
+    # pick it. Uses a 2-word divider line to exercise the near-empty backstop (ADR-0018), not
+    # just fully-empty text.
     cfg = _cfg(tmp_path)
     _seed_job(cfg)
     p3 = cfg.work_dir / "b" / "pages" / "0003.json"
     page = json.loads(p3.read_text("utf-8"))
-    page["text"], page["word_count"] = "", 0
+    page["text"], page["word_count"] = "Book II", 2
     p3.write_text(json.dumps(page), encoding="utf-8")
 
     calls: list[dict[str, Any]] = []

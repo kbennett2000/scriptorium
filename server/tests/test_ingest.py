@@ -137,6 +137,42 @@ def test_table_of_contents_pruned_and_part_titles_kept():
     assert all(p["word_count"] > 0 for p in paginated.pages)
 
 
+def test_nested_part_book_chapter_toc_pruned_and_labels_stacked():
+    # A nested Part>Book>Chapter book (Gutenberg's Brothers Karamazov shape) prints a DENSE
+    # table of contents (entries on consecutive lines, so the divider lines are not blank-line
+    # bracketed) and RESETS chapter numerals inside each Book. The old prune kept a TOC entry
+    # if it had ANY paragraph, so a swallowed "Book II…"/"Epilogue" line survived as a
+    # near-empty chapter → a blank front page with a nonsense picture. The prose-based rule
+    # (ADR-0018) drops every contents artifact and stacks the Part+Book labels onto each
+    # section's first real chapter.
+    from scriptorium.ingest.base import RawBook
+    from scriptorium.paginate import paginate
+
+    book = gutenberg.load(
+        SourceSpec(kind="gutenberg", gutenberg_id=28054, text=_read("pg_nested.txt"))
+    )
+    assert book.warnings == []
+    # Only the real body chapters survive (one per Book's real chapters) — not the
+    # contents-inflated count, and no prose-free survivors. The dense-TOC "Epilogue"/
+    # "Footnotes" lines (heading-shaped, no numeral) are swallowed and pruned, not chapters.
+    assert len(book.chapters) == 4
+    assert all(c.paragraphs for c in book.chapters)
+    titles = [c.title or "" for c in book.chapters]
+    # Part+Book+Chapter labels are stacked (folded) onto a section's first chapter.
+    assert any("Book II" in t for t in titles)
+    assert any(" — " in t for t in titles)
+    # Per-book numeral reset: the first chapter of a later Book still carries "Chapter I".
+    assert sum(1 for t in titles if t.rstrip(".").endswith("Chapter I")) >= 2
+
+    paginated = paginate(
+        RawBook(book_id=book.book_id, source_kind=book.source_kind,
+                chapters=book.chapters, title=book.title)
+    )
+    # Real Chapter 1 leads (no TOC front pages) and no near-empty page survives.
+    assert paginated.pages[0]["word_count"] > 6
+    assert sum(1 for p in paginated.pages if p["word_count"] <= 6) == 0
+
+
 # --- warnings ---------------------------------------------------------------
 
 def test_missing_markers_sets_boilerplate_warning():

@@ -141,11 +141,23 @@ def split_paragraphs(text: str) -> list[str]:
 
 # --- Chapter detection (DESIGN §5.1 heuristics 1–3, applied in order) -------
 
-_H1 = re.compile(r"^(CHAPTER|Chapter|BOOK|PART|CANTO)\s+([IVXLC]+|\d+)\b.*$")
+# Numbered heading. The divider keywords are matched in both ALL-CAPS and Title case so a
+# Gutenberg book that writes "Book II. An Unfortunate Gathering" (Title case) registers a
+# boundary just like "CHAPTER I". The numeral is kept UPPER-Roman/digit to avoid catching a
+# lowercase prose line ("part i was my favourite").
+_H1 = re.compile(r"^(CHAPTER|Chapter|BOOK|Book|PART|Part|CANTO|Canto)\s+([IVXLC]+|\d+)\b.*$")
 _H2 = re.compile(r"^[IVXLC]+\.?$")
 # A section divider names a Part of the work but carries no chapter numeral (e.g.
 # "Book the Second--the Golden Thread"), so the numbered heuristics never see it.
 _SECTION = re.compile(r"^(BOOK|PART|CANTO|VOLUME)\b", re.IGNORECASE)
+# Named structural sections that carry no numeral (Epilogue, Prologue, Footnotes, …). Used to
+# recognise such a line as "heading-shaped" (see _is_headingish) so a dense contents list whose
+# entries swallow an "Epilogue"/"Footnotes" line contributes no prose and is pruned as junk. It
+# is deliberately NOT a chapter boundary: making it one would re-segment existing books that end
+# in an Epilogue (e.g. pg35 The Time Machine) and drift their byte-stable pagination.
+_SECTION_WORD = re.compile(
+    r"^(EPILOGUE|PROLOGUE|FOREWORD|AFTERWORD|CONCLUSION|FOOTNOTES?)\b", re.IGNORECASE
+)
 
 
 def _headings_h1(lines: list[str]) -> list[tuple[int, str]]:
@@ -236,33 +248,75 @@ def _is_part_divider(title: str | None) -> bool:
     return bool(title) and bool(_SECTION.match(title.strip()))
 
 
+def _is_headingish(line: str) -> bool:
+    """True if ``line`` looks like a heading rather than prose.
+
+    Covers every heading shape the detectors use — numbered (``_H1``), standalone Roman
+    (``_H2``), section dividers (``_SECTION``), named sections (``_SECTION_WORD``), and the
+    ALL-CAPS-short H3 shape — so a table-of-contents entry that swallowed a lone
+    ``"Book II. …"`` / ``"Epilogue"`` line contributes **no** prose (see
+    :func:`_prose_word_count`).
+    """
+    line = line.strip()
+    if not line:
+        return False
+    if _H1.match(line) or _H2.match(line) or _SECTION.match(line) or _SECTION_WORD.match(line):
+        return True
+    # Standalone ALL-CAPS short line (the H3 shape, minus its blank-line-bracket context).
+    return len(line) <= 60 and line.upper() == line and line.lower() != line
+
+
+def _prose_word_count(paragraphs: list[str]) -> int:
+    """Count words on the non-blank, non-heading-shaped lines of ``paragraphs``.
+
+    This is the discriminator between a real chapter (has actual prose/verse) and a
+    contents-list artifact (whose only "body" is another heading-shaped line). It is
+    deliberately length-agnostic: a one-sentence chapter still has prose > 0.
+    """
+    return sum(
+        len(line.split())
+        for para in paragraphs
+        for line in para.split("\n")
+        if line.strip() and not _is_headingish(line)
+    )
+
+
+def _fold(pending: str | None, title: str | None) -> str | None:
+    """Join a pending Part/Book label with a title (either may be ``None``)."""
+    if pending and title:
+        return f"{pending} — {title}"
+    return pending or title
+
+
 def _prune_headings(chapters: list[Chapter]) -> list[Chapter]:
     """Drop table-of-contents artifacts and fold Part-divider labels into real chapters.
 
-    ``_H1`` matches every ``CHAPTER <numeral> <title>`` line, so a book that prints its
-    own table of contents (e.g. Gutenberg's *A Tale of Two Cities*) yields one *bodyless*
-    chapter per contents line — junk that later becomes a blank page and a hallucinated
-    illustration. Walk the detected chapters and:
+    ``_H1`` matches every ``CHAPTER/BOOK <numeral> <title>`` line, so a book that prints its
+    own table of contents yields a run of *bodyless* (or near-empty) chapters — one per
+    contents line — junk that later becomes a blank/near-empty page and a hallucinated
+    illustration. A dense contents list (Gutenberg's *Brothers Karamazov*) additionally lets a
+    ``"Book II. …"`` / ``"Epilogue"`` line get swallowed as the *tiny* body of a preceding
+    contents entry, so a plain "has any paragraph" test is not enough. Walk the detected
+    chapters and:
 
-    - keep every chapter that has body paragraphs, prefixing a pending Part label into
-      its title;
-    - hold a bodyless ``BOOK``/``PART``/``CANTO`` heading as a *pending* label — it
-      survives only if the very next chapter is a real one (a real divider sits just
-      before its section's first chapter; a contents-list divider is followed by more
-      bodyless lines, which clear it);
-    - drop any other bodyless heading (a contents entry / stray title) and clear pending.
+    - keep every chapter with real **prose** (``_prose_word_count > 0``), folding any pending
+      Part/Book label(s) into its title;
+    - hold a **prose-free** ``BOOK``/``PART``/``CANTO`` heading as a *pending* label, stacking
+      Part+Book (e.g. ``"PART I — Book II. …"``) — it survives only if the next chapter is a
+      real one (a real divider sits just before its section's first chapter; a contents-list
+      divider is followed by more prose-free lines, which clear it);
+    - drop any other prose-free heading (a contents entry / stray title) and clear pending.
     """
     pruned: list[Chapter] = []
     pending: str | None = None
     for ch in chapters:
-        if ch.paragraphs:
-            title = f"{pending} — {ch.title}" if pending and ch.title else (pending or ch.title)
-            pruned.append(Chapter(title=title, paragraphs=ch.paragraphs))
+        if _prose_word_count(ch.paragraphs) > 0:
+            pruned.append(Chapter(title=_fold(pending, ch.title), paragraphs=ch.paragraphs))
             pending = None
         elif _is_part_divider(ch.title):
-            pending = ch.title  # tentative: kept only if the next chapter has a body
+            pending = _fold(pending, ch.title)  # stack Part + Book; kept only before a real chapter
         else:
-            pending = None  # a bodyless contents entry / stray heading → discard
+            pending = None  # a prose-free contents entry / stray heading → discard
     return pruned
 
 

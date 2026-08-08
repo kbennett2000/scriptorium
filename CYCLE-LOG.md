@@ -1736,3 +1736,42 @@ ADR-0017.
 **Done-state.** server ruff clean + pytest green (+2). Verified end-to-end against the live Gutenberg
 #98 text (ingest→paginate: 0 empty pages, 45 chapters, part titles preserved). Published #98 is frozen
 (immutability) → **Kris will re-make the book himself** to pick up the fix; not re-baked here.
+
+## M1 fix — Cycle 1: nested Part>Book>Chapter books ingest broken (ADR-0018: prose-based TOC-junk rule) (2026-08-08)
+
+**Symptom.** Kris baked *The Brothers Karamazov* (Gutenberg #28054): unreadable. Real Chapter 1
+didn't start until ~page 14, chapters scrambled/out of order (109 of them), and the first ~13 pages
+were near-empty (word_count 1–6) — each just a `Book II. An Unfortunate Gathering` / `Epilogue` /
+`Footnotes` line — every one drawing a nonsense picture. The characters page was blank (parked in the
+junk before anyone is introduced). The ADR-0017 fix (flat *A Tale of Two Cities*) did **not** cover
+this: re-ingesting #28054 with then-current code reproduced it.
+
+**Root cause.** *Karamazov* nests Part>Book>Chapter with per-book numeral **reset** and a **dense**
+(un-blank-bracketed) printed contents list. `_section_headings` needs a blank-line bracket, so the TOC
+`Book …` lines were missed as dividers and **swallowed as a one-line "body"** of the preceding
+contents entry; ADR-0017's `_prune_headings` kept any chapter with *any* paragraph, so those
+near-empty entries survived as pages. `Epilogue`/`Footnotes` were outside the divider vocabulary.
+
+**Fix (stay flat; ingest-primary + one safety net; selection untouched).** `ingest/base.py`: a
+**prose-based junk rule** — a chapter is contents junk iff it has **zero non-heading prose**
+(`_prose_word_count`/`_is_headingish`), replacing the "has any paragraph" gate (needs no magic
+word-count; a one-sentence chapter still counts). `_H1` now matches `Book`/`Part`/`Canto` in Title
+case (numeral stays UPPER-Roman/digit). `_prune_headings` **stacks** Part+Book labels into a section's
+first real chapter (`"PART I — Book I. … — Chapter I."`). `_SECTION_WORD` (Epilogue/Prologue/Footnotes)
+is **recognition-only**, deliberately NOT a boundary — making it one re-segments pg35 (*The Time
+Machine* ends in an Epilogue) and drifts its byte-stable pagination golden. Safety net
+(`bake/phases/p3_ledger.py`): neutral-ledger guard broadened from *fully empty* to **≤3 words**
+(`_NEUTRAL_LEDGER_MAX_WORDS`), well below a real one-sentence page.
+
+**On the real #28054:** 96 chapters (was 109 scrambled), real Chapter 1 leads (669 words), **0**
+near-empty front pages (was ~13), Part/Book titles stacked as headings.
+
+**Files.** server: `ingest/base.py`, `bake/phases/p3_ledger.py`,
+`tests/fixtures/sources/pg_nested.txt` (new — dense TOC, two tiers, per-book reset, Epilogue/Footnotes),
+`tests/test_ingest.py` (+nested test), `tests/test_phases_ledger.py` (near-empty neutral-ledger +
+seed-text >3 words). docs: ADR-0018.
+
+**Done-state.** server ruff clean + pytest green (391 passed, 5 deselected). pg35 pagination golden
+unchanged (byte-stability held). Published #28054 is frozen (immutability) → **Kris will re-make the
+book himself**; not re-baked here. Cycles 2 (picture captions) and 3 (character-face de-duplication)
+follow as their own sessions.

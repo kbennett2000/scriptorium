@@ -50,6 +50,11 @@ MERGE_UNIT_ID = "merge"
 _CARRY_NOTES_MAX = 200
 _GAP_ANNOTATION = " [ledger gap]"
 
+# A page with this many words or fewer gets the neutral ledger (no model call, salience 0) —
+# a backstop for a stray divider/contents line. Kept far below a real one-sentence page so it
+# never neutralizes genuine content (e.g. "Ivan was called to give evidence." — 6 words).
+_NEUTRAL_LEDGER_MAX_WORDS = 3
+
 # A neutral, schema-valid ledger for a *leading* gap (page 1 itself failed, so there is no
 # predecessor to inherit). The page schema treats the ledger as an opaque object, so only the
 # shape matters to downstream consumers (P4 reads scene_changed / visual_salience).
@@ -175,10 +180,13 @@ class LedgerScenes:
             return
         page_ids = _page_ids(cfg, job)
         page = _read_json(_pages_dir(cfg, job) / f"{unit.id}.json")
-        if not page["text"].strip():
-            # A blank page (e.g. a section-divider page) has nothing to describe; asking the
-            # model would hallucinate a beat and salience, which would then get illustrated.
-            # Give it a neutral ledger (salience 0.0, empty beat) so it is never selected.
+        if len(page["text"].split()) <= _NEUTRAL_LEDGER_MAX_WORDS:
+            # A blank or near-empty page (e.g. a stray section-divider / contents line that
+            # survived ingest) has nothing to describe; asking the model would hallucinate a
+            # beat and salience, which would then get illustrated. Give it a neutral ledger
+            # (salience 0.0, empty beat) so it is never selected. The ingest table-of-contents
+            # pruning (ADR-0018) is the primary defense; this is a conservative backstop whose
+            # threshold stays well below any real one-sentence page.
             _write_json(ledgers_dir(cfg, job) / f"{unit.id}.json", dict(_NEUTRAL_LEDGER))
             return
         options: dict[str, Any] = {

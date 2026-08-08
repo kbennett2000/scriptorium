@@ -1,0 +1,73 @@
+The Project Gutenberg eBook of A Nested Sample
+
+Title: A Nested Sample
+
+Author: Fyodor Fixture
+
+Language: English
+
+
+*** START OF THE PROJECT GUTENBERG EBOOK A NESTED SAMPLE ***
+
+
+A NESTED SAMPLE
+
+by Fyodor Fixture
+
+
+CONTENTS
+PART I
+Book I. The History Of A Family
+Chapter I. The Opening
+Chapter II. The Argument
+Book II. An Unfortunate Gathering
+Chapter I. The Visit
+PART II
+Book III. The Sensualists
+Chapter I. The Confession
+Epilogue
+Footnotes
+
+
+PART I
+
+
+Book I. The History Of A Family
+
+
+Chapter I.
+
+The opening chapter carries a real paragraph of ordinary prose so the splitter
+has a genuine body to fold the stacked Part and Book labels into as one unit.
+
+
+Chapter II.
+
+The second chapter continues with another plain paragraph of prose that stands
+on its own and is never mistaken for a heading, a divider, or a contents entry.
+
+
+Book II. An Unfortunate Gathering
+
+
+Chapter I.
+
+The gathering begins the second book with prose of its own, its per-book chapter
+numeral reset back to one exactly as the real source repeats it in the body.
+
+
+PART II
+
+
+Book III. The Sensualists
+
+
+Chapter I.
+
+The confession opens the third book, a fresh section under a new Part, with a
+solid paragraph of prose that keeps this chapter well clear of the near-empty rule.
+
+
+*** END OF THE PROJECT GUTENBERG EBOOK A NESTED SAMPLE ***
+
+This trailing license text is outside the markers and must be stripped away cleanly.
