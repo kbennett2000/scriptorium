@@ -5,12 +5,17 @@
   "description": "Bundle manifest (manifest.json): the authoritative file list with hashes and sizes, plus the set of files a reader must download. Drives delta sync by path+sha256 (DESIGN §4.3, §4.4).",
   "type": "object",
   "additionalProperties": false,
-  "required": ["book_id", "revision", "bundle_version", "files", "reader_required", "total_bytes_reader"],
+  "required": ["book_id", "revision", "bundle_version", "content_fingerprint", "files", "reader_required", "total_bytes_reader"],
   "properties": {
     "book_id": {
       "description": "Permanent book identifier (see meta.book_id).",
       "type": "string",
       "pattern": "^(pg-[0-9]+|usr-[0-9a-f]{12})$"
+    },
+    "content_fingerprint": {
+      "description": "Lowercase hex SHA-256 over the sorted (path, sha256) file list — a single-value identity for the bundle's content. Two bundles with the same book_id and revision but different content (e.g. a delete + re-make) have different fingerprints, letting a reader detect a changed bundle without diffing every file. Additive, content-derived; does not alter any page bytes.",
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
     },
     "revision": {
       "description": "Bundle revision this manifest describes.",

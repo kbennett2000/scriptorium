@@ -73,6 +73,7 @@ class FakeDownload implements ArtsetClient {
       book_id: BOOK,
       revision: 1,
       bundle_version: 1,
+      content_fingerprint: "0".repeat(64),
       files,
       reader_required: ["images/web/**"],
       total_bytes_reader: files.reduce((s, f) => s + f.bytes, 0),

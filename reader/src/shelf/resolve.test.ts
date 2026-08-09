@@ -16,7 +16,14 @@ interface VectorCase {
 }
 
 function asManifest(m: VectorCase["manifest"]): Manifest {
-  return { book_id: "usr-000000000000", revision: 1, bundle_version: 1, total_bytes_reader: 0, ...m };
+  return {
+    book_id: "usr-000000000000",
+    revision: 1,
+    bundle_version: 1,
+    content_fingerprint: "0".repeat(64),
+    total_bytes_reader: 0,
+    ...m,
+  };
 }
 
 describe("shared -rN resolution vectors", () => {

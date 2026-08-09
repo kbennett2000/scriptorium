@@ -176,6 +176,7 @@ describe("Reader", () => {
       book_id: BOOK,
       revision: 1,
       bundle_version: 1,
+      content_fingerprint: "0".repeat(64),
       files: [{ path: plate, sha256: "0".repeat(64), bytes: 3 }],
       reader_required: ["images/web/**"],
       total_bytes_reader: 3,

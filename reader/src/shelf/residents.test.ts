@@ -14,6 +14,7 @@ function manifest(bookId: string, revision: number): Manifest {
     book_id: bookId,
     revision,
     bundle_version: 1,
+    content_fingerprint: "0".repeat(64),
     total_bytes_reader: 0,
     reader_required: ["meta.json", "pages/*"],
     files: [

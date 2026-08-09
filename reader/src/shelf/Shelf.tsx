@@ -2,7 +2,15 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { getPlatform, getStorage } from "../shell";
 import type { BookState, CheckoutProgress, LibraryEntry } from "./index";
-import { HttpLibraryClient, bookState, checkout, remove, residentEntries } from "./index";
+import {
+  HttpLibraryClient,
+  bookState,
+  checkForUpdate,
+  checkout,
+  delta,
+  remove,
+  residentEntries,
+} from "./index";
 
 // The shelf screen (DESIGN §13). Reachability-guarded library listing with Resident/Available cards,
 // download-with-progress, and remove-keeps-annotations. Deliberately minimal/dense — the designed
@@ -22,12 +30,15 @@ export function Shelf() {
   const [entries, setEntries] = useState<LibraryEntry[]>([]);
   const [states, setStates] = useState<Record<string, BookState>>({});
   const [progress, setProgress] = useState<Record<string, CheckoutProgress | undefined>>({});
+  const [updatable, setUpdatable] = useState<Record<string, boolean>>({});
   const [error, setError] = useState<string | null>(null);
 
   const refreshState = useCallback(
     async (id: string) => {
       const st = await bookState(storage, id);
       setStates((prev) => ({ ...prev, [id]: st }));
+      // A book is only "updatable" while Resident; a fresh/partial download clears the flag.
+      if (st !== "resident") setUpdatable((prev) => ({ ...prev, [id]: false }));
     },
     [storage],
   );
@@ -42,6 +53,14 @@ export function Shelf() {
       const lib = up ? await client.fetchLibrary() : await residentEntries(storage);
       setEntries(lib);
       await Promise.all(lib.map((e) => refreshState(e.id)));
+      // Online only: flag Resident books whose server content changed (e.g. a delete + re-make that
+      // reused book_id and revision). Best-effort per book — a failure never blocks the shelf.
+      if (up) {
+        const flags = await Promise.all(
+          lib.map(async (e) => [e.id, await checkForUpdate(client, storage, e.id)] as const),
+        );
+        setUpdatable(Object.fromEntries(flags));
+      }
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     }
@@ -59,6 +78,24 @@ export function Shelf() {
           platform: getPlatform(),
           onProgress: (p) => setProgress((prev) => ({ ...prev, [id]: p })),
         });
+      } catch (e) {
+        setError(e instanceof Error ? e.message : String(e));
+      } finally {
+        setProgress((prev) => ({ ...prev, [id]: undefined }));
+        await refreshState(id);
+      }
+    },
+    [client, storage, refreshState],
+  );
+
+  const update = useCallback(
+    async (id: string) => {
+      // Reuse the download-progress channel so the card shows the same "n/total" feedback. delta()
+      // re-fetches only files whose sha256 changed and prunes removed ones (no full re-download).
+      setProgress((prev) => ({ ...prev, [id]: { file: "", done: 0, total: 0 } }));
+      try {
+        await delta(client, storage, id);
+        setUpdatable((prev) => ({ ...prev, [id]: false }));
       } catch (e) {
         setError(e instanceof Error ? e.message : String(e));
       } finally {
@@ -109,21 +146,40 @@ export function Shelf() {
               </div>
               <div className="shelf-card-actions">
                 {state === "resident" ? (
-                  <>
-                    <button
-                      type="button"
-                      className="shelf-open"
-                      onClick={() => {
-                        window.location.hash = `#/read/${encodeURIComponent(e.id)}`;
-                      }}
-                    >
-                      Open
-                    </button>
-                    <span className="shelf-resident">Resident ✓</span>
-                    <button type="button" onClick={() => void removeBook(e.id)}>
-                      Remove
-                    </button>
-                  </>
+                  prog ? (
+                    <span className="shelf-progress">
+                      Updating {prog.done}/{prog.total}…
+                    </span>
+                  ) : (
+                    <>
+                      <button
+                        type="button"
+                        className="shelf-open"
+                        onClick={() => {
+                          window.location.hash = `#/read/${encodeURIComponent(e.id)}`;
+                        }}
+                      >
+                        Open
+                      </button>
+                      {updatable[e.id] ? (
+                        <>
+                          <span className="shelf-update-badge">Update available</span>
+                          <button
+                            type="button"
+                            className="shelf-update"
+                            onClick={() => void update(e.id)}
+                          >
+                            Update
+                          </button>
+                        </>
+                      ) : (
+                        <span className="shelf-resident">Resident ✓</span>
+                      )}
+                      <button type="button" onClick={() => void removeBook(e.id)}>
+                        Remove
+                      </button>
+                    </>
+                  )
                 ) : prog ? (
                   <span className="shelf-progress">
                     Downloading {prog.done}/{prog.total}…

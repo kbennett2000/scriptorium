@@ -71,6 +71,34 @@ def test_republish_same_tree_is_idempotent(tmp_path) -> None:
     assert verify_bundle(library) == []
 
 
+def test_manifest_content_fingerprint_is_derived_from_the_file_list(tmp_path) -> None:
+    """The manifest exposes a 64-hex ``content_fingerprint`` that is exactly the hash of its own
+    ``files`` list — so a reader comparing the field tracks the bundle's bytes."""
+    from scriptorium.bake.phases.p8_publish import _content_fingerprint
+
+    _cfg, _book_id, library = _published(tmp_path)
+    m = json.loads((library / "manifest.json").read_text("utf-8"))
+    fp = m["content_fingerprint"]
+    assert isinstance(fp, str) and len(fp) == 64 and all(c in "0123456789abcdef" for c in fp)
+    assert fp == _content_fingerprint(m["files"])
+
+
+def test_content_fingerprint_changes_with_content() -> None:
+    """Different file content ⇒ different fingerprint, even at the same book_id/revision — the exact
+    signal a reader needs to notice a deleted-and-re-made bundle (same identity, new content)."""
+    from scriptorium.bake.phases.p8_publish import _content_fingerprint
+
+    base = [
+        {"path": "pages/0001.json", "sha256": "a" * 64, "bytes": 10},
+        {"path": "pages/0002.json", "sha256": "b" * 64, "bytes": 20},
+    ]
+    same = [dict(base[1]), dict(base[0])]  # order must not matter (sorted internally)
+    changed = [base[0], {"path": "pages/0002.json", "sha256": "c" * 64, "bytes": 20}]
+
+    assert _content_fingerprint(base) == _content_fingerprint(same)
+    assert _content_fingerprint(base) != _content_fingerprint(changed)
+
+
 def test_post_publish_regen_is_additive_and_verifies(tmp_path) -> None:
     cfg, book_id, library = _published(tmp_path)
     job = jobmod.load(cfg, book_id)

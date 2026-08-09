@@ -19,6 +19,7 @@ function seed(): { storage: MemoryStorage; manifest: Manifest } {
     book_id: BOOK,
     revision: 2,
     bundle_version: 1,
+    content_fingerprint: "0".repeat(64),
     files: [
       { path: "structure.json", sha256: "0".repeat(64), bytes: 2 },
       { path: "images/web/plates/0001.webp", sha256: "1".repeat(64), bytes: 3 },

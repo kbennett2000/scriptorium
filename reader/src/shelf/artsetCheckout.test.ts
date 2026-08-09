@@ -55,6 +55,7 @@ async function makeSet(
     book_id: BOOK,
     revision: 1,
     bundle_version: 1,
+    content_fingerprint: "0".repeat(64),
     files: manifestFiles,
     reader_required: ["images/web/**", "images/thumbs/**"],
     total_bytes_reader: manifestFiles.reduce((s, f) => s + f.bytes, 0),

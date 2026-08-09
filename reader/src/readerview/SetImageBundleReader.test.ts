@@ -41,6 +41,7 @@ async function setManifest(files: Record<string, Uint8Array>): Promise<Manifest>
     book_id: BOOK,
     revision: 1,
     bundle_version: 1,
+    content_fingerprint: "0".repeat(64),
     files: entries,
     reader_required: ["images/web/**", "images/thumbs/**"],
     total_bytes_reader: entries.reduce((s, f) => s + f.bytes, 0),

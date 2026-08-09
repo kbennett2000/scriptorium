@@ -114,11 +114,23 @@ def build_manifest(bundle_dir: Path, book_id: str, revision: int) -> dict:
     total_reader = sum(f["bytes"] for f in files if _matches_any(f["path"], READER_REQUIRED))
     doc = {
         "book_id": book_id, "revision": revision, "bundle_version": 1,
+        "content_fingerprint": _content_fingerprint(files),
         "files": files, "reader_required": list(READER_REQUIRED),
         "total_bytes_reader": total_reader,
     }
     schemas.validate("manifest", doc)
     return doc
+
+
+def _content_fingerprint(files: list[dict]) -> str:
+    """A single SHA-256 identity for the bundle content: hash of the sorted ``path\\0sha256`` list.
+
+    Derived purely from the file list, so it differs whenever any file's bytes change — even when
+    ``book_id`` and ``revision`` collide (a delete + re-make restarts revision at 1). Lets a reader
+    detect a changed bundle by comparing one field instead of diffing every file.
+    """
+    lines = sorted(f"{f['path']}\0{f['sha256']}" for f in files)
+    return hashlib.sha256("\n".join(lines).encode("utf-8")).hexdigest()
 
 
 # --- meta.json (DESIGN §4.3, ADR-0003) --------------------------------------

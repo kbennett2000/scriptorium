@@ -4,9 +4,15 @@ import type { Manifest } from "@scriptorium/shared";
 
 import { MemoryStorage } from "../shell/memory";
 import type { LibraryClient, LibraryEntry } from "./client";
-import { bookState, checkout, delta, remove, sha256Hex } from "./checkout";
+import { bookState, checkForUpdate, checkout, delta, remove, sha256Hex } from "./checkout";
 
 const BOOK = "usr-000000000000";
+
+/** Mirror the server's manifest fingerprint: SHA-256 of the sorted `path\0sha256` list. */
+async function contentFingerprint(files: Manifest["files"]): Promise<string> {
+  const lines = files.map((f) => `${f.path}\0${f.sha256}`).sort();
+  return sha256Hex(new TextEncoder().encode(lines.join("\n")));
+}
 
 // A fake library server backed by an in-memory bundle. Counts fetches per path and can corrupt a
 // path's bytes (transiently or permanently) so the checkout's verify/retry/resume paths are testable.
@@ -58,6 +64,7 @@ async function makeBundle(
     book_id: BOOK,
     revision,
     bundle_version: 1,
+    content_fingerprint: await contentFingerprint(manifestFiles),
     files: manifestFiles,
     reader_required: ["meta.json", "pages/*", "images/web/**", "images/thumbs/**"],
     total_bytes_reader: manifestFiles.reduce((s, f) => s + f.bytes, 0),
@@ -148,6 +155,34 @@ describe("checkout", () => {
     expect(await storage.exists(`books/${BOOK}/images/thumbs/plates/0001.webp`)).toBe(false);
     const local = JSON.parse(await storage.readText(`books/${BOOK}/manifest.local.json`));
     expect(local.revision).toBe(2);
+  });
+
+  it("checkForUpdate flags a re-made bundle with the SAME revision but changed content", async () => {
+    // The exact failure that shipped stale: a book deleted + re-made keeps book_id AND revision 1,
+    // so a revision check sees no change. The content fingerprint differs, so checkForUpdate catches it.
+    const v1 = await makeBundle(bundleFiles(), 1);
+    const client = new FakeClient(v1.manifest, v1.bytesByPath);
+    await checkout(client, storage, BOOK);
+    expect(await checkForUpdate(client, storage, BOOK)).toBe(false); // in sync
+
+    const remade = bundleFiles();
+    remade["pages/0001.json"] = new TextEncoder().encode('{"id":"0001","content":"different"}');
+    const v1b = await makeBundle(remade, 1); // NOTE: revision still 1
+    client.setBundle(v1b.manifest, v1b.bytesByPath);
+
+    expect(v1b.manifest.revision).toBe(1);
+    expect(v1b.manifest.content_fingerprint).not.toBe(v1.manifest.content_fingerprint);
+    expect(await checkForUpdate(client, storage, BOOK)).toBe(true); // update detected despite same rev
+
+    // Applying the update (delta) brings the content current and clears the flag.
+    await delta(client, storage, BOOK);
+    expect(await checkForUpdate(client, storage, BOOK)).toBe(false);
+  });
+
+  it("checkForUpdate is false for a book that isn't resident", async () => {
+    const { manifest, bytesByPath } = await makeBundle(bundleFiles());
+    const client = new FakeClient(manifest, bytesByPath);
+    expect(await checkForUpdate(client, storage, BOOK)).toBe(false); // nothing downloaded yet
   });
 
   it("remove deletes the book but keeps annotations", async () => {

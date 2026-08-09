@@ -174,6 +174,30 @@ export async function residentEntries(storage: Storage): Promise<LibraryEntry[]>
   return entries;
 }
 
+/**
+ * Cheap online check: does the server hold different content for this Resident book than what's
+ * downloaded? Compares the single `content_fingerprint` field of the server vs local manifest — no
+ * per-file diff, one small manifest GET. Catches the case a plain revision check misses: a book
+ * deleted and re-made keeps `book_id` and restarts `revision` at 1, yet its fingerprint changes with
+ * the content. Returns false when not Resident, when the server is unreachable, or when the
+ * fingerprints match (nothing to do). A local manifest predating fingerprints has none, so any
+ * server fingerprint reads as "update available" — the safe direction.
+ */
+export async function checkForUpdate(
+  client: LibraryClient,
+  storage: Storage,
+  bookId: string,
+): Promise<boolean> {
+  const local = await readLocalManifest(storage, bookId);
+  if (!local) return false; // not Resident — Download, not Update
+  try {
+    const server = await client.fetchManifest(bookId);
+    return server.content_fingerprint !== local.content_fingerprint;
+  } catch {
+    return false; // offline / server hiccup — never surface a false update prompt
+  }
+}
+
 export interface DeltaResult {
   fetched: string[];
   pruned: string[];

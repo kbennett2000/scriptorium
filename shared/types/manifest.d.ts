@@ -13,6 +13,10 @@ export interface Manifest {
    */
   book_id: string;
   /**
+   * Lowercase hex SHA-256 over the sorted (path, sha256) file list — a single-value identity for the bundle's content. Two bundles with the same book_id and revision but different content (e.g. a delete + re-make) have different fingerprints, letting a reader detect a changed bundle without diffing every file. Additive, content-derived; does not alter any page bytes.
+   */
+  content_fingerprint: string;
+  /**
    * Bundle revision this manifest describes.
    */
   revision: number;

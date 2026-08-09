@@ -114,6 +114,15 @@ body {
   font-size: 0.85rem;
   color: #0a7d33;
 }
+.shelf-update-badge {
+  font-size: 0.85rem;
+  color: #a35a00;
+  font-weight: 600;
+}
+.shelf-update {
+  background: #a35a00;
+  color: #fff;
+}
 
 /* Reading surface (R1b) — minimal/dense; the designed skin (typography, themes) lands in R4. */
 .app-reading {

@@ -1901,3 +1901,46 @@ a few sample plates before committing the full batch, instead of a wall of raw p
 
 **Done-state.** server ruff clean + pytest green (416 passed, +3); admin-ui tsc + eslint clean, smoke
 green. Both flags default off → default behavior byte-identical; the running box opts in.
+
+---
+
+## M1 · Cycle 6 — reader detects a re-made book (ADR-0021)
+
+**Bug (the one that burned a day).** After the pipeline fixes, Kris deleted + re-made *The Brothers
+Karamazov*. The **fixed 600-page bundle on disk was correct** (verified by reading files: page 1 =
+real Chapter 1; `plates/0006.png` = the widow/Fyodor room scene matching its beat; `plates/0015.png`
+= young Alyosha in a field matching its beat). But the **reader kept serving the OLD broken 613-page
+bundle** — wrong first page, caption≠picture — because it never noticed the book had changed.
+
+**Root cause.** (a) Server: `revision` is read only from `library/{id}/meta.json`, which delete
+purges, so a delete + re-make restarts at `revision 1` — same `(book_id, revision)` as the old
+bundle. (b) Reader: cache keyed on `book_id` alone; residency is a local existence check that never
+reconciles with the server; the hash-based `delta()` reconciler existed but had **zero callers**.
+Manifest had only per-file `sha256`, no cheap single value to compare, and `revision` collided.
+
+**Fix.**
+- Server: manifest gains **`content_fingerprint`** = SHA-256 of the sorted `path\0sha256` file list
+  (`p8_publish._content_fingerprint`, emitted by `build_manifest`). Pure function of the files, so it
+  differs on any content change even when `book_id`+`revision` collide. Schema + regenerated TS types.
+- Reader: new `checkForUpdate()` (one manifest GET, compares the fingerprint) flags Resident books
+  whose server content changed; the Shelf shows **"Update available"** and an **Update** button that
+  runs the now-wired `delta()` (fetch only changed files by sha256, prune removed). All in `shelf/`
+  → zero-online read path preserved (ESLint fence intact).
+
+**Immediate recovery (no code).** Remove + Download the book in the reader forces a fresh checkout of
+the corrected bundle — the stopgap Kris used while this shipped.
+
+**Files.** shared: `schemas/manifest.schema.json`, regenerated `types/manifest.d.ts`. server:
+`bake/phases/p8_publish.py`, `tests/test_publish.py`, fixtures `tests/fixtures/bundle/manifest.json`
++ `tests/fixtures/schemas/manifest.valid.json` (fingerprint added), `docs/adr/0021-bundle-content-fingerprint.md` (new).
+reader: `shelf/checkout.ts` (+`checkForUpdate`, wired `delta`), `shelf/index.ts`, `shelf/Shelf.tsx`,
+`index.css`, `shelf/checkout.test.ts` (+ same-revision regression) and 7 test helpers updated for the
+new required field.
+
+**Done-state.** server ruff clean + pytest green (418 passed, +2); reader tsc + eslint clean, vitest
+175 passed; schemas↔types deterministic (only `content_fingerprint` added). No page bytes changed;
+immutability + byte-stability + read-path invariants intact.
+
+**Not built (still deferred, needs go-ahead).** The meaningful/optional review gate with **sample
+renders** before committing all plates — tonight is evidence it's worth doing, but it is a separate
+cycle and was not the cause of what Kris saw.

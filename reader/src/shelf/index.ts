@@ -5,7 +5,15 @@
 export type { LibraryClient, LibraryEntry } from "./client";
 export { ApiError, HttpLibraryClient } from "./client";
 export type { BookState, CheckoutOptions, CheckoutProgress, DeltaResult } from "./checkout";
-export { bookState, checkout, delta, remove, residentEntries, sha256Hex } from "./checkout";
+export {
+  bookState,
+  checkForUpdate,
+  checkout,
+  delta,
+  remove,
+  residentEntries,
+  sha256Hex,
+} from "./checkout";
 export type {
   ArtsetClient,
   ArtsetCheckoutOptions,
