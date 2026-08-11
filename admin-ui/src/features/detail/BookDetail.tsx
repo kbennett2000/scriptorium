@@ -28,10 +28,13 @@ const MILESTONES: { state: JobStateName; label: string }[] = [
 const CHAIN_ORDER: JobStateName[] = [
   "created", "ingested", "mentions_running", "mentions_done", "cast_running", "cast_done",
   "ledger_running", "ledger_done", "selected", "prompts_running", "prompts_draft", "in_review",
-  "approved", "rendering", "rendered", "published",
+  "approved", "portraits_rendering", "portraits_review", "rendering", "rendered", "published",
 ];
 
 const REVIEW_STATES: JobStateName[] = ["prompts_draft", "in_review", "approved"];
+// Optional portrait gate (ADR-0025): the "Review portraits" screen is reachable while portraits
+// draw and while the job rests at the gate.
+const PORTRAIT_STATES: JobStateName[] = ["portraits_rendering", "portraits_review"];
 const POSTRENDER_STATES: JobStateName[] = ["rendering", "rendered", "published"];
 
 // States where the bake is not moving on its own: done, dead, or held. Everything else is "active"
@@ -173,6 +176,7 @@ function BookDetailBody({ job, reload }: { job: Job; reload: () => void }) {
 
   const promptWarningPages = Object.keys(job.prompt_warnings);
   const canReview = REVIEW_STATES.includes(job.state);
+  const canPortraits = PORTRAIT_STATES.includes(job.state);
   const canPostRender = POSTRENDER_STATES.includes(job.state);
 
   // Per-step progress + liveness (server-provided; see bake/progress.py).
@@ -313,6 +317,14 @@ function BookDetailBody({ job, reload }: { job: Job; reload: () => void }) {
           {canReview && (
             <button className="primary" onClick={() => navigate({ name: "review", id: job.book_id })}>
               Open Review
+            </button>
+          )}
+          {canPortraits && (
+            <button
+              className={job.state === "portraits_review" ? "primary" : undefined}
+              onClick={() => navigate({ name: "portraits", id: job.book_id })}
+            >
+              {job.state === "portraits_review" ? "Review portraits" : "Portraits…"}
             </button>
           )}
           {canPostRender && (

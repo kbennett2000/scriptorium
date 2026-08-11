@@ -24,6 +24,8 @@ export type JobStateName =
   | "prompts_draft"
   | "in_review"
   | "approved"
+  | "portraits_rendering"
+  | "portraits_review"
   | "rendering"
   | "rendered"
   | "published"
@@ -115,6 +117,9 @@ export interface CreateBookBody {
     images_per_scene: number;
     era?: string | null;
     portraits_enabled: boolean;
+    // Optional portrait-review gate (ADR-0025): pause after portraits render so the owner can
+    // eyeball / edit / regenerate each one before the rest of the book draws.
+    portrait_review: boolean;
     title?: string | null;
     author?: string | null;
   };

@@ -217,6 +217,37 @@ def eligible_portraits(cast_doc: dict) -> list[dict]:
     ]
 
 
+def rederive_portrait_prompt(cfg: Any, job: Job, slug: str) -> bool:
+    """Re-assemble a portrait's ``derived.prompt`` from the current cast description (ADR-0025).
+
+    Used when a human edits a character's ``visual_description``/``one_line`` at the portrait gate:
+    the auto-assembled prompt is recomputed so a subsequent regenerate reflects the edit. A manual
+    ``edited_prompt`` override (set via the prompt lever) still wins for ``final_subject_prompt`` —
+    explicit prompt edits take precedence over description-derived ones until reverted. Returns True
+    if a portrait prompt file existed and was rewritten, False otherwise (no-op — not a portrait, or
+    no description yet).
+    """
+    path = _prompts_dir(cfg, job) / f"{PORTRAIT_PREFIX}{slug}.json"
+    if not path.is_file():
+        return False
+    char = next(
+        (c for c in _load_cast(cfg, job).get("characters", []) if c.get("slug") == slug),
+        None,
+    )
+    if char is None or not char.get("visual_description"):
+        return False
+    style = get_style(job.bake_config["style_id"])
+    doc = _read_json(path)
+    prompt = assemble_portrait(style, char["one_line"], char["visual_description"])
+    doc["derived"] = {"prompt": prompt}
+    doc["final_subject_prompt"] = (
+        doc["edited_prompt"] if doc.get("edited_prompt") is not None else prompt
+    )
+    schemas.validate("prompt", doc)
+    _write_json(path, doc)
+    return True
+
+
 def _draft(page_id: str, prompt: str, derived: dict | None = None) -> dict:
     """A draft prompt record (P5): ``derived`` verbatim, no edit, computed final subject."""
     return {

@@ -30,12 +30,16 @@ LEGAL = [
     (JobState.CAST_DONE, JobState.LEDGER_RUNNING),
     (JobState.LEDGER_DONE, JobState.SELECTED),
     (JobState.PROMPTS_DRAFT, JobState.IN_REVIEW),
-    (JobState.APPROVED, JobState.RENDERING),
+    # Optional portrait gate (ADR-0025): approved → portraits render → portraits_review → render.
+    (JobState.APPROVED, JobState.PORTRAITS_RENDERING),
+    (JobState.PORTRAITS_RENDERING, JobState.PORTRAITS_REVIEW),
+    (JobState.PORTRAITS_REVIEW, JobState.RENDERING),
     (JobState.RENDERING, JobState.RENDERED),  # S10a: P7 render then publish
     (JobState.RENDERED, JobState.PUBLISHED),
     # cross-cutting
     (JobState.MENTIONS_RUNNING, JobState.WAITING_GPU),
     (JobState.CAST_RUNNING, JobState.WAITING_GPU),  # P2 canonicalize parks (S5 deviation)
+    (JobState.PORTRAITS_RENDERING, JobState.WAITING_GPU),  # portrait render is a GPU phase
     (JobState.RENDERING, JobState.WAITING_GPU),
     (JobState.INGESTED, JobState.PAUSED),
     (JobState.RENDERING, JobState.FAILED),
@@ -43,6 +47,7 @@ LEGAL = [
 
 ILLEGAL = [
     (JobState.CREATED, JobState.PUBLISHED),
+    (JobState.APPROVED, JobState.RENDERING),  # must pass through the portrait gate (ADR-0025)
     (JobState.INGESTED, JobState.RENDERING),
     (JobState.INGESTED, JobState.WAITING_GPU),  # not a GPU phase
     (JobState.PUBLISHED, JobState.INGESTED),  # terminal

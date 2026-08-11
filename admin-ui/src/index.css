@@ -327,6 +327,59 @@ tbody tr:hover {
   background: #eee;
 }
 
+/* --- wizard sub-option (a nested toggle under its parent option) --- */
+.wizard-suboption {
+  display: block;
+  margin-top: 8px;
+  margin-left: 22px;
+  font-size: 13px;
+  color: var(--muted, #555);
+}
+
+/* --- portrait review gate (ADR-0025) --- */
+.portrait-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: 16px;
+  margin-top: 12px;
+}
+.portrait-card {
+  display: flex;
+  gap: 12px;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  padding: 12px;
+  background: #fff;
+}
+.portrait-img {
+  width: 140px;
+  height: 140px;
+  object-fit: cover;
+  border: 1px solid var(--line);
+  background: #eee;
+  flex: 0 0 auto;
+}
+.portrait-meta {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.portrait-name {
+  font-weight: 600;
+  margin-bottom: 6px;
+}
+.portrait-label {
+  display: block;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--muted, #555);
+  margin-top: 8px;
+  margin-bottom: 2px;
+}
+.portrait-meta textarea {
+  width: 100%;
+  font-size: 12px;
+}
+
 .dialog-backdrop {
   position: fixed;
   inset: 0;

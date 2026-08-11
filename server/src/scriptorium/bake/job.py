@@ -40,6 +40,12 @@ class JobState:
     PROMPTS_DRAFT = "prompts_draft"
     IN_REVIEW = "in_review"
     APPROVED = "approved"
+    # Optional portrait-review gate (ADR-0025). Portraits render first in their own GPU phase, then
+    # the job rests at PORTRAITS_REVIEW for a human to eyeball/regenerate each portrait — but only
+    # when the per-book ``portrait_review`` bake flag is set (else the runner auto-advances). Sits
+    # between APPROVED and RENDERING so the approved portraits seed the page plates that follow.
+    PORTRAITS_RENDERING = "portraits_rendering"
+    PORTRAITS_REVIEW = "portraits_review"
     RENDERING = "rendering"
     RENDERED = "rendered"
     PUBLISHED = "published"
@@ -71,6 +77,8 @@ _CHAIN: tuple[str, ...] = (
     JobState.PROMPTS_DRAFT,
     JobState.IN_REVIEW,
     JobState.APPROVED,
+    JobState.PORTRAITS_RENDERING,
+    JobState.PORTRAITS_REVIEW,
     JobState.RENDERING,
     JobState.RENDERED,
     JobState.PUBLISHED,
@@ -84,6 +92,7 @@ GPU_STATES: frozenset[str] = frozenset(
         JobState.CAST_RUNNING,
         JobState.LEDGER_RUNNING,
         JobState.PROMPTS_RUNNING,
+        JobState.PORTRAITS_RENDERING,
         JobState.RENDERING,
         JobState.SET_RENDERING,
     }

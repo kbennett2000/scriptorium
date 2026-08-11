@@ -28,7 +28,7 @@ from .bake.phases.p2_cast import CastCanonicalize, CastReduce
 from .bake.phases.p3_ledger import LedgerEnter, LedgerScenes
 from .bake.phases.p4_select import P4Select
 from .bake.phases.p5_prompts import PromptsDerive, PromptsEnter
-from .bake.phases.p7_render import Render, RenderEnter
+from .bake.phases.p7_render import PortraitRender, PortraitRenderEnter, Render
 from .bake.phases.p8_publish import Publish
 from .bake.review_api import router as review_router
 from .bake.runner import Runner
@@ -38,15 +38,17 @@ from .sync.api import router as sync_router
 
 # The bake pipeline, keyed by ``from_state`` inside the runner. S5 registered P1 (mentions)
 # and P2 (reduce + canonicalize); S6 appends P3 (scene ledger); S7 appends P4 (selection);
-# S8 appends P5 (prompt derivation); S10a appends the real P7 (``RenderEnter`` + ``Render``); S10b
+# S8 appends P5 (prompt derivation); S10a appends the real P7 render; S10b
 # appends P8 (``Publish``). ``MentionsEnter`` / ``CastReduce`` / ``LedgerEnter`` / ``PromptsEnter``
-# / ``RenderEnter`` are the CPU steps that move a job onto the ``*_running``/``rendering`` GPU
-# states P1/P2b/P3/P5/P7 sit on; ``P4Select`` and ``Publish`` are the pure rest-to-rest CPU phases
-# (``ledger_done -> selected`` and ``rendered -> published``), so they need no such enter step. A
-# job rests at ``prompts_draft`` for human review; the review gate's ``approve`` (S9a) advances it
-# to ``approved``, then P7 unloads TTS and renders every approved plate with the real imagegen
-# client, resting at ``rendered``; P8 assembles the immutable ``library/{id}`` bundle and rests at
-# ``published`` (terminal).
+# / ``PortraitRenderEnter`` are the CPU steps that move a job onto the ``*_running``/``*_rendering``
+# GPU states P1/P2b/P3/P5/P7 sit on; ``P4Select`` and ``Publish`` are the pure rest-to-rest CPU
+# phases (``ledger_done -> selected`` and ``rendered -> published``), so they need no such enter
+# step. A job rests at ``prompts_draft`` for human review; the review gate's ``approve`` (S9a)
+# advances it to ``approved``, then render runs in two phases: ``PortraitRender`` draws the
+# portraits and rests at ``portraits_review`` for the optional portrait gate (ADR-0025 —
+# auto-advances when the per-book flag is off), then ``Render`` draws the cover + page plates,
+# resting at ``rendered``; P8
+# assembles the immutable ``library/{id}`` bundle and rests at ``published`` (terminal).
 BAKE_PIPELINE = [
     MentionsEnter(),
     CastMentions(),
@@ -57,7 +59,8 @@ BAKE_PIPELINE = [
     P4Select(),
     PromptsEnter(),
     PromptsDerive(),
-    RenderEnter(),
+    PortraitRenderEnter(),
+    PortraitRender(),
     Render(),
     Publish(),
     # Per-user picture-set render (ADR-0014) — a side lifecycle on the same single worker; its

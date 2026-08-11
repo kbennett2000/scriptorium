@@ -226,3 +226,86 @@ def test_approve_409_from_wrong_state(client, tmp_path) -> None:
     client.post(f"/api/admin/books/{book_id}/approve")
     # Already approved → cannot approve again.
     assert client.post(f"/api/admin/books/{book_id}/approve").status_code == 409
+
+
+# --- optional portrait-review gate (ADR-0025) -------------------------------
+
+_PNG = bytes.fromhex("89504e470d0a1a0a") + b"fake-portrait-bytes"
+
+
+def _seed_portrait_gate(client: TestClient, tmp_path: Path) -> str:
+    """Seed a book, render a portrait PNG, and park it at ``portraits_review``."""
+    book_id = _seed_review(client, tmp_path)
+    work = tmp_path / "work" / book_id
+    portraits = work / "images" / "portraits"
+    portraits.mkdir(parents=True, exist_ok=True)
+    (portraits / "the-keeper.png").write_bytes(_PNG)
+    cfg = load_config()
+    job = jobmod.load(cfg, book_id)
+    job.state = "portraits_review"
+    job.save(cfg)
+    return book_id
+
+
+def test_portrait_gate_serves_portrait_image(client, tmp_path) -> None:
+    book_id = _seed_portrait_gate(client, tmp_path)
+    r = client.get(f"/api/admin/books/{book_id}/plate-image/portrait-the-keeper.png")
+    assert r.status_code == 200, r.text
+    assert r.headers["content-type"] == "image/png"
+    assert r.content == _PNG
+
+
+def test_portrait_gate_allows_prompt_edit(client, tmp_path) -> None:
+    book_id = _seed_portrait_gate(client, tmp_path)
+    r = client.put(f"/api/admin/books/{book_id}/review/prompt/portrait-the-keeper",
+                   json={"edited_prompt": "a kindlier, younger lamplighter"})
+    assert r.status_code == 200, r.text
+    assert r.json()["final_subject_prompt"] == "a kindlier, younger lamplighter"
+
+
+def test_portrait_gate_description_edit_rederives_portrait_prompt(client, tmp_path) -> None:
+    # The "edit description" lever: editing visual_description re-assembles the portrait prompt so a
+    # later regenerate reflects it (final_subject_prompt updates when no manual prompt override).
+    book_id = _seed_portrait_gate(client, tmp_path)
+    r = client.put(f"/api/admin/books/{book_id}/review/cast/the-keeper",
+                   json={"visual_description": "a young clean-shaven lamplighter in a red coat"})
+    assert r.status_code == 200, r.text
+    doc = json.loads(
+        (tmp_path / "work" / book_id / "prompts" / "portrait-the-keeper.json").read_text("utf-8"))
+    assert "red coat" in doc["final_subject_prompt"]
+    assert "red coat" in doc["derived"]["prompt"]
+
+
+def test_portrait_gate_prompt_override_wins_over_description_edit(client, tmp_path) -> None:
+    # A manual prompt edit takes precedence: a later description edit updates `derived` but not the
+    # `final_subject_prompt` still pinned to the manual override.
+    book_id = _seed_portrait_gate(client, tmp_path)
+    client.put(f"/api/admin/books/{book_id}/review/prompt/portrait-the-keeper",
+               json={"edited_prompt": "MANUAL: an imposing hooded figure"})
+    client.put(f"/api/admin/books/{book_id}/review/cast/the-keeper",
+               json={"visual_description": "a young clean-shaven lamplighter in a red coat"})
+    doc = json.loads(
+        (tmp_path / "work" / book_id / "prompts" / "portrait-the-keeper.json").read_text("utf-8"))
+    assert doc["final_subject_prompt"] == "MANUAL: an imposing hooded figure"
+    assert "red coat" in doc["derived"]["prompt"]  # description still fed the auto-derived prompt
+
+
+def test_portrait_gate_allows_single_regen(client, tmp_path, monkeypatch) -> None:
+    from scriptorium.render.imagegen import FakeImagegen
+    monkeypatch.setattr(
+        "scriptorium.bake.review_api._imagegen_client", lambda _cfg: FakeImagegen())
+    book_id = _seed_portrait_gate(client, tmp_path)
+    r = client.post(f"/api/admin/books/{book_id}/plates/portrait-the-keeper/regen")
+    assert r.status_code == 200, r.text  # gate allows regen at portraits_review (not 409)
+
+
+def test_approve_portraits_advances_to_rendering(client, tmp_path) -> None:
+    book_id = _seed_portrait_gate(client, tmp_path)
+    r = client.post(f"/api/admin/books/{book_id}/approve-portraits")
+    assert r.status_code == 200, r.text
+    assert r.json()["state"] == "rendering"
+
+
+def test_approve_portraits_409_from_wrong_state(client, tmp_path) -> None:
+    book_id = _seed_review(client, tmp_path)  # still at prompts_draft, not the portrait gate
+    assert client.post(f"/api/admin/books/{book_id}/approve-portraits").status_code == 409

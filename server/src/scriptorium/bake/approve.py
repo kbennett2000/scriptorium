@@ -72,3 +72,17 @@ def approve_job(cfg: Config, job: Job) -> None:
         job.transition(JobState.IN_REVIEW)  # transient waypoint (see CYCLE-LOG S9a)
     job.transition(JobState.APPROVED)
     job.save(cfg)
+
+
+def approve_portraits(cfg: Config, job: Job) -> None:
+    """Advance the optional portrait gate ``portraits_review -> rendering`` (ADR-0025).
+
+    The human has eyeballed (and possibly edited/regenerated) the portraits; approving lets the
+    page plates draw, seeded by the now-approved portrait PNGs. Unlike :func:`approve_job` there is
+    no missing-artifact guard — the portraits already rendered to reach this state. Raises
+    :class:`ValueError` (mapped to 409) if the job is not parked at the portrait gate.
+    """
+    if job.state != JobState.PORTRAITS_REVIEW:
+        raise ValueError(f"cannot approve portraits from {job.state}")
+    job.transition(JobState.RENDERING)
+    job.save(cfg)

@@ -24,7 +24,7 @@ from PIL import Image
 from scriptorium import schemas
 from scriptorium.bake import job as jobmod
 from scriptorium.bake.job import Job, JobState
-from scriptorium.bake.phases.p7_render import Render, RenderEnter
+from scriptorium.bake.phases.p7_render import PortraitRender, PortraitRenderEnter, Render
 from scriptorium.bake.runner import Runner
 from scriptorium.config import load_config
 
@@ -69,7 +69,7 @@ def test_live_render_two_plates(tmp_path, monkeypatch) -> None:
         bake_config={"style_id": "engraving", "density_preset": "classic",
                      "author": "H. G. Wells"}).save(cfg)
 
-    runner = Runner(cfg, [RenderEnter(), Render()])
+    runner = Runner(cfg, [PortraitRenderEnter(), PortraitRender(), Render()])
     for _ in range(60):
         asyncio.run(runner.tick())
         job = jobmod.load(cfg, "live")

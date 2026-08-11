@@ -67,6 +67,10 @@ class BakeBody(BaseModel):
     images_per_scene: int = Field(default=1, ge=1)
     era: str | None = None
     portraits_enabled: bool = True
+    # Optional portrait-review gate (ADR-0025): when true, the bake pauses at ``portraits_review``
+    # after the portraits render so a human can eyeball / edit / regenerate each one before the rest
+    # of the book draws. Overrides unattended AUTO_APPROVE for that single stop. Off by default.
+    portrait_review: bool = False
     title: str | None = None
     author: str | None = None
 

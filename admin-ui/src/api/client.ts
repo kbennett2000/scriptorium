@@ -115,6 +115,11 @@ export const editCast = (
 
 export const approve = (id: string) => request<Job>("POST", `/books/${id}/approve`);
 
+// Approve the optional portrait gate (ADR-0025): advance portraits_review -> rendering so the page
+// plates draw, seeded by the now-approved portraits.
+export const approvePortraits = (id: string) =>
+  request<Job>("POST", `/books/${id}/approve-portraits`);
+
 export const reselect = (id: string, densityPreset: DensityPreset) =>
   request<Selection>("POST", `/books/${id}/reselect`, { density_preset: densityPreset });
 

@@ -2023,3 +2023,41 @@ output so the 500 never happens; this cycle is the belt (survive a transient 5xx
 
 **Done-state.** server ruff clean, pytest 425 (+3). No page bytes changed; only the exception a
 non-2xx TTS status maps to.
+
+---
+
+## M1 · Cycle 10 — optional portrait-review gate (ADR-0025)
+
+**Why.** Portraits seed every illustration (ADR-0023), but they rendered inside the post-approval pass
+with no chance to look first — a wrong portrait silently seeded hundreds of pages. Kris wanted an
+optional stop: render all portraits, pause, eyeball/edit/regenerate each until happy, then draw the
+book from the approved portraits. Decisions (asked): edit lever = **both** prompt and description;
+during the stop = **wait for me** (hard stop, overriding unattended AUTO_APPROVE for this one gate).
+
+**Shipped (server).**
+- New states `portraits_rendering` (GPU) + `portraits_review` (resting), spliced into `_CHAIN`
+  between `approved` and `rendering` (transitions auto-derive). Per-book `bake_config.portrait_review`
+  flag (`BakeBody`, default false).
+- `p7_render.py`: the single render split into `PortraitRenderEnter` → `PortraitRender`
+  (portrait-only) → `Render` (cover + pages), sharing a new `_ImagegenPhase` base. `unit_done` skips
+  already-drawn portraits, so no double-render and full resumability.
+- `runner.py`: at `portraits_review`, rest for a human iff the per-book flag is set, else auto-advance
+  to `rendering` (same tick) — keyed on the flag, not global `auto_approve`.
+- `review_api.py` (reuses machinery that already spoke `portrait-{slug}`): `edit_prompt`/`edit_cast`
+  allowed at the gate; description edits re-derive the portrait prompt (`rederive_portrait_prompt`,
+  respecting a manual prompt override); `regen_plate` allowed at the gate; `plate_image` serves
+  `images/portraits/`; new `POST /approve-portraits` (`approve_portraits`). `progress.py`:
+  `portraits_review` is not-expecting-progress; `portraits_rendering` gets a portrait-count bar.
+
+**Shipped (admin-ui).** New-book wizard "pause to review portraits" sub-toggle; `PortraitReview`
+screen (image + editable prompt + editable description + per-portrait regenerate + approve); new
+`portraits` hash route + `App` dispatch; `BookDetail` state-gated "Review portraits" button and the
+two new states in the progress chain; `approvePortraits` client fn; new `JobStateName`s +
+`CreateBookBody.bake.portrait_review`.
+
+**Invariants.** Toggle-off is byte-identical (only phase boundaries move; offline P0→P8 golden
+bundles unchanged). Portrait regen overwrites the work-tree PNG pre-publish; no published bytes
+mutate. Gate is after approval, before pages — adds a gate, never a bypass.
+
+**Done-state.** server ruff clean, pytest **439** (+10, incl. new portrait-gate phase/endpoint tests);
+admin-ui tsc + eslint clean, vite build OK. No schema change → `shared/types` untouched. ADR-0025.

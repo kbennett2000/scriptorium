@@ -21,7 +21,7 @@ from PIL import Image
 
 from scriptorium.bake import job as jobmod
 from scriptorium.bake.job import Job, JobState
-from scriptorium.bake.phases.p7_render import Render, RenderEnter
+from scriptorium.bake.phases.p7_render import PortraitRender, PortraitRenderEnter, Render
 from scriptorium.bake.runner import Runner
 from scriptorium.config import Config
 from scriptorium.render.imagegen import FakeImagegen
@@ -84,8 +84,10 @@ def _seed(cfg: Config, book_id: str = "b") -> None:
 
 
 def _runner(cfg: Config, client) -> Runner:
-    return Runner(cfg, [RenderEnter(), Render(client=client)],
-                  sleep=_noop_sleep, wake=lambda _c: None, gpu_gate=_gate_up)
+    # Portraits render in their own phase then the runner auto-advances through portraits_review
+    # (no per-book portrait_review flag on these fixtures) into the page render (ADR-0025).
+    phases = [PortraitRenderEnter(), PortraitRender(client=client), Render(client=client)]
+    return Runner(cfg, phases, sleep=_noop_sleep, wake=lambda _c: None, gpu_gate=_gate_up)
 
 
 def _drive(cfg: Config, client, *, book_id: str = "b", max_ticks: int = 16,
@@ -298,3 +300,63 @@ def test_render_is_idempotent(tmp_path) -> None:
     _drive(cfg, FakeImagegen())
     assert png.read_bytes() == first_png
     assert webp.read_bytes() == first_webp
+
+
+# --- optional portrait-review gate (ADR-0025) -------------------------------
+
+
+@respx.mock
+def test_portrait_review_off_auto_advances_through_the_gate(tmp_path) -> None:
+    # Default (no per-book flag): the runner auto-advances portraits_review -> rendering, so the
+    # split is invisible — the book renders straight to `rendered`, byte-for-byte as before.
+    cfg = _cfg(tmp_path)
+    _seed(cfg)
+    respx.post(f"{TTS}/v1/models/unload").mock(return_value=httpx.Response(200, json={}))
+
+    job = _drive(cfg, FakeImagegen())
+    assert job.state == JobState.RENDERED
+    book = cfg.work_dir / "b"
+    assert (book / "images" / "portraits" / "the-clockmaker.png").is_file()
+    assert (book / "images" / "plates" / "0001.png").is_file()
+
+
+@respx.mock
+def test_portrait_review_on_parks_with_portraits_but_no_pages(tmp_path) -> None:
+    # With the per-book flag set, the bake stops at portraits_review: the portrait is rendered but
+    # NO page plate has drawn yet (they wait behind the human gate).
+    cfg = _cfg(tmp_path)
+    _seed(cfg)
+    job = jobmod.load(cfg, "b")
+    job.bake_config["portrait_review"] = True
+    job.save(cfg)
+    respx.post(f"{TTS}/v1/models/unload").mock(return_value=httpx.Response(200, json={}))
+
+    job = _drive(cfg, FakeImagegen(),
+                 until=(JobState.PORTRAITS_REVIEW, JobState.RENDERED, JobState.FAILED))
+    assert job.state == JobState.PORTRAITS_REVIEW, f"expected gate, got {job.state}"
+    book = cfg.work_dir / "b"
+    assert (book / "images" / "portraits" / "the-clockmaker.png").is_file()  # portrait rendered
+    assert not (book / "images" / "plates" / "0001.png").is_file()  # page plate NOT yet drawn
+
+
+@respx.mock
+def test_portrait_gate_approval_advances_to_render_and_finishes(tmp_path) -> None:
+    # After the gate, transitioning portraits_review -> rendering (what approve_portraits does) lets
+    # the page plates draw and the book reach `rendered`.
+    cfg = _cfg(tmp_path)
+    _seed(cfg)
+    job = jobmod.load(cfg, "b")
+    job.bake_config["portrait_review"] = True
+    job.save(cfg)
+    respx.post(f"{TTS}/v1/models/unload").mock(return_value=httpx.Response(200, json={}))
+
+    job = _drive(cfg, FakeImagegen(),
+                 until=(JobState.PORTRAITS_REVIEW, JobState.RENDERED, JobState.FAILED))
+    assert job.state == JobState.PORTRAITS_REVIEW
+
+    from scriptorium.bake.approve import approve_portraits
+    approve_portraits(cfg, jobmod.load(cfg, "b"))
+
+    job = _drive(cfg, FakeImagegen())
+    assert job.state == JobState.RENDERED
+    assert (cfg.work_dir / "b" / "images" / "plates" / "0001.png").is_file()

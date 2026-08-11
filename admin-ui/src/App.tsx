@@ -3,6 +3,7 @@ import "./index.css";
 import { BooksList } from "./features/books/BooksList";
 import { NewBookWizard } from "./features/books/NewBookWizard";
 import { BookDetail } from "./features/detail/BookDetail";
+import { PortraitReview } from "./features/portraits/PortraitReview";
 import { PostRender } from "./features/postrender/PostRender";
 import { ReviewGate } from "./features/review/ReviewGate";
 import { navigate, useRoute } from "./routes";
@@ -27,6 +28,7 @@ export function App() {
         {route.name === "wizard" && <NewBookWizard />}
         {route.name === "detail" && <BookDetail id={route.id} />}
         {route.name === "review" && <ReviewGate id={route.id} />}
+        {route.name === "portraits" && <PortraitReview id={route.id} />}
         {route.name === "postrender" && <PostRender id={route.id} />}
       </main>
     </>

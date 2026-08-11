@@ -38,6 +38,7 @@ export function NewBookWizard() {
   const [density, setDensity] = useState<DensityPreset>("classic");
   const [imagesPerScene, setImagesPerScene] = useState(1);
   const [portraits, setPortraits] = useState(true);
+  const [portraitReview, setPortraitReview] = useState(false);
 
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<unknown>(null);
@@ -83,6 +84,7 @@ export function NewBookWizard() {
         images_per_scene: imagesPerScene,
         era: era || null,
         portraits_enabled: portraits,
+        portrait_review: portraits && portraitReview,
         title: title || null,
         author: author || null,
       },
@@ -303,6 +305,16 @@ export function NewBookWizard() {
           />
           Draw a portrait of each main character
         </label>
+        {portraits && (
+          <label className="wizard-suboption">
+            <input
+              type="checkbox"
+              checked={portraitReview}
+              onChange={(e) => setPortraitReview(e.target.checked)}
+            />
+            Pause and let me review the portraits before drawing the rest of the book
+          </label>
+        )}
       </div>
 
       <ErrorNotice error={submitError} prefix="Could not start the book" />

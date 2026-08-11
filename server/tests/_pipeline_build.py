@@ -29,7 +29,7 @@ from scriptorium.bake import job as jobmod
 from scriptorium.bake.api import BakeBody, CreateBookBody, SourceBody, run_p0
 from scriptorium.bake.job import JobState
 from scriptorium.bake.phases import p7_render, p8_publish
-from scriptorium.bake.phases.p7_render import Render
+from scriptorium.bake.phases.p7_render import PortraitRender, Render
 from scriptorium.bake.runner import Runner
 from scriptorium.config import Config
 from scriptorium.render.imagegen import FakeImagegen
@@ -109,9 +109,16 @@ def register_tts_mocks() -> None:
 
 
 def offline_pipeline() -> list:
-    """The registered pipeline with the render phase swapped for a FakeImagegen render (no GPU)."""
-    pipeline = [p for p in BAKE_PIPELINE if getattr(p, "name", None) != "p7_render"]
-    pipeline.append(Render(client=FakeImagegen()))
+    """The registered pipeline with both render phases swapped for FakeImagegen (no GPU).
+
+    Both the portrait render (ADR-0025) and the page render are GPU phases; swap each for a
+    FakeImagegen-backed instance so the offline P0→P8 build never touches a real imagegen client.
+    """
+    fake = FakeImagegen()
+    render_names = {"p7_render", "portrait_render"}
+    pipeline = [p for p in BAKE_PIPELINE if getattr(p, "name", None) not in render_names]
+    pipeline.append(PortraitRender(client=fake))
+    pipeline.append(Render(client=fake))
     return pipeline
 
 

@@ -29,9 +29,10 @@ from ..selection.reselect import reselect
 from ..selection.segment import expand_choices
 from ..styles import load_styles
 from . import job as jobmod
-from .approve import ApprovalBlocked, approve_job
+from .approve import ApprovalBlocked, approve_job, approve_portraits
 from .job import Job, JobState
 from .phases.base import GpuUnavailable
+from .phases.p5_prompts import PORTRAIT_PREFIX, rederive_portrait_prompt
 from .phases.p7_render import render_plate
 from .phases.p8_publish import regen_published_plate
 
@@ -39,9 +40,13 @@ router = APIRouter(prefix="/api/admin")
 
 # States in which the review artifacts exist and edits are still pre-approval (§11.1).
 _REVIEW_STATES = (JobState.PROMPTS_DRAFT, JobState.IN_REVIEW)
+# Prompt/cast edits are also allowed at the optional portrait gate (ADR-0025), where a human tunes
+# and regenerates portraits before the page plates draw.
+_PORTRAIT_EDIT_STATES = (*_REVIEW_STATES, JobState.PORTRAITS_REVIEW)
 # States in which the review payload is readable (pre-approval edit window + the locked views).
 _READABLE_STATES = (
-    JobState.PROMPTS_DRAFT, JobState.IN_REVIEW, JobState.APPROVED, JobState.RENDERING,
+    JobState.PROMPTS_DRAFT, JobState.IN_REVIEW, JobState.APPROVED,
+    JobState.PORTRAITS_RENDERING, JobState.PORTRAITS_REVIEW, JobState.RENDERING,
 )
 # Trailing slash matters: gutendex.com 301-redirects /books?... -> /books/?..., so we hit the
 # canonical URL directly (and the client below follows redirects as a belt-and-braces guard).
@@ -212,9 +217,9 @@ def edit_prompt(book_id: str, page_id: str, body: PromptEditBody) -> dict:
     """Persist ``edited_prompt`` and recompute ``final_subject_prompt`` (§4.3, §11.1)."""
     cfg = load_config()
     job = _require(book_id)
-    if job.state not in _REVIEW_STATES:
+    if job.state not in _PORTRAIT_EDIT_STATES:
         raise HTTPException(status_code=409,
-                            detail=f"prompts editable only pre-approval (state={job.state})")
+                            detail=f"prompts editable only at a review gate (state={job.state})")
     path = cfg.work_dir / book_id / "prompts" / f"{page_id}.json"
     if not path.is_file():
         raise HTTPException(status_code=404, detail=f"no prompt for {page_id!r}")
@@ -284,9 +289,9 @@ def edit_cast(book_id: str, slug: str, body: CastEditBody) -> dict:
     """Edit a character's ``visual_description``/``one_line`` → sets ``edited_by_human`` (§4.3)."""
     cfg = load_config()
     job = _require(book_id)
-    if job.state not in _REVIEW_STATES:
+    if job.state not in _PORTRAIT_EDIT_STATES:
         raise HTTPException(status_code=409,
-                            detail=f"cast editable only pre-approval (state={job.state})")
+                            detail=f"cast editable only at a review gate (state={job.state})")
     path = cfg.work_dir / book_id / "cast.json"
     if not path.is_file():
         raise HTTPException(status_code=404, detail="no cast")
@@ -301,6 +306,9 @@ def edit_cast(book_id: str, slug: str, body: CastEditBody) -> dict:
     char["edited_by_human"] = True
     schemas.validate("cast", doc)
     _write_json(path, doc)
+    # The description feeds the portrait prompt — re-assemble it so a subsequent regenerate picks up
+    # the edit (ADR-0025). No-op if this character has no portrait prompt file (not a major, etc.).
+    rederive_portrait_prompt(cfg, job, slug)
     return char
 
 
@@ -394,7 +402,9 @@ async def regen_plate(book_id: str, page_id: str) -> dict:
             raise HTTPException(status_code=503, detail=f"imagegen unavailable: {exc}") from exc
         return doc
 
-    if job.state not in (JobState.RENDERING, JobState.RENDERED):
+    # PORTRAITS_REVIEW: the optional portrait gate (ADR-0025) — portraits already rendered, so a
+    # single one can be regenerated here before the page plates draw.
+    if job.state not in (JobState.PORTRAITS_REVIEW, JobState.RENDERING, JobState.RENDERED):
         raise HTTPException(status_code=409, detail=f"cannot regen from {job.state} (render first)")
     prompt_path = cfg.work_dir / book_id / "prompts" / f"{page_id}.json"
     if not prompt_path.is_file():
@@ -409,13 +419,38 @@ async def regen_plate(book_id: str, page_id: str) -> dict:
 
 @router.get("/books/{book_id}/plate-image/{page_id}.png")
 def plate_image(book_id: str, page_id: str) -> FileResponse:
-    """Serve a work-dir plate PNG for the post-render view (admin-only, pre-publish)."""
+    """Serve a work-dir plate PNG for the post-render / portrait-review views (admin-only).
+
+    Page plates live under ``images/plates/{page_id}.png``; a ``portrait-{slug}`` id maps to
+    ``images/portraits/{slug}.png`` (ADR-0025 portrait gate).
+    """
     cfg = load_config()
     _require(book_id)
-    base = (cfg.work_dir / book_id / "images" / "plates").resolve()
-    target = (base / f"{page_id}.png").resolve()
+    images = cfg.work_dir / book_id / "images"
+    if page_id.startswith(PORTRAIT_PREFIX):
+        base = (images / "portraits").resolve()
+        target = (base / f"{page_id[len(PORTRAIT_PREFIX):]}.png").resolve()
+    else:
+        base = (images / "plates").resolve()
+        target = (base / f"{page_id}.png").resolve()
     if not target.is_relative_to(base):
         raise HTTPException(status_code=400, detail="bad path")
     if not target.is_file():
         raise HTTPException(status_code=404, detail="no image")
     return FileResponse(target, media_type="image/png")
+
+
+@router.post("/books/{book_id}/approve-portraits")
+def approve_portraits_endpoint(book_id: str) -> dict:
+    """Approve the optional portrait gate → advance ``portraits_review → rendering`` (ADR-0025).
+
+    The human has eyeballed / edited / regenerated the portraits; approving lets the page plates
+    draw, seeded by the now-approved portrait PNGs.
+    """
+    cfg = load_config()
+    job = _require(book_id)
+    try:
+        approve_portraits(cfg, job)
+    except ValueError as exc:  # not parked at the portrait gate
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    return job.to_dict()

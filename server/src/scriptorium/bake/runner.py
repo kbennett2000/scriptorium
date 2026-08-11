@@ -209,13 +209,23 @@ class Runner:
                 # and let the now-``approved`` job advance to render this same tick. Not a bypass
                 # — ``approve_job`` runs the same missing-prompt guard; a plate without a prompt
                 # raises and the job stays parked for a human. Default off preserves invariant #4.
-                if not (self.cfg.auto_approve
-                        and job.state in (JobState.PROMPTS_DRAFT, JobState.IN_REVIEW)):
+                if job.state == JobState.PORTRAITS_REVIEW:
+                    # Optional portrait-review gate (ADR-0025): rest for a human ONLY when the
+                    # per-book ``portrait_review`` flag is set — it deliberately overrides
+                    # unattended AUTO_APPROVE for this single stop. Otherwise auto-advance into
+                    # the page render this same tick (byte-identical to the no-gate path).
+                    if job.bake_config.get("portrait_review"):
+                        continue  # parked for the human portrait gate
+                    job.transition(JobState.RENDERING)
+                    job.save(self.cfg)
+                elif not (self.cfg.auto_approve
+                          and job.state in (JobState.PROMPTS_DRAFT, JobState.IN_REVIEW)):
                     continue
-                try:
-                    approve_job(self.cfg, job)
-                except (ApprovalBlocked, ValueError):
-                    continue  # cannot auto-approve → leave parked for the human gate
+                else:
+                    try:
+                        approve_job(self.cfg, job)
+                    except (ApprovalBlocked, ValueError):
+                        continue  # cannot auto-approve → leave parked for the human gate
             await self.advance_job(job)
             return  # single worker: one job advances per tick
 

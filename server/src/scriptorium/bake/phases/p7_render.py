@@ -1,12 +1,19 @@
 """P7 — the real render phase (DESIGN §10, §7.4; ADR-0009, ADR-0011).
 
-Turns every approved plate into pixels. Two phases, mirroring the P5 enter/GPU split (a GPU phase's
+Turns every approved plate into pixels. Render is split so **portraits draw first, in their own
+phase**, with an optional human gate between them and the page plates (ADR-0025) — every page plate
+is conditioned on its characters' portrait PNGs (ADR-0023), so the portraits must exist (and be
+approved) before the pages draw. The phases (mirroring the P5 enter/GPU split — a GPU phase's
 ``from_state`` must be a GPU state):
 
-- :class:`RenderEnter` — CPU claim ``approved → rendering`` (zero units), like
-  :class:`~scriptorium.bake.phases.p5_prompts.PromptsEnter`.
-- :class:`Render` — GPU phase ``rendering → rendered``. Its units are a **leading ``__unload__``
-  pseudo-unit** followed by one unit per drafted plate (page plates + ``cover`` + ``portrait-*``).
+- :class:`PortraitRenderEnter` — CPU claim ``approved → portraits_rendering`` (zero units).
+- :class:`PortraitRender` — GPU phase ``portraits_rendering → portraits_review``; renders only the
+  ``portrait-*`` plates. The job rests at ``portraits_review`` for the optional gate (or the runner
+  auto-advances when the per-book ``portrait_review`` flag is off).
+- :class:`Render` — GPU phase ``rendering → rendered``; renders the ``cover`` + page plates.
+
+Both GPU phases share :class:`_ImagegenPhase`: a **leading ``__unload__`` pseudo-unit** followed by
+one unit per plate id in that phase's set.
 
 The leading unload unit is the §7.4 / ADR-0009 GPU handoff: it calls TTS ``POST /v1/models/unload``
 (**require success** — a failure means the GPU box is not usable → ``GpuUnavailable`` → the job
@@ -294,12 +301,16 @@ async def render_plate(
 # --- phases -----------------------------------------------------------------
 
 
-class RenderEnter:
-    """Zero-unit CPU transition ``approved → rendering`` (the enter-running pattern)."""
+class PortraitRenderEnter:
+    """Zero-unit CPU transition ``approved → portraits_rendering`` (the enter-running pattern).
 
-    name = "render_enter"
+    Portraits render in their own phase (before the page plates) so an optional human gate can
+    inspect them mid-bake (ADR-0025). When no gate is wanted the job flows straight through.
+    """
+
+    name = "portrait_render_enter"
     from_state = JobState.APPROVED
-    to_state = JobState.RENDERING
+    to_state = JobState.PORTRAITS_RENDERING
     is_gpu = False
 
     def units(self, job: Job, cfg: Any) -> list[Unit]:
@@ -312,12 +323,14 @@ class RenderEnter:
         return None
 
 
-class Render:
-    """P7: unload TTS, then render each approved plate (rendering -> rendered)."""
+class _ImagegenPhase:
+    """Shared machinery for the two GPU render phases: client injection + the ``__unload__`` unit.
 
-    name = "p7_render"
-    from_state = JobState.RENDERING
-    to_state = JobState.RENDERED
+    Both portrait and page render must (§7.4 / ADR-0009) free the GPU of the LLM before SDXL and
+    require imagegen is up; both render a plate id via :func:`render_plate`. Only the *set* of
+    plate ids differs, so subclasses override :meth:`_plate_ids_for`.
+    """
+
     is_gpu = True
     gpu_kind = "image"  # needs SDXL/ComfyUI resident — the runner must NOT free the image GPU here
 
@@ -328,14 +341,11 @@ class Render:
     def _client(self, cfg: Any) -> ImagegenClient:
         return self._injected if self._injected is not None else RealImagegenClient(cfg)
 
+    def _plate_ids_for(self, job: Job, cfg: Any) -> list[str]:  # pragma: no cover - overridden
+        raise NotImplementedError
+
     def units(self, job: Job, cfg: Any) -> list[Unit]:
-        # Portraits first: a page plate is conditioned on its characters' portrait PNGs
-        # (ADR-0023 / _portrait_reference), so those must exist before the page plates render.
-        # unit_done skips already-rendered portraits, keeping this resumable.
-        ids = _plate_ids(cfg, job)
-        portraits = [p for p in ids if p.startswith(PORTRAIT_PREFIX)]
-        rest = [p for p in ids if not p.startswith(PORTRAIT_PREFIX)]
-        return [Unit(id=UNLOAD_UNIT_ID)] + [Unit(id=pid) for pid in portraits + rest]
+        return [Unit(id=UNLOAD_UNIT_ID)] + [Unit(id=pid) for pid in self._plate_ids_for(job, cfg)]
 
     def unit_done(self, job: Job, cfg: Any, unit: Unit) -> bool:
         # The unload unit has no artifact — it must run on every phase entry (unload before render).
@@ -352,3 +362,34 @@ class Render:
                 raise GpuUnavailable("imagegen not reachable for render")
             return
         await render_plate(cfg, job, unit.id, self._client(cfg))
+
+
+class PortraitRender(_ImagegenPhase):
+    """Render only the ``portrait-*`` plates (portraits_rendering -> portraits_review).
+
+    Portraits render first because every page plate is conditioned on its characters' portrait
+    PNGs (ADR-0023 / _portrait_reference). Resting at ``portraits_review`` lets an optional human
+    gate approve/regenerate them before the page plates draw (ADR-0025).
+    """
+
+    name = "portrait_render"
+    from_state = JobState.PORTRAITS_RENDERING
+    to_state = JobState.PORTRAITS_REVIEW
+
+    def _plate_ids_for(self, job: Job, cfg: Any) -> list[str]:
+        return [p for p in _plate_ids(cfg, job) if p.startswith(PORTRAIT_PREFIX)]
+
+
+class Render(_ImagegenPhase):
+    """P7: render the cover + page plates (rendering -> rendered).
+
+    Portraits already rendered in :class:`PortraitRender`; existence-based ``unit_done`` skips any
+    that somehow reappear here, so this stays resumable and never double-renders a portrait.
+    """
+
+    name = "p7_render"
+    from_state = JobState.RENDERING
+    to_state = JobState.RENDERED
+
+    def _plate_ids_for(self, job: Job, cfg: Any) -> list[str]:
+        return [p for p in _plate_ids(cfg, job) if not p.startswith(PORTRAIT_PREFIX)]

@@ -28,6 +28,7 @@ _NOT_EXPECTING: frozenset[str] = frozenset({
     JobState.CREATED,
     JobState.PROMPTS_DRAFT,
     JobState.IN_REVIEW,
+    JobState.PORTRAITS_REVIEW,  # optional portrait gate (ADR-0025): waiting on a human
     JobState.PAUSED,
     JobState.PUBLISHED,
     JobState.FAILED,
@@ -85,6 +86,9 @@ def phase_progress(job: Job, cfg: Any) -> dict[str, int | None]:
     elif state == JobState.PROMPTS_RUNNING:
         done = _count(work / "prompts", "*.json")
         total = _prompts_total(work / "selection.json", work / "cast.json")
+    elif state == JobState.PORTRAITS_RENDERING:
+        done = _count(work / "images" / "web" / "portraits", "*.webp")
+        total = _count(work / "prompts", "portrait-*.json")
     elif state in (JobState.RENDERING, JobState.SET_RENDERING):
         done = _count(work / "images" / "web" / "plates", "*.webp")
         total = _count(work / "prompts", "*.json")
