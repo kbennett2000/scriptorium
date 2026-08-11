@@ -51,7 +51,7 @@
       "imagegen_style": "oil painting",
       "prefix": "classical oil painting illustration, rich impasto brushwork, warm layered glazes, painterly light, ",
       "suffix": ", canvas texture, old-master palette, fine detail",
-      "negative": "photo, flat vector, cartoon, text, watermark, signature, blurry",
+      "negative": "photo, flat vector, cartoon, text, watermark, signature, blurry, modern clothing, modern dress, contemporary, modern money, banknotes, dollar bills, paper currency, wristwatch, sunglasses",
       "portrait_prefix": "classical oil painting portrait, bust composition, rich brushwork, warm glazes, ",
       "params": { "steps": null, "cfg": null }
     },
