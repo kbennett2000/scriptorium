@@ -125,9 +125,15 @@ def _map_error(name: str, resp: httpx.Response) -> Exception:
     detail = _error_detail(resp)
     if status in _GPU_UNAVAILABLE_STATUS:
         return GpuUnavailable(f"{name}: TTS 503 {detail}")
-    if status in _UNIT_FAILED_STATUS:
-        return UnitFailed(f"{name}: TTS 422 {detail}")
-    # 400/404/413/401/500 and any other unexpected status: non-retriable bug (halt loudly).
+    if status in _UNIT_FAILED_STATUS or status >= 500:
+        # 422 = this unit's generation failed validation; 5xx = a transient server-side fault
+        # (e.g. the LLM emitted a character the service choked on). Both are per-unit and
+        # retriable via the ladder — a single hiccup on one page must NEVER kill an
+        # unattended, hundreds-of-pages bake. Exhausting the ladder records the unit in
+        # ``failed_units`` and the bake continues.
+        return UnitFailed(f"{name}: TTS {status} {detail}")
+    # 400/401/404/413 and other 4xx: a real client-side bug (bad request shape, unknown
+    # transform, oversized payload) that won't fix itself → halt loudly.
     return PipelineBug(f"{name}: TTS {status} {detail}")
 
 

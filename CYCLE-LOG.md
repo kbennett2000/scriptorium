@@ -1999,3 +1999,27 @@ service. Phase 2 (multi-character regional identity) deferred.
 **Done-state (this half).** server ruff clean, pytest 422 (+1). Also this cycle (Phase 0): oil-painting
 style negative gained anti-anachronism terms (modern money/clothing); text-transform-service T16
 polish (case-insensitive bans + cast-canonicalize temp) shipped separately.
+
+---
+
+## M1 · Cycle 9 — unattended-bake resilience: a TTS 5xx retries, not kills the job (ADR-0024)
+
+**Why.** The overnight character-consistency re-bake (Karamazov, 600 pages) died at **page 301**. The
+text service returned a one-off `500` (LLM emitted a lone UTF-16 surrogate `\ud835` it couldn't UTF-8
+encode). `TtsClient._map_error` mapped 500 → `PipelineBug` → whole job `FAILED`, discarding 300 pages
+of work and the entire unattended run over a single stochastic hiccup. That defeats AUTO_START's whole
+point (ADR-0020): load a book, go to bed, wake up to a finished one.
+
+**Shipped:**
+- `bake/tts_client.py`: 5xx (500/502/504…) now → `UnitFailed` — retried on the 3× ladder, and if
+  genuinely persistent, recorded in `failed_units` while the bake continues. 503 still →
+  `GpuUnavailable`; 4xx (400/401/404/413) still → `PipelineBug` (real client bugs halt loudly).
+  One line: `if status in _UNIT_FAILED_STATUS or status >= 500`.
+- `test_tts_client.py`: parametrized 500/502/504 → `UnitFailed`; 400/401/404/413 → `PipelineBug`
+  (regression note references the pg-28054 page-301 death). ADR-0024.
+
+**Root cause fixed upstream too:** text-transform-service **T17** scrubs lone surrogates from model
+output so the 500 never happens; this cycle is the belt (survive a transient 5xx) to that suspenders.
+
+**Done-state.** server ruff clean, pytest 425 (+3). No page bytes changed; only the exception a
+non-2xx TTS status maps to.

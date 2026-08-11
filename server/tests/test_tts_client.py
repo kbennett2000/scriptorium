@@ -74,13 +74,29 @@ def test_422_is_unit_failed_with_detail(tmp_path) -> None:
     assert "reasons" in str(exc.value)  # detail surfaced for the review UI
 
 
-@pytest.mark.parametrize("code", [400, 401, 404, 413, 500])
+@pytest.mark.parametrize("code", [400, 401, 404, 413])
 @respx.mock
-def test_bug_class_codes_raise_pipeline_bug(tmp_path, code: int) -> None:
+def test_client_error_codes_raise_pipeline_bug(tmp_path, code: int) -> None:
+    # 4xx = a real client-side bug (bad request shape, unknown transform, oversized payload,
+    # auth) that won't fix itself on retry → halt the job loudly.
     respx.post(f"{TTS}/v1/transform/cast-mentions").mock(
         return_value=httpx.Response(code, json=_err("bad"))
     )
     with pytest.raises(PipelineBug):
+        asyncio.run(_transform(tmp_path))
+
+
+@pytest.mark.parametrize("code", [500, 502, 504])
+@respx.mock
+def test_server_error_codes_are_unit_failed_retriable(tmp_path, code: int) -> None:
+    # 5xx = a transient server-side fault (e.g. the LLM emitted a character the service
+    # choked on). It is per-unit and retriable via the ladder — a one-off 500 on a single
+    # page must never kill an unattended, hundreds-of-pages bake (regression: pg-28054 died
+    # at page 301/600 on a lone-surrogate 500).
+    respx.post(f"{TTS}/v1/transform/cast-mentions").mock(
+        return_value=httpx.Response(code, json=_err("boom"))
+    )
+    with pytest.raises(UnitFailed):
         asyncio.run(_transform(tmp_path))
 
 
