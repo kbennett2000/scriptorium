@@ -229,6 +229,58 @@ def test_unload_failure_parks_waiting_gpu(tmp_path) -> None:
 
 
 @respx.mock
+def test_page_plate_uses_depicted_characters_portrait_as_reference(tmp_path) -> None:
+    # Character consistency (ADR-0023): a page plate whose derived.depicted names a major with a
+    # portrait renders with that portrait's bytes as a reference; the portrait renders first so the
+    # file exists; cover/portrait plates pass no reference.
+    cfg = _cfg(tmp_path)
+    book = cfg.work_dir / "b"
+    prompts = book / "prompts"
+    prompts.mkdir(parents=True, exist_ok=True)
+    page = _prompt_doc("0001", "the clockmaker at his bench")
+    page["derived"]["depicted"] = ["the Clockmaker"]  # matches the cast name below
+    (prompts / "0001.json").write_text(json.dumps(page), encoding="utf-8")
+    (prompts / "portrait-clockmaker.json").write_text(
+        json.dumps(_prompt_doc("portrait-clockmaker", "engraved bust of the clockmaker")),
+        encoding="utf-8")
+    (book / "cast.json").write_text(json.dumps({
+        "characters": [{"slug": "clockmaker", "name": "the Clockmaker", "aliases": [],
+                        "mention_pages": ["0001"], "descriptors": [], "is_person": True,
+                        "major": True, "visual_description": "an old man",
+                        "one_line": "an old man"}],
+    }), encoding="utf-8")
+    (book / "selection.json").write_text(json.dumps({
+        "preset": "classic",
+        "params": {"min_gap": 2, "max_gap": 6, "salience_floor": 0.55,
+                   "chapter_open": True, "scene_boundary": True},
+        "plates": [{"page_id": "0001", "reason": "chapter_open", "salience": 0.8,
+                    "status": "approved", "added_in_revision": 1}],
+    }), encoding="utf-8")
+    Job(id="b", book_id="b", state=JobState.APPROVED, started=True,
+        bake_config={"style_id": "engraving"}).save(cfg)
+    respx.post(f"{TTS}/v1/models/unload").mock(return_value=httpx.Response(200, json={}))
+
+    captured: list[tuple[str, object]] = []
+
+    class _RefRecording(FakeImagegen):
+        async def txt2img(self, *args, **kwargs) -> bytes:
+            captured.append((args[0], kwargs.get("references")))  # (wrapped_prompt, references)
+            return await super().txt2img(*args, **kwargs)
+
+    job = _drive(cfg, _RefRecording())
+    assert job.state == JobState.RENDERED, f"stuck at {job.state}"
+
+    # Exactly one call — the page plate — carried a reference; the portrait plate carried none.
+    with_refs = [(p, r) for (p, r) in captured if r]
+    assert len(with_refs) == 1
+    page_prompt, refs = with_refs[0]
+    assert "the clockmaker at his bench" in page_prompt  # the page plate, not the portrait
+    assert isinstance(refs, list) and len(refs) == 1
+    # The reference bytes are exactly the rendered portrait PNG (rendered first, hence available).
+    assert refs[0] == (book / "images" / "portraits" / "clockmaker.png").read_bytes()
+
+
+@respx.mock
 def test_render_is_idempotent(tmp_path) -> None:
     cfg = _cfg(tmp_path)
     _seed(cfg)

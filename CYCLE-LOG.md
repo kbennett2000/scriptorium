@@ -1971,3 +1971,31 @@ gone), `docs/adr/0022-alias-publish-filter.md` (new).
 (one scene, ≤3 figures, clean positive prompt, descriptor↔character binding) and `cast-mentions`
 alias hygiene at the source; then re-bake Karamazov and eyeball. Part C (sample-render review) still
 deferred pending the re-bake.
+
+---
+
+## M1 · Cycle 8 (pipeline half) — character consistency via portrait reference (ADR-0023)
+
+**Why.** Text prompts now name/describe characters correctly, but SDXL renders them inconsistently
+(young-officer Mitya → old monk / woman across pages). Feed each character's canonical portrait
+(`images/portraits/{slug}.png`, already rendered) back into their page plates as an IP-Adapter
+image reference so the figure stays the same person.
+
+**Shipped (scriptorium pipeline half):**
+- `render/imagegen.py`: `txt2img` gains optional `references: list[bytes] | None` (base64-forwarded
+  only when set; folded into `FakeImagegen` digest only when set → `references=None` byte-identical,
+  all fixtures green).
+- `p7_render.py`: `render_plate` computes the reference via `_portrait_reference` (page plates only;
+  `derived.depicted` → cast name/alias → portrait PNG bytes if present; else none). `Render.units`
+  now renders `portrait-*` **before** page plates (a page depends on its characters' portraits).
+- Tests: `test_phases_p7.py` new case asserts a depicted major's portrait bytes are passed as a
+  reference and the portrait renders first; `references=None` paths unchanged. ADR-0023.
+
+**Not yet (service half, next):** imagegen-service `/generate` must accept `references` + an
+IP-Adapter SDXL workflow; ComfyUI needs `ComfyUI_IPAdapter_plus` + models (installed on box, awaiting
+a ComfyUI restart). Until deployed, scriptorium must NOT be restarted on this code against the old
+service. Phase 2 (multi-character regional identity) deferred.
+
+**Done-state (this half).** server ruff clean, pytest 422 (+1). Also this cycle (Phase 0): oil-painting
+style negative gained anti-anachronism terms (modern money/clothing); text-transform-service T16
+polish (case-insensitive bans + cast-canonicalize temp) shipped separately.

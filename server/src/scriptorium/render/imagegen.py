@@ -23,6 +23,7 @@ merged+deployed; older builds ignore them (fixed 1024²).
 
 from __future__ import annotations
 
+import base64
 import hashlib
 import io
 from typing import Any, Protocol, runtime_checkable
@@ -55,8 +56,14 @@ class ImagegenClient(Protocol):
         height: int = PLATE_SIZE[1],
         seed: int | None = None,
         style: str | None = None,
+        references: list[bytes] | None = None,
     ) -> bytes:
-        """Render ``prompt`` to PNG bytes at ``width``×``height``, optionally under ``style``."""
+        """Render ``prompt`` to PNG bytes at ``width``×``height``, optionally under ``style``.
+
+        ``references`` is an optional list of reference-image PNG bytes (a character's portrait) fed
+        to the service as image-prompt conditioning for character consistency (ADR-0023). ``None``
+        (the default) keeps the prompt-only, byte-identical behaviour.
+        """
         ...
 
     async def health(self) -> bool:
@@ -89,6 +96,7 @@ class RealImagegenClient:
         height: int = PLATE_SIZE[1],
         seed: int | None = None,
         style: str | None = None,
+        references: list[bytes] | None = None,
     ) -> bytes:
         """``POST /generate`` → PNG bytes. Maps 503/conn → GpuUnavailable, 422 → UnitFailed."""
         if self._base is None:
@@ -105,6 +113,10 @@ class RealImagegenClient:
         # to the pre-ADR-0013 client (the service applies the named preset's LoRA; ADR-0011).
         if style is not None:
             body["style"] = style
+        # Only forward `references` when set: the service switches to the IP-Adapter workflow and
+        # conditions on these portrait images (ADR-0023). Absent → prompt-only, byte-identical.
+        if references:
+            body["references"] = [base64.b64encode(r).decode("ascii") for r in references]
         url = f"{self._base}/generate"
         try:
             async with httpx.AsyncClient(timeout=_GENERATE_TIMEOUT_S) as client:
@@ -155,17 +167,26 @@ def _error_detail(resp: httpx.Response) -> str:
 
 
 def _digest(
-    prompt: str, width: int, height: int, seed: int | None, style: str | None = None
+    prompt: str,
+    width: int,
+    height: int,
+    seed: int | None,
+    style: str | None = None,
+    references: list[bytes] | None = None,
 ) -> str:
     """A stable hex digest of the full render request (drives both color and burned-in text).
 
-    ``style`` is folded in only when set, so ``style=None`` yields byte-identical placeholders to
-    the pre-ADR-0013 fake (existing determinism/round-trip fixtures stay green), while distinct
-    styles produce visibly distinct stand-ins.
+    ``style`` and ``references`` are folded in only when set, so the default (``None``) yields
+    byte-identical placeholders to the pre-existing fake (determinism/round-trip fixtures stay
+    green), while distinct styles/references produce visibly distinct stand-ins.
     """
     payload = f"{prompt}\x00{width}x{height}\x00{seed}".encode()
     if style is not None:
         payload += f"\x00{style}".encode()
+    if references:
+        # Fold a hash of each reference's bytes (not the raw bytes) to keep the payload small.
+        for ref in references:
+            payload += b"\x00" + hashlib.sha256(ref).digest()
     return hashlib.sha256(payload).hexdigest()
 
 
@@ -184,8 +205,11 @@ class FakeImagegen:
         height: int = PLATE_SIZE[1],
         seed: int | None = None,
         style: str | None = None,
+        references: list[bytes] | None = None,
     ) -> bytes:
-        return self.render(prompt, width=width, height=height, seed=seed, style=style)
+        return self.render(
+            prompt, width=width, height=height, seed=seed, style=style, references=references
+        )
 
     async def health(self) -> bool:
         return True
@@ -198,9 +222,10 @@ class FakeImagegen:
         height: int = PLATE_SIZE[1],
         seed: int | None = None,
         style: str | None = None,
+        references: list[bytes] | None = None,
     ) -> bytes:
         """Synchronous core: deterministic placeholder PNG bytes for ``prompt``."""
-        digest = _digest(prompt, width, height, seed, style)
+        digest = _digest(prompt, width, height, seed, style, references)
         # Background: a muted color from the digest so distinct prompts look distinct.
         bg = (int(digest[0:2], 16) // 2, int(digest[2:4], 16) // 2, int(digest[4:6], 16) // 2)
         img = Image.new("RGB", (width, height), bg)

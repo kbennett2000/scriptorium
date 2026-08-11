@@ -161,6 +161,48 @@ def wrap_prompt(style: dict, plate_id: str, prompt_doc: dict) -> tuple[str, str]
     return final, style["negative"]
 
 
+def _norm_name(s: Any) -> str:
+    """Normalized match key for a character label (collapse ws + casefold)."""
+    return " ".join(str(s).split()).casefold()
+
+
+def _portrait_reference(cfg: Any, job: Job, plate_id: str, doc: dict) -> list[bytes] | None:
+    """Portrait bytes of the primary depicted character for IP-Adapter conditioning (ADR-0023).
+
+    Page plates only. Reads ``derived.depicted`` (character labels), maps the first that resolves —
+    by name or alias — to a cast character whose portrait PNG exists, and returns its bytes. Returns
+    ``None`` for cover/portrait pseudo-plates, when nothing is depicted, or when no depicted
+    character has a rendered portrait (→ the plate renders prompt-only, byte-identical to before).
+    Portraits render before page plates (see :meth:`Render.units`), so the file is present by now.
+    """
+    if not _is_page_plate(plate_id):
+        return None
+    depicted = ((doc.get("derived") or {}).get("depicted")) or []
+    if not depicted:
+        return None
+    book = _book_dir(cfg, job)
+    cast_path = book / "cast.json"
+    if not cast_path.is_file():
+        return None
+    characters = (_read_json(cast_path) or {}).get("characters", [])
+    lookup: dict[str, str] = {}
+    for c in characters:
+        slug = c.get("slug")
+        if not slug:
+            continue
+        lookup.setdefault(_norm_name(c.get("name", "")), slug)
+        for alias in c.get("aliases", []):
+            lookup.setdefault(_norm_name(alias), slug)
+    for name in depicted:
+        slug = lookup.get(_norm_name(name))
+        if not slug:
+            continue
+        png = book / "images" / "portraits" / f"{slug}.png"
+        if png.is_file():
+            return [png.read_bytes()]
+    return None
+
+
 def _default_seed(book_id: str, plate_id: str) -> int:
     """A stable per-plate seed, so re-rendering an unchanged plate reproduces its pixels (§10)."""
     digest = hashlib.sha256(f"{book_id}\x00{plate_id}".encode()).hexdigest()
@@ -194,15 +236,19 @@ async def render_to_spec(
     spec: _AssetSpec,
     seed: int,
     style: str | None = None,
+    references: list[bytes] | None = None,
 ) -> None:
     """The pure render step: txt2img → write archival PNG → idempotent WebP derivatives.
 
     Shared by P7's :func:`render_plate` (work tree) and P8's post-publish regen (library tree,
     ``-rN`` variants). It touches only the three files in ``spec`` — no prompt/selection
     bookkeeping. ``style`` is the imagegen preset name (from ``styles.json`` ``imagegen_style``),
-    or ``None`` for prompt-only styles (ADR-0013).
+    or ``None`` for prompt-only styles (ADR-0013). ``references`` are optional portrait PNGs fed as
+    image-prompt conditioning for character consistency (ADR-0023); ``None`` = prompt-only.
     """
-    png = await client.txt2img(wrapped, negative, spec.width, spec.height, seed, style=style)
+    png = await client.txt2img(
+        wrapped, negative, spec.width, spec.height, seed, style=style, references=references
+    )
     spec.src.parent.mkdir(parents=True, exist_ok=True)
     spec.src.write_bytes(png)
     make_derivatives(spec.src, spec.web, spec.thumb, web_max_width=spec.web_max)
@@ -224,7 +270,10 @@ async def render_plate(
     if seed is None:
         seed = _default_seed(job.book_id, plate_id)
 
-    await render_to_spec(client, wrapped, negative, spec, seed, style.get("imagegen_style"))
+    references = _portrait_reference(cfg, job, plate_id, doc)
+    await render_to_spec(
+        client, wrapped, negative, spec, seed, style.get("imagegen_style"), references=references
+    )
 
     prev_attempts = int((doc.get("render") or {}).get("attempts", 0))
     doc["wrapped_prompt"] = wrapped
@@ -280,7 +329,13 @@ class Render:
         return self._injected if self._injected is not None else RealImagegenClient(cfg)
 
     def units(self, job: Job, cfg: Any) -> list[Unit]:
-        return [Unit(id=UNLOAD_UNIT_ID)] + [Unit(id=pid) for pid in _plate_ids(cfg, job)]
+        # Portraits first: a page plate is conditioned on its characters' portrait PNGs
+        # (ADR-0023 / _portrait_reference), so those must exist before the page plates render.
+        # unit_done skips already-rendered portraits, keeping this resumable.
+        ids = _plate_ids(cfg, job)
+        portraits = [p for p in ids if p.startswith(PORTRAIT_PREFIX)]
+        rest = [p for p in ids if not p.startswith(PORTRAIT_PREFIX)]
+        return [Unit(id=UNLOAD_UNIT_ID)] + [Unit(id=pid) for pid in portraits + rest]
 
     def unit_done(self, job: Job, cfg: Any, unit: Unit) -> bool:
         # The unload unit has no artifact — it must run on every phase entry (unload before render).
