@@ -203,3 +203,48 @@ def test_junk_lowercase_single_page_never_survives_as_major() -> None:
     assert "peasant" not in slugs
     assert not any(g["name"] == "peasant" for g in groups)
     assert slugs["time-traveller"]["major"] is True
+
+
+def test_pronoun_aliases_are_dropped_from_published_group() -> None:
+    # cast-mentions sometimes lists pronouns (incl. archaic "Thou") inside a character's aliases.
+    # They must never reach cast.json — left in, present_cast would match them against a ledger.
+    groups = reduce_cast([
+        _page("0001", _m("Mitya", aliases=["He", "him", "His", "Thou", "Mityenka"])),
+        _page("0002", _m("Mitya")),
+    ])
+    g = groups[0]
+    assert "Mityenka" in g["aliases"]                         # a real surface variant survives
+    for pron in ("He", "him", "His", "Thou"):
+        assert pron not in g["aliases"]
+
+
+def test_another_characters_name_is_dropped_from_aliases() -> None:
+    # A bogus alias equal to a DIFFERENT character's canonical name is contamination: it would make
+    # present_cast pull the wrong character into a scene. It must be filtered out.
+    groups = reduce_cast([
+        _page("0001", _m("Marfa Ignatyevna", aliases=["Grigory", "Marfa"]), _m("Grigory")),
+        _page("0002", _m("Marfa Ignatyevna"), _m("Grigory")),
+        _page("0003", _m("Grigory")),
+    ])
+    slugs = _by_slug(groups)
+    marfa = slugs["marfa-ignatyevna"]["aliases"]
+    assert "Marfa" in marfa          # own surface variant kept
+    assert "Grigory" not in marfa    # other character's canonical name dropped
+    assert slugs["grigory"]["name"] == "Grigory"  # Grigory stays its own character
+
+
+def test_cleaned_aliases_stop_present_cast_cross_link() -> None:
+    # End-to-end (in-repo): with the contaminating "Grigory" alias filtered out, a page whose ledger
+    # lists only Marfa no longer drags Grigory into the illustration cast.
+    from scriptorium.bake.phases.p5_prompts import present_cast
+
+    groups = reduce_cast([
+        _page("0001", _m("Marfa Ignatyevna", aliases=["Grigory"]), _m("Grigory")),
+        _page("0002", _m("Marfa Ignatyevna"), _m("Grigory")),
+        _page("0003", _m("Grigory")),
+    ])
+    cast_doc = {"characters": [{**g, "one_line": ""} for g in groups]}
+    present = present_cast(cast_doc, {"present": ["Marfa Ignatyevna"]})
+    names = {c["name"] for c in present}
+    assert "Marfa Ignatyevna" in names
+    assert "Grigory" not in names  # no cross-link — the whole point of the filter

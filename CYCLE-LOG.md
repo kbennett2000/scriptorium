@@ -1944,3 +1944,30 @@ immutability + byte-stability + read-path invariants intact.
 **Not built (still deferred, needs go-ahead).** The meaningful/optional review gate with **sample
 renders** before committing all plates — tonight is evidence it's worth doing, but it is a separate
 cycle and was not the cause of what Kris saw.
+
+---
+
+## M1 · Cycle 7 (Part A) — alias publish-filter kills wrong-character illustrations (ADR-0022)
+
+**Bug.** Pictures showed the wrong person: Marfa (a woman) drawn as Grigory ("old man, grey beard,
+reading Lives of the Saints"); Mitya (an adult) drawn as a boy. Root cause is upstream `cast-mentions`
+emitting garbage inside a character's `aliases[]` — pronouns and *other characters' proper names* —
+which `reduce_cast` republished into `cast.json` unfiltered, after which `present_cast` cross-linked
+the wrong character into a scene and the illustration LLM bound the wrong appearance.
+
+**Fix (in-repo, deterministic).** `reduce_cast._filter_published_aliases` drops an alias whose norm is
+a pronoun/stop-word (now incl. archaic "thou/thee/thy/thine/ye" and possessive "his") or equals the
+canonical name of a *different* group. Filters contamination only — never links (diminutives stay the
+external service's job, ADR-0019). Verified on real pg-28054 mentions: "Mitya" no longer carries
+"Nikolay Parfenovitch"/"Ivan"/"Alyosha"/pronouns; a Marfa-only page no longer pulls in Grigory.
+
+**Files.** `server/src/scriptorium/bake/reduce_cast.py` (+`_filter_published_aliases`, `_STOP_NAMES`),
+`server/tests/test_reduce_cast.py` (3 new: pronoun drop, cross-name drop, present_cast cross-link
+gone), `docs/adr/0022-alias-publish-filter.md` (new).
+
+**Done-state.** server ruff clean, pytest 421 (+3); no page bytes changed (work-tree step only).
+
+**Still to come (Part B, text-transform-service, separate repo):** harden `illustration-prompt`
+(one scene, ≤3 figures, clean positive prompt, descriptor↔character binding) and `cast-mentions`
+alias hygiene at the source; then re-bake Karamazov and eyeball. Part C (sample-render review) still
+deferred pending the re-bake.

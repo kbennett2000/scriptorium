@@ -56,7 +56,7 @@ _STOP_NAMES: frozenset[str] = frozenset({
     # subject / object / possessive / reflexive pronouns
     "i", "he", "she", "they", "we", "you", "it",
     "me", "him", "her", "us", "them",
-    "mine", "hers", "ours", "yours", "theirs",
+    "his", "mine", "hers", "ours", "yours", "theirs",
     "myself", "yourself", "himself", "herself", "itself",
     "ourselves", "yourselves", "themselves",
     # indefinite / demonstrative pronouns
@@ -64,6 +64,8 @@ _STOP_NAMES: frozenset[str] = frozenset({
     "everyone", "everybody", "no one", "nobody",
     "something", "anything", "everything", "nothing",
     "this", "that", "these", "those", "who", "whom",
+    # archaic pronouns — 19th-c. translations (e.g. Karamazov) use "Thou/Thee" as mentions/aliases
+    "thou", "thee", "thy", "thine", "ye",
 })
 
 _DESCRIPTOR_CAP = 40
@@ -151,9 +153,38 @@ def reduce_cast(pages: list[dict[str, Any]]) -> list[dict[str, Any]]:
 
     groups = _build_groups(records, nodes, uf)
     groups = _drop_junk_groups(groups)  # before _mark_majors: junk can't take a major/portrait slot
+    _filter_published_aliases(groups)   # de-contaminate aliases before they can cross-link (§7.2)
     _mark_majors(groups)
     _assign_slugs(groups)
     return [_public_group(g) for g in groups]
+
+
+def _filter_published_aliases(groups: list[dict[str, Any]]) -> None:
+    """Drop contaminated aliases from each group's published ``aliases`` (in place).
+
+    Upstream ``cast-mentions`` sometimes emits, inside one character's ``aliases``, a pronoun or the
+    proper name of a *different* character. Left in, those aliases make ``present_cast`` treat a
+    character as present in the wrong scene (e.g. Marfa carrying a bogus "Grigory" alias gets fed
+    into Grigory's page), and the illustration LLM then binds the wrong appearance. We remove an
+    alias when its normalized form is a stop-word/pronoun, or equals the canonical name of *another*
+    group.
+
+    This only *filters* contamination; it never *links* (diminutives like Mitya↔Dmitri stay the
+    external service's job, ADR-0019). Dropping a cross-name alias is the conservative choice — at
+    worst it forgoes an uncertain link, never fabricates a false one.
+    """
+    name_norms = {_norm(g["name"]) for g in groups}
+    for g in groups:
+        own_norm = _norm(g["name"])
+        kept: list[str] = []
+        for alias in g["aliases"]:
+            a_norm = _norm(alias)
+            if a_norm in _STOP_NAMES:
+                continue  # pronoun / demonstrative
+            if a_norm != own_norm and a_norm in name_norms:
+                continue  # another character's canonical name — cross-person contamination
+            kept.append(alias)
+        g["aliases"] = kept
 
 
 # --- step 1: collect + pronoun-drop ----------------------------------------
