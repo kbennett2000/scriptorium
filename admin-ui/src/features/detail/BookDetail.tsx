@@ -31,6 +31,21 @@ const CHAIN_ORDER: JobStateName[] = [
   "approved", "portraits_rendering", "portraits_review", "rendering", "rendered", "published",
 ];
 
+// The optional portrait gate (ADR-0025) is a real stop between approval and the page render, but
+// only for the books that asked for it — so it is spliced in per-job rather than living in
+// MILESTONES, which would otherwise show a step that never happens. Keyed on `rendering` (not
+// `portraits_review`) so it reads "working toward getting the portraits approved" while the job
+// rests at the gate, exactly like the prompts gate does with "Approved (review gate)".
+const PORTRAIT_MILESTONE: { state: JobStateName; label: string } = {
+  state: "rendering",
+  label: "Portraits approved",
+};
+function milestonesFor(job: Job): { state: JobStateName; label: string }[] {
+  if (job.bake_config?.portrait_review !== true) return MILESTONES;
+  const i = MILESTONES.findIndex((m) => m.state === "rendered");
+  return [...MILESTONES.slice(0, i), PORTRAIT_MILESTONE, ...MILESTONES.slice(i)];
+}
+
 const REVIEW_STATES: JobStateName[] = ["prompts_draft", "in_review", "approved"];
 // Optional portrait gate (ADR-0025): the "Review portraits" screen is reachable while portraits
 // draw and while the job rests at the gate.
@@ -56,6 +71,8 @@ const MILESTONE_ACTIVITY: Record<string, string> = {
   selected: "Choosing which moments to illustrate",
   prompts_draft: "Writing the picture instructions",
   approved: "Getting it approved",
+  // Only reachable when the portrait gate is on (see PORTRAIT_MILESTONE).
+  rendering: "Drawing the character portraits",
   rendered: "Drawing the pictures",
   published: "Packaging the finished book",
 };
@@ -68,8 +85,11 @@ function reached(current: JobStateName, milestone: JobStateName): boolean {
 
 // The first milestone not yet reached = the one the bake is currently working toward (so a
 // `*_running` state lights up the milestone it will produce). -1 once everything is reached.
-function activeMilestoneIndex(state: JobStateName): number {
-  return MILESTONES.findIndex((m) => !reached(state, m.state));
+function activeMilestoneIndex(
+  milestones: { state: JobStateName; label: string }[],
+  state: JobStateName,
+): number {
+  return milestones.findIndex((m) => !reached(state, m.state));
 }
 
 function fmtElapsed(ms: number): string {
@@ -213,12 +233,17 @@ function BookDetailBody({ job, reload }: { job: Job; reload: () => void }) {
       <div className="panel">
         <h3 style={{ marginTop: 0 }}>Progress</h3>
         {(() => {
-          const activeIdx = activeMilestoneIndex(job.state);
-          const activity = activeIdx >= 0 ? MILESTONE_ACTIVITY[MILESTONES[activeIdx].state] : null;
+          const milestones = milestonesFor(job);
+          const activeIdx = activeMilestoneIndex(milestones, job.state);
+          const activity = activeIdx >= 0 ? MILESTONE_ACTIVITY[milestones[activeIdx].state] : null;
           // Only claim "working" when the SERVER says the runner should be advancing; otherwise say
           // plainly what it's waiting for — a ticking clock must never imply work that isn't happening.
           const working = !!job.expecting_progress;
-          const awaitingApproval = job.state === "prompts_draft" || job.state === "in_review";
+          // Both human gates park the bake until the owner acts — say so plainly, and point at the
+          // button that unblocks it, rather than an unexplained "Waiting…".
+          const awaitingPrompts = job.state === "prompts_draft" || job.state === "in_review";
+          const awaitingPortraits = job.state === "portraits_review";
+          const awaitingApproval = awaitingPrompts || awaitingPortraits;
           const waitingLabel =
             job.state === "published" || job.state === "waiting_gpu" || job.state === "failed"
               ? null
@@ -251,7 +276,8 @@ function BookDetailBody({ job, reload }: { job: Job; reload: () => void }) {
               {!working && waitingLabel && (
                 <p className="muted" style={{ marginTop: 0, marginBottom: 10, fontWeight: 600 }}>
                   ⏸ {waitingLabel}
-                  {awaitingApproval && " — use Open Review below."}
+                  {awaitingPrompts && " — use Open Review below."}
+                  {awaitingPortraits && " — use Review portraits below."}
                 </p>
               )}
               {job.state === "published" && (
@@ -265,7 +291,7 @@ function BookDetailBody({ job, reload }: { job: Job; reload: () => void }) {
                 </p>
               )}
               <div className="row">
-                {MILESTONES.map((m, i) => {
+                {milestones.map((m, i) => {
                   const done = reached(job.state, m.state);
                   const inProgress = active && !done && i === activeIdx;
                   return (
