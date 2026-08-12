@@ -290,3 +290,58 @@ def test_uncapitalised_role_epithets_are_dropped_from_aliases() -> None:
     assert "Alexey" in aliases  # a capitalised variant is a name and survives
     for junk in ("the boy", "brother", "mamma"):
         assert junk not in aliases
+
+
+# --- ADR-0028: a contaminated alias must not merge groups or pool descriptors ---
+
+
+def test_role_epithet_alias_does_not_pool_another_characters_descriptors() -> None:
+    """The `ivan`-is-a-monk defect: filtering aliases at publish time is far too late.
+
+    ADR-0027 dropped uncapitalised epithets from the *published* alias list, but rule (b) had
+    already merged on them — folding the generic group's descriptors into a named character, whose
+    portrait was then drawn from someone else's appearance and used to anchor every plate they
+    appear on.
+    """
+    pages = [
+        _page("0001", _m("Ivan", descriptors=["a young man with a proud, restless face"])),
+        # A different character the book also calls "the old man", with his own descriptors. On
+        # two pages, so he survives the junk drop and this test is about the merge, not that.
+        _page("0002", _m("the old man", descriptors=["feeble, with pale bloodless lips"])),
+        _page("0003", _m("the old man")),
+        _page("0004", _m("Ivan", aliases=["the old man"])),
+    ]
+    slugs = _by_slug(reduce_cast(pages))
+
+    assert "ivan" in slugs and "old-man" in slugs, "the epithet must not be swallowed into Ivan"
+    joined = " ".join(slugs["ivan"]["descriptors"])
+    assert "proud, restless face" in joined
+    assert "bloodless lips" not in joined, "another character's appearance leaked into Ivan"
+
+
+def test_ambiguous_alias_claimed_by_two_characters_does_not_merge() -> None:
+    # "the old man" was claimed by nine different characters on the sample book; an alias that
+    # identifies nobody must not fuse anyone.
+    pages = [
+        _page("0001", _m("Fyodor Pavlovitch", aliases=["Monsieur"])),
+        _page("0002", _m("Grigory", aliases=["Monsieur"])),
+        _page("0003", _m("Monsieur", descriptors=["a stranger in a grey coat"])),
+    ]
+    slugs = _by_slug(reduce_cast(pages))
+    assert {"fyodor-pavlovitch", "grigory", "monsieur"} <= set(slugs)
+    for slug in ("fyodor-pavlovitch", "grigory"):
+        assert "grey coat" not in " ".join(slugs[slug]["descriptors"])
+
+
+def test_an_unambiguous_proper_name_alias_still_merges() -> None:
+    # The rule must not cost real links: a capitalised, singly-claimed alias groups as before,
+    # and its descriptors legitimately pool.
+    pages = [
+        _page("0001", _m("Mitya", descriptors=["a stained officer's uniform"])),
+        _page("0002", _m("Mitya", aliases=["Mityenka"])),
+        _page("0003", _m("Mityenka", descriptors=["trembling fingers"])),
+    ]
+    slugs = _by_slug(reduce_cast(pages))
+    assert "mityenka" not in slugs, "the alias should have merged into Mitya"
+    joined = " ".join(slugs["mitya"]["descriptors"])
+    assert "officer's uniform" in joined and "trembling fingers" in joined
