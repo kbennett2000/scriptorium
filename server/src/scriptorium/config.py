@@ -117,7 +117,7 @@ def load_config() -> Config:
         imagegen_url=os.environ.get("IMAGEGEN_URL") or None,
         gpu_mac=os.environ.get("GPU_MAC") or None,
         gpu_wol_enabled=_env_bool("GPU_WOL_ENABLED", False),
-        runner_tick_s=_env_int("RUNNER_TICK_S", 120),
+        runner_tick_s=_env_int("RUNNER_TICK_S", 5),
         auto_approve=_env_bool("AUTO_APPROVE", False),
         auto_start=_env_bool("AUTO_START", False),
         shared_dir=shared_dir,

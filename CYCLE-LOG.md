@@ -2061,3 +2061,26 @@ mutate. Gate is after approval, before pages — adds a gate, never a bypass.
 
 **Done-state.** server ruff clean, pytest **439** (+10, incl. new portrait-gate phase/endpoint tests);
 admin-ui tsc + eslint clean, vite build OK. No schema change → `shared/types` untouched. ADR-0025.
+
+---
+
+## M1 · Cycle 11 — durable fast worker cycle (tick default 120→5) (2026-08-11)
+
+**Why.** The runner sleeps `RUNNER_TICK_S` between steps, so every phase boundary costs at least one
+tick of idle wait. We'd cut this 120→5s via an env override on the running server (Kris: "that was
+easy!"), but the override lived only in the process — any restart snapped back to the 120s default, so
+the speed-up wasn't durable. Kris asked to make the 5s cycle permanent.
+
+**Shipped.** `config.py`: `RUNNER_TICK_S` fallback `120` → `5` (`load_config`). The env var still
+overrides in either direction; this only changes the unset default. Nothing else in the pipeline
+moves — purely the between-steps wait.
+
+**Safety.** The only cost of a fast tick is that a job idle-waiting on a powered-off/unreachable GPU
+re-probes GPU health each tick; that probe fails fast or self-limits to its 15s timeout, and
+Wake-on-LAN is off by default (`GPU_WOL_ENABLED=False`), so no WoL spam. Single-user LAN box → no
+separate "production" to keep conservative; lowering the shipped default is the robust way to make it
+survive restarts. Tests set `runner_tick_s` directly (e.g. `=1` in `_pipeline_build.py`), so none
+depend on the default.
+
+**Done-state.** server ruff clean, pytest green (non-gpu). No schema change → `shared/types`
+untouched.
