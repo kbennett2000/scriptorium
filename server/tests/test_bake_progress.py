@@ -104,6 +104,27 @@ def test_expecting_progress_flag(tmp_path, state, started, expected) -> None:
     assert "progress" in extras
 
 
+def _auto_cfg(tmp_path: Path) -> Config:
+    return Config(
+        data_dir=tmp_path, port=8720, tts_url=None, imagegen_url=None, gpu_mac=None,
+        gpu_wol_enabled=False, runner_tick_s=1, shared_dir=tmp_path,
+        auto_start=True, auto_approve=True,
+    )
+
+
+def test_unattended_true_under_auto_flags(tmp_path) -> None:
+    extras = status_extras(_job(JobState.MENTIONS_RUNNING), _auto_cfg(tmp_path))
+    assert extras["unattended"] is True
+
+
+def test_portrait_review_book_is_not_unattended(tmp_path) -> None:
+    # A book that opted into the portrait gate (ADR-0025) WILL stop for a human, so it is not
+    # unattended even under auto_start + auto_approve — the UI must not promise "no clicks needed".
+    job = Job(id="b", book_id="b", state=JobState.PROMPTS_RUNNING, started=True,
+              bake_config={"portrait_review": True})
+    assert status_extras(job, _auto_cfg(tmp_path))["unattended"] is False
+
+
 def test_get_book_endpoint_includes_progress_fields(monkeypatch, tmp_path) -> None:
     monkeypatch.setenv("SCRIPTORIUM_DATA", str(tmp_path))
     client = TestClient(app)

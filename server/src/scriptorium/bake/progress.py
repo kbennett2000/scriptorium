@@ -112,7 +112,11 @@ def status_extras(job: Job, cfg: Any) -> dict[str, Any]:
         "expecting_progress": bool(job.started) and job.state not in _NOT_EXPECTING,
         # True when the server runs fully hands-off (ADR-0020 + ADR-0015): a new book starts itself
         # and clears the review gate on its own, so the UI can tell the owner no click is coming.
+        # A per-book portrait-review gate (ADR-0025) deliberately stops for a human, so a book that
+        # opted into it is NOT unattended even under auto_start + auto_approve.
         "unattended": bool(
-            getattr(cfg, "auto_start", False) and getattr(cfg, "auto_approve", False)
+            getattr(cfg, "auto_start", False)
+            and getattr(cfg, "auto_approve", False)
+            and not job.bake_config.get("portrait_review")
         ),
     }
