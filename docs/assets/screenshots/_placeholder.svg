@@ -10,7 +10,7 @@
   <g fill="#7a5bb0" opacity="0.9">
     <path d="M400 250h160a16 16 0 0 1 16 16v88a16 16 0 0 1-16 16H400a16 16 0 0 1-16-16v-88a16 16 0 0 1 16-16z" fill="none" stroke="#7a5bb0" stroke-width="4"/>
     <circle cx="430" cy="288" r="12"/>
-    <path d="M392 366l44-44 30 30 40-40 78 78z"/>
+    <path d="M408 362l38-38 26 26 34-34 58 46z"/>
   </g>
   <text x="480" y="430" font-family="'Segoe UI', Helvetica, Arial, sans-serif" font-size="26" font-weight="600"
         fill="#5a4488" text-anchor="middle">Screenshot coming soon</text>

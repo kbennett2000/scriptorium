@@ -45,6 +45,26 @@
           fill="#8a1f3d" text-anchor="middle" dominant-baseline="central">S</text>
   </g>
 
+  <!-- right-hand ornament: an open book with gilt pages, balancing the composition -->
+  <g transform="translate(1086,126) scale(0.82)" opacity="0.9">
+    <circle cx="0" cy="0" r="110" fill="url(#halo)"/>
+    <!-- pages -->
+    <path d="M-78 34 C-52 14 -26 12 0 24 C26 12 52 14 78 34 C52 22 26 22 0 36 C-26 22 -52 22 -78 34 Z"
+          fill="url(#parchment)" stroke="#c9962b" stroke-width="1.5"/>
+    <path d="M-78 34 C-52 14 -26 12 0 24 L0 -34 C-26 -46 -52 -44 -78 -24 Z"
+          fill="url(#parchment)" stroke="url(#gold)" stroke-width="2.5"/>
+    <path d="M78 34 C52 14 26 12 0 24 L0 -34 C26 -46 52 -44 78 -24 Z"
+          fill="url(#parchment)" stroke="url(#gold)" stroke-width="2.5"/>
+    <!-- text lines on the pages -->
+    <g stroke="#8a1f3d" stroke-width="2" opacity="0.35" stroke-linecap="round">
+      <path d="M-62 -20 H-16"/><path d="M-62 -8 H-16"/><path d="M-62 4 H-24"/>
+      <path d="M16 -20 H62"/><path d="M16 -8 H62"/><path d="M24 4 H62"/>
+    </g>
+    <!-- spine + a rising gilt star -->
+    <path d="M0 24 V-34" stroke="#c9962b" stroke-width="2"/>
+    <path d="M0 -58 l4.5 13 13 4.5 -13 4.5 -4.5 13 -4.5 -13 -13 -4.5 13 -4.5 Z" fill="url(#gold)"/>
+  </g>
+
   <!-- wordmark + tagline -->
   <g transform="translate(300,0)">
     <text x="0" y="150" font-family="Georgia, 'Times New Roman', serif" font-size="92" font-weight="700"
