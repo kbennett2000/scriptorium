@@ -248,3 +248,45 @@ def test_cleaned_aliases_stop_present_cast_cross_link() -> None:
     names = {c["name"] for c in present}
     assert "Marfa Ignatyevna" in names
     assert "Grigory" not in names  # no cross-link — the whole point of the filter
+
+
+def test_alias_claimed_by_several_characters_is_dropped_from_all() -> None:
+    # ADR-0027: an alias attached to more than one character identifies nobody and guarantees a
+    # cross-link. On a real 239-character book "the old man" was claimed by NINE characters and
+    # "Dmitri Fyodorovitch" by six. Drop it everywhere rather than pick a winner.
+    groups = reduce_cast([
+        _page("0001", _m("Fyodor Pavlovitch", aliases=["Karamazov", "Dmitri Fyodorovitch"])),
+        _page("0002", _m("Grigory", aliases=["Dmitri Fyodorovitch"])),
+        _page("0003", _m("Fyodor Pavlovitch"), _m("Grigory")),
+    ])
+    slugs = _by_slug(groups)
+    assert "Karamazov" in slugs["fyodor-pavlovitch"]["aliases"]  # singly-claimed name survives
+    for g in groups:
+        assert "Dmitri Fyodorovitch" not in g["aliases"]
+
+
+def test_alias_matching_another_name_modulo_title_is_dropped() -> None:
+    # The pre-ADR-0027 rule compared canonical names verbatim, so an "elder" group carrying the
+    # alias "Zossima" slipped past the group actually called "Father Zossima" — and every plate
+    # naming Zossima then resolved ambiguously between the two.
+    groups = reduce_cast([
+        _page("0001", _m("the elder", aliases=["Zossima"]), _m("Father Zossima")),
+        _page("0002", _m("the elder"), _m("Father Zossima")),
+        _page("0003", _m("Father Zossima")),
+    ])
+    slugs = _by_slug(groups)
+    assert "Zossima" not in slugs["elder"]["aliases"]
+    assert slugs["father-zossima"]["name"] == "Father Zossima"
+
+
+def test_uncapitalised_role_epithets_are_dropped_from_aliases() -> None:
+    # ADR-0027: "the boy" / "brother" / "mamma" are roles, not names. They were the bulk of the
+    # contamination (487 of 731 aliases on the sample book).
+    groups = reduce_cast([
+        _page("0001", _m("Alyosha", aliases=["the boy", "brother", "mamma", "Alexey"])),
+        _page("0002", _m("Alyosha")),
+    ])
+    aliases = groups[0]["aliases"]
+    assert "Alexey" in aliases  # a capitalised variant is a name and survives
+    for junk in ("the boy", "brother", "mamma"):
+        assert junk not in aliases

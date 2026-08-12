@@ -43,6 +43,8 @@ from __future__ import annotations
 import re
 from typing import Any
 
+from .. import names
+
 # Rule (c): tokens stripped before the single-token-subset test (DESIGN §7.2 step 2c).
 _ARTICLES_HONORIFICS: frozenset[str] = frozenset(
     {"the", "a", "mr", "mrs", "miss", "dr", "sir", "lady", "lord"}
@@ -172,17 +174,45 @@ def _filter_published_aliases(groups: list[dict[str, Any]]) -> None:
     This only *filters* contamination; it never *links* (diminutives like Mitya↔Dmitri stay the
     external service's job, ADR-0019). Dropping a cross-name alias is the conservative choice — at
     worst it forgoes an uncertain link, never fabricates a false one.
+
+    ADR-0027 adds three rules after a 239-character book shipped 731 aliases of which only the
+    exact-canonical-name rule below caught anything:
+
+    * **Shared** — an alias claimed by more than one group identifies nobody and guarantees a
+      cross-link, so it is dropped from *all* of them ("the old man" was claimed by nine
+      characters; "Dmitri Fyodorovitch" by six).
+    * **Same name modulo title** — the original rule compared canonical names verbatim, so an
+      ``elder`` group carrying the alias "Zossima" slipped past the group actually named "Father
+      Zossima". Compared on :func:`names.core_key` now.
+    * **Not a name** — an alias with no capitalised token is a role or relational epithet
+      ("the boy", "brother", "mamma", "his friend"), never a name in the prose these books are
+      drawn from. NOTE this assumes a capitalising script; a book typeset entirely in lower case
+      would lose its aliases (it would still keep every canonical ``name``).
     """
     name_norms = {_norm(g["name"]) for g in groups}
+    name_cores = {names.core_key(g["name"]) for g in groups if names.core_key(g["name"])}
+    claimed_by: dict[str, int] = {}
+    for g in groups:
+        for a_norm in {_norm(a) for a in g["aliases"]}:
+            claimed_by[a_norm] = claimed_by.get(a_norm, 0) + 1
+
     for g in groups:
         own_norm = _norm(g["name"])
+        own_core = names.core_key(g["name"])
         kept: list[str] = []
         for alias in g["aliases"]:
             a_norm = _norm(alias)
+            a_core = names.core_key(alias)
             if a_norm in _STOP_NAMES:
                 continue  # pronoun / demonstrative
             if a_norm != own_norm and a_norm in name_norms:
                 continue  # another character's canonical name — cross-person contamination
+            if claimed_by.get(a_norm, 0) > 1:
+                continue  # claimed by several characters — identifies nobody
+            if a_core and a_core != own_core and a_core in name_cores:
+                continue  # another character's name once titles are stripped ("Zossima")
+            if not names.has_capitalised_token(alias):
+                continue  # a role/relational epithet, not a name
             kept.append(alias)
         g["aliases"] = kept
 

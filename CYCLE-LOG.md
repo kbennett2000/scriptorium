@@ -2285,3 +2285,37 @@ Hand-edited descriptions leaking into art (`madame-hohlakov.visual_description` 
 `"a dumb bitch who keeps talking"`, baked verbatim into her portrait). steps/cfg/sampler control — the
 imagegen service exposes none (ADR-0011).
 
+## M1 · Cycle 17 — cast alias de-contamination (2026-08-12)
+
+**Why.** Cycle 16 made the portrait reference resolve from `depicted[0]` only and refuse ambiguous
+labels — which immediately exposed how contaminated the cast data is. The published Karamazov carries
+**731 aliases across 239 characters**; `"the old man"` is claimed by **nine** different characters,
+`"Dmitri Fyodorovitch"` by six, and the group `elder` claims `"Zossima"` while a separate group is
+named `"Father Zossima"`. ADR-0022's filter caught none of it: it only drops pronouns and aliases
+equal to another group's *verbatim* canonical name. Kris called it before any re-bake — right call,
+since contaminated aliases feed `present_cast` and put the wrong appearance in the prompt.
+
+**Shipped** (see [ADR-0027](docs/adr/0027-alias-contamination-rules.md)):
+- `_filter_published_aliases` gained three rules — **shared** (claimed by 2+ groups → dropped from
+  all; it identifies nobody), **same name modulo title** (compare on title/article-stripped form, so
+  `"Zossima"` collides with `"Father Zossima"`), and **not a name** (no capitalised token → a role or
+  relational epithet: `"the boy"`, `"brother"`, `"mamma"`, `"his friend"`).
+- New `scriptorium/names.py` holds the label folding now shared by cast reduction and render-time
+  matching. They must agree about `"Father Zossima"` ≡ `"Zossima"` — disagreeing is how a plate gets
+  anchored on the wrong face — so `p7_render` folds through the same module.
+
+**Verification.** `ruff` clean; **462 passed, 5 deselected** with no GPU services (+3 new, one per
+rule). Replayed against the real book: **731 → 199 aliases (73% dropped)**, with genuine variants
+(`Kalganov`, `Fyodor Pavlovitch Karamazov`, `Ilyitch`, `Mr. Kalganov`) surviving.
+
+**Deliberate costs, both recorded in the ADR.** The capitalisation rule assumes a capitalising script
+(a lower-case-typeset book would lose aliases but keep every canonical `name`) — Kris's call, as the
+cheapest large win. And when one character is wrongly split in two, a shared alias is now dropped from
+both halves (`"Perhotin"` off `pyotr-ilyitch` and `pyotr-ilyitch-perhotin`); the *split* is the real
+defect and merging it needs world knowledge, which stays upstream per ADR-0019.
+
+**Not fixable here.** `fyodor-pavlovitch` still carries `"Kalganov"` and `"Smurov"` — other people
+entirely. Nothing downstream can know that; fixed at source in text-transform-service **T20**.
+
+**Applies to the next bake only.** `cast.json` is written at bake time, so a published book benefits
+only from a re-bake — which is why Karamazov is being re-baked rather than given a picture set.
