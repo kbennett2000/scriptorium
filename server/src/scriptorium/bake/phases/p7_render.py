@@ -172,6 +172,17 @@ _GLOBAL_NEGATIVE = (
 )
 
 
+# Appended to a *portrait* plate's negative only (ADR-0028). A portrait is the IP-Adapter reference
+# for every plate its character anchors, so a two-figure portrait is not one bad picture — it is
+# every plate that character appears on. `_GLOBAL_NEGATIVE`'s "duplicate, cloned face" targets one
+# subject rendered twice; these target a deliberate second sitter.
+_PORTRAIT_NEGATIVE = "two people, group portrait, diptych, multiple figures, couple"
+
+
+def _is_portrait_plate(plate_id: str) -> bool:
+    return plate_id.startswith(PORTRAIT_PREFIX)
+
+
 def _dedupe_terms(*parts: str) -> str:
     """Join comma-separated prompt fragments, dropping repeats (first occurrence wins)."""
     seen: set[str] = set()
@@ -201,7 +212,8 @@ def wrap_prompt(
     """
     final = prompt_doc["final_subject_prompt"]
     if not _is_page_plate(plate_id):
-        return final, _dedupe_terms(style["negative"], _GLOBAL_NEGATIVE)
+        extra = _PORTRAIT_NEGATIVE if _is_portrait_plate(plate_id) else ""
+        return final, _dedupe_terms(style["negative"], _GLOBAL_NEGATIVE, extra)
 
     derived = prompt_doc.get("derived") or {}
     # The subject is a sentence; drop its full stop so the style suffix reads as a continuation of
@@ -297,6 +309,25 @@ def portrait_reference(
     return [png.read_bytes()], slug
 
 
+# Conditioning for a plate whose frame holds more than one person (ADR-0028). IP-Adapter is
+# global and unmasked — it has no way to apply a face to one figure and not the other — so on a
+# two-person plate the second person inherits the anchor's face *and* clothes. 288 of 440 plates on
+# the sample book were multi-figure. Full regional masking is ADR-0023 Phase 2; until then a
+# multi-figure plate gets a weaker, later anchor so the prompt keeps control of the second figure.
+_MULTI_FIGURE_STRENGTH = 0.35
+_MULTI_FIGURE_START = 0.4
+
+
+def reference_conditioning(depicted: list) -> tuple[float | None, float | None]:
+    """``(strength, start)`` for a plate's reference — ``(None, None)`` to accept service defaults.
+
+    A single-figure plate is what IP-Adapter is designed for and takes the service's tuned default.
+    """
+    if len(depicted or []) > 1:
+        return _MULTI_FIGURE_STRENGTH, _MULTI_FIGURE_START
+    return None, None
+
+
 def _portrait_reference(
     cfg: Any, job: Job, plate_id: str, doc: dict
 ) -> tuple[list[bytes] | None, str | None]:
@@ -346,6 +377,8 @@ async def render_to_spec(
     seed: int,
     style: str | None = None,
     references: list[bytes] | None = None,
+    reference_strength: float | None = None,
+    reference_start: float | None = None,
 ) -> None:
     """The pure render step: txt2img → write archival PNG → idempotent WebP derivatives.
 
@@ -354,9 +387,19 @@ async def render_to_spec(
     bookkeeping. ``style`` is the imagegen preset name (from ``styles.json`` ``imagegen_style``),
     or ``None`` for prompt-only styles (ADR-0013). ``references`` are optional portrait PNGs fed as
     image-prompt conditioning for character consistency (ADR-0023); ``None`` = prompt-only.
+    ``reference_strength``/``reference_start`` tune that conditioning (ADR-0028); ``None`` accepts
+    the service's defaults.
     """
     png = await client.txt2img(
-        wrapped, negative, spec.width, spec.height, seed, style=style, references=references
+        wrapped,
+        negative,
+        spec.width,
+        spec.height,
+        seed,
+        style=style,
+        references=references,
+        reference_strength=reference_strength,
+        reference_start=reference_start,
     )
     spec.src.parent.mkdir(parents=True, exist_ok=True)
     spec.src.write_bytes(png)
@@ -380,8 +423,17 @@ async def render_plate(
         seed = _default_seed(job.book_id, plate_id)
 
     references, reference_slug = _portrait_reference(cfg, job, plate_id, doc)
+    strength, start = reference_conditioning((doc.get("derived") or {}).get("depicted") or [])
     await render_to_spec(
-        client, wrapped, negative, spec, seed, style.get("imagegen_style"), references=references
+        client,
+        wrapped,
+        negative,
+        spec,
+        seed,
+        style.get("imagegen_style"),
+        references=references,
+        reference_strength=strength,
+        reference_start=start,
     )
 
     prev_attempts = int((doc.get("render") or {}).get("attempts", 0))

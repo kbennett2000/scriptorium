@@ -34,6 +34,7 @@ placeholders that predate these formulas; tests assert schema + cross-refs, not 
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 from typing import Any
 
@@ -55,6 +56,41 @@ PORTRAIT_PREFIX = "portrait-"
 CAST_CAP = 4
 # §10 portrait: condense the canonical visual_description to at most this many words.
 PORTRAIT_MAX_WORDS = 60
+
+# ADR-0028: framing that keeps a portrait to one figure. "bust composition" in every style's
+# ``portrait_prefix`` proved too weak on its own — it constrains the crop, not the head count.
+# A code constant rather than 16 copies in styles.json, mirroring p7_render's _GLOBAL_NEGATIVE.
+PORTRAIT_SOLO = "single figure, one person, head and shoulders, plain background, "
+
+# --- subject reduction (ADR-0028) -------------------------------------------
+# Person nouns a canonical description opens with. Deliberately a closed list: an unknown noun
+# leaves the description untouched, which is the pre-ADR-0028 behaviour (safe, not silently wrong).
+_PERSON_NOUN = (
+    r"man|woman|boy|girl|gentleman|lady|monk|priest|peasant|figure|fellow|person|child|"
+    r"youth|servant|officer|doctor|student|beauty|widow|captain|clerk|soldier|nun|"
+    r"schoolboy|landowner|merchant|maiden|elder|invalid|creature"
+)
+# "A young Russian gentleman", "An old man", "A twenty-seven-year-old man" — determiner, up to five
+# modifiers (non-greedy, so the *first* person noun wins), the noun.
+_LEAD_SUBJECT = re.compile(
+    r"^\s*(?:a|an|the)\s+(?:[\w'-]+,?\s+){0,5}?(?:" + _PERSON_NOUN + r")s?\b", re.I
+)
+# Posture / locomotion — where a bust prompt turns into a scene prompt.
+_NARRATIVE_VERB = re.compile(
+    r"\s+(?:stands?|sits?|kneels?|walks?|runs?|leaps?|lies?|strides?|sways?|moves?|"
+    r"rests?|hides?|stretch(?:es)?|paces?|steps?)\b",
+    re.I,
+)
+_SENTENCE_SPLIT = re.compile(r"(?<=[.!?])\s+")
+_PRONOUN_WEARS = re.compile(r"^(?:he|she|they)\s+wears?\b", re.I)
+_PRONOUN_COPULA = re.compile(r"^(?:he|she|they)\s+(?:is|are|was|were)\b", re.I)
+# Cutting at a narrative verb can leave a dangling connective ("...as he", "...clothing and").
+_DANGLING = frozenset(
+    "as while and or yet but who that which then when before after so for from with in on at to of "
+    "he she they his her their it its".split()
+)
+# Shorter than this, a surviving clause is a fragment rather than a description.
+_MIN_CLAUSE_WORDS = 3
 
 _DEFAULT_PRESET_MISSING_BEAT = ""
 
@@ -203,9 +239,75 @@ def condense(text: str, max_words: int = PORTRAIT_MAX_WORDS) -> str:
     return truncated[: cut + 1] if cut != -1 else truncated
 
 
+def _strip_lead_subject(text: str) -> str:
+    """Drop a leading ``A/An/The <modifiers> <person-noun>``; unchanged when there is none."""
+    match = _LEAD_SUBJECT.match(text)
+    if not match:
+        return text
+    # Never empty the description out — a bare noun phrase ("A young man.") keeps its original text
+    # rather than contributing nothing.
+    return text[match.end() :].lstrip(" ,;") or text
+
+
+def _trim_dangling(text: str) -> str:
+    """Drop trailing connectives/pronouns left behind by a mid-sentence cut."""
+    words = text.rstrip(" ,;.").split()
+    while words and words[-1].strip(",;").casefold() in _DANGLING:
+        words.pop()
+    return " ".join(words).rstrip(" ,;")
+
+
+def _defuse_pronoun_subject(sentence: str) -> str:
+    """``He wears X`` → ``wearing X``; ``She is X`` → ``X``. Possessives ("Her face…") stay put."""
+    if _PRONOUN_WEARS.match(sentence):
+        return "wearing " + _PRONOUN_WEARS.sub("", sentence).lstrip()
+    if _PRONOUN_COPULA.match(sentence):
+        return _PRONOUN_COPULA.sub("", sentence).lstrip()
+    return sentence
+
+
+def subject_attributes(text: str) -> str:
+    """Reduce a ``visual_description`` to **attribute clauses with no subject of their own**.
+
+    ``one_line`` and ``visual_description`` are each a complete subject noun phrase. Concatenated
+    (the pre-ADR-0028 formula), SDXL reads them as *two people* — which is how Mitya's reference
+    portrait became a painting of two officers, and how 84 plates conditioned on it became two
+    officers too. 25 of 69 portrait prompts on that book named the subject 2-3 times.
+
+    Three deterministic passes, each of which can only ever remove text:
+
+    1. strip a leading ``A/An/The <adjectives> <person-noun>`` so the description contributes
+       ``with golden hair`` rather than ``A young man with golden hair``;
+    2. drop posture/locomotion clauses (``stands at medium height``, ``sits unmoved``) — a bust
+       portrait has no room for them and they pull the frame out to a full scene;
+    3. fold a later clause's pronoun subject into an attribute (``He wears X`` → ``wearing X``).
+    """
+    out: list[str] = []
+    for sentence in _SENTENCE_SPLIT.split(_strip_lead_subject(text)):
+        narrative = _NARRATIVE_VERB.search(sentence)
+        clause = _trim_dangling(sentence[: narrative.start()] if narrative else sentence)
+        clause = _trim_dangling(_defuse_pronoun_subject(clause))
+        if not clause:
+            continue
+        # A *truncated* clause can be a stub ("of about fifty years", left over from "...stands
+        # with a fair, long beard"); an intact short one is a real attribute ("of forty").
+        if narrative and len(clause.split()) < _MIN_CLAUSE_WORDS:
+            continue
+        out.append(clause if out else clause[:1].lower() + clause[1:])
+    return ", ".join(out)
+
+
 def assemble_portrait(style: dict, one_line: str, visual_description: str) -> str:
-    """The §10 portrait prompt string for one major character, assembled CPU-side (no LLM)."""
-    return f"{style['portrait_prefix']}{one_line}, {condense(visual_description)}"
+    """The §10 portrait prompt string for one major character, assembled CPU-side (no LLM).
+
+    ADR-0028: the subject is named **exactly once** (``one_line``); the canonical description is
+    reduced to attribute clauses by :func:`subject_attributes`, and :data:`PORTRAIT_SOLO` states the
+    single-figure framing that ``style.portrait_prefix``'s "bust composition" alone did not enforce.
+    """
+    subject = one_line.strip().rstrip(" .")
+    attributes = subject_attributes(condense(visual_description))
+    tail = f", {attributes}" if attributes else ""
+    return f"{style['portrait_prefix']}{PORTRAIT_SOLO}{subject}{tail}"
 
 
 def eligible_portraits(cast_doc: dict) -> list[dict]:
