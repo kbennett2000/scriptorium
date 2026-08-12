@@ -7,7 +7,7 @@
 </p>
 
 <p align="center">
-  <img alt="status active · reader offline-first · AI 100% local · read on browser and Android" src="docs/assets/badges.svg">
+  <img alt="license MIT · reader offline-first · AI 100% local · read on browser and Android · status active" src="docs/assets/badges.svg">
 </p>
 
 ---
@@ -129,4 +129,7 @@ New here? The fastest path to a running server is **[the self-hosting guide](doc
 
 Active build. The reading experience and the bake pipeline both work end-to-end today.
 
-© Twelve Rocks LLC. A license file has not been added yet — until one is, all rights are reserved.
+Open source under the **[MIT License](LICENSE)** — take it, change it, build on it, sell it. Just keep
+the copyright notice. © 2026 Kris Bennett.
+
+Contributions and forks are welcome. If you build something fun with it, I'd love to hear about it.

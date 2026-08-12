@@ -2215,6 +2215,9 @@ alt port served `/health` (JSON), reader at `/`, and admin `200` at `/admin/`. `
 review only (Windows path noted as less-tested in the guide). No app code touched, so `lint-all`/tests
 are unaffected.
 
-**Out of scope (noted).** Real screenshots (placeholders only — next pass); a LICENSE file (recommended,
-but the license choice is Kris's — README states all-rights-reserved until one is added); Docker/Play-Store/
+**Open-sourced.** `LICENSE` added — **MIT**, © 2026 Kris Bennett (Kris's call: "anybody can take it and do
+anything with it"). README's license section rewritten accordingly and a `license MIT` pill added to the
+badge strip.
+
+**Out of scope (noted).** Real screenshots (placeholders only — next pass); Docker/Play-Store/
 desktop-installer packaging; the still-missing developer `system-overview.md`.
