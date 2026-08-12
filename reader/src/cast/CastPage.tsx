@@ -3,6 +3,7 @@ import { useEffect, useMemo, useState } from "react";
 import type { Cast } from "@scriptorium/shared";
 
 import type { BundleReader } from "../readerview/BundleReader";
+import { Lightbox } from "../readerview/Lightbox";
 import { visibleCharacters } from "./filter";
 
 // The dramatis-personae page (DESIGN §13): a full-screen overlay listing the book's MAJOR cast, each
@@ -28,6 +29,9 @@ export function CastPage({
     [cast, furthestSeq],
   );
   const [portraits, setPortraits] = useState<Record<string, string | null>>({});
+  // Tap a resident portrait thumb to see it big (reuses the plate Lightbox). The reader only holds
+  // the small webp derivative — no network fetch — so "bigger" just fills the screen with that thumb.
+  const [zoom, setZoom] = useState<{ src: string; alt: string } | null>(null);
 
   useEffect(() => {
     let live = true;
@@ -58,7 +62,21 @@ export function CastPage({
           {characters.map((c) => (
             <li key={c.slug} className="cast-entry" data-cast-slug={c.slug}>
               {portraits[c.slug] ? (
-                <img className="cast-portrait" src={portraits[c.slug] ?? undefined} alt="" />
+                <img
+                  className="cast-portrait"
+                  src={portraits[c.slug] ?? undefined}
+                  alt=""
+                  role="button"
+                  tabIndex={0}
+                  aria-label={`Enlarge portrait of ${c.name}`}
+                  onClick={() => setZoom({ src: portraits[c.slug] as string, alt: c.name })}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" || e.key === " ") {
+                      e.preventDefault();
+                      setZoom({ src: portraits[c.slug] as string, alt: c.name });
+                    }
+                  }}
+                />
               ) : (
                 <span className="cast-portrait cast-initial" aria-hidden="true">
                   {c.name.replace(/^the\s+/i, "").charAt(0).toUpperCase()}
@@ -72,6 +90,7 @@ export function CastPage({
           ))}
         </ul>
       )}
+      {zoom && <Lightbox src={zoom.src} alt={zoom.alt} onClose={() => setZoom(null)} />}
     </section>
   );
 }

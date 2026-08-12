@@ -732,6 +732,9 @@ span.hl {
   object-fit: cover;
   background: var(--surface);
 }
+img.cast-portrait {
+  cursor: zoom-in; /* only real portraits are clickable-to-enlarge; the monogram disc is not */
+}
 .cast-initial {
   display: flex;
   align-items: center;

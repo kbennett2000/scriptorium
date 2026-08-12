@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 
 import type { Cast } from "@scriptorium/shared";
 
@@ -52,5 +52,22 @@ describe("CastPage (ADR-0008 in the overlay)", () => {
     render(<CastPage reader={stubReader} cast={CAST} furthestSeq={6} onClose={() => {}} />);
     await waitFor(() => expect(screen.getByText("The Harbourmaster")).toBeInTheDocument());
     expect(screen.getByText("The Narrator")).toBeInTheDocument();
+  });
+
+  it("enlarges a resident portrait thumb in a lightbox when tapped", async () => {
+    const withThumbs: BundleReader = {
+      async readJson<T>(): Promise<T> {
+        throw new Error("unused");
+      },
+      async imageUrl() {
+        return "blob:portrait"; // resident thumb → clickable <img>, not the monogram fallback
+      },
+      dispose() {},
+    };
+    render(<CastPage reader={withThumbs} cast={CAST} furthestSeq={6} onClose={() => {}} />);
+    const thumb = await screen.findByRole("button", { name: /enlarge portrait of the narrator/i });
+    fireEvent.click(thumb);
+    // The lightbox is its own dialog, distinguished from the cast overlay by its accessible name.
+    expect(screen.getByRole("dialog", { name: "The Narrator" })).toBeInTheDocument();
   });
 });
