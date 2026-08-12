@@ -2386,3 +2386,65 @@ generated types in sync.
 - `cast-canonicalize` bans the substring `'kind'`, so `kartashov` — "jolly, **kind**, dear little
   eyes" — 422'd through the whole retry ladder and shipped with no description and no portrait. A
   word-boundary match would fix it; text-transform-service change, not filed yet.
+
+---
+
+## M1 · Cycle 19 — Cycle 18 verified end-to-end, and real gate screenshots (2026-08-12)
+
+**Why.** Cycle 18 shipped but was never observed working: the imagegen-service restart that carries
+F2 had not happened, and the repo's screenshots were still from the pre-fix engine. This cycle put
+the fixes in front of a real bake and photographed the result.
+
+**Two deployment faults found before any of it could work**
+- The service restarted cleanly onto **the wrong code**. Its unit runs `tsx` from the repo working
+  directory with no build step, so *the checked-out git branch is what runs*; the repo sat on
+  `feat/img2img` while F2 was on an unmerged branch. A new PID proves nothing — check the branch.
+  (Merged: identity conditioning as imagegen ADR-0005, img2img renumbered to ADR-0006.)
+- `qwen3.5:9b` was pinned **98% on CPU** with 9.8 GB of VRAM free, because ollama fixes the CPU/GPU
+  split at load time and it had loaded while SDXL was resident. P1 took 8 minutes and brushed
+  `waiting_gpu`; after `ollama stop`, 47 pages of mentions took 2. Nothing reported this as a fault
+  — `/api/admin/gpu` said `"loaded": true`.
+
+**Verified on a real bake** (pg-43, oil-painting, `portrait_review: true`)
+- **F1 holds.** All 11 portraits rendered as single figures. Prompts carry one subject noun phrase
+  followed by attribute clauses, exactly as designed.
+- **F2/F3 hold.** The 13 plates are genuinely different scenes — street, fireside, laboratory,
+  moonlit lane, a man before a mirror. Composition now belongs to the prompt, which is the whole
+  point of `start_at: 0.30`. Nothing resembles the Karamazov failure, where every plate was a copy
+  of one reference painting.
+- **F5 holds.** The gate ranks by anchor count and says so: Utterson `5 pictures` first, then 2, 2,
+  1, and six portraits at `0 pictures`.
+
+**Still broken (not regressions — newly measured)**
+- **Narrative leaks into portraits through `one_line`.** `subject_attributes` strips narrative verbs
+  from `visual_description` but `assemble_portrait` keeps `one_line` verbatim as the subject. So
+  "Little man in dark clothes **walking eastward through**…" renders a street scene, and Sleepy
+  Hollow's Ichabod — who anchors 4 pictures — is a man **on horseback** rather than a bust.
+  Regenerating cannot help; the prompt is the same. The strip belongs on both fields.
+- **Duplicate cast entries survive.** `jekyll` / `dr-jekyll` / `henry-jekyll` rendered as three
+  different men, likewise `hyde` / `mr-hyde` / `edward-hyde`, and `van-tassel` / `old-baltus-van-tassel`.
+  Cycle 17/18 stopped descriptors pooling through bad aliases but nothing merges name variants of one
+  character. This is now the largest remaining source of face inconsistency — bigger than conditioning.
+- **6 of 11 portraits anchored 0 plates** — GPU time spent on references nothing uses.
+- **Multi-figure plates mostly render one figure.** The 0.35/0.4 reduction avoids two clones but does
+  not produce two people; still ADR-0023 Phase 2 (regional masking).
+- **The author leaked into the cast.** *The Yellow Wallpaper* lists "Charlotte Perkins Gilman" as a
+  major character with plates depicting her; the narrator is unnamed. Cover prompt reads `by :`.
+
+**Shipped**
+- 15 real screenshots, re-captured against these bakes, replacing the pre-fix set.
+- `04` and `05` are now **live gates** with working Approve/Regenerate, not the read-only view a
+  published book shows. That needed the server run without `AUTO_APPROVE` and two books parked mid-bake
+  (pg-1952 at `prompts_draft`, pg-41 at `portraits_review`); `01` now shows three books in three states.
+- `tools/postprocess-screenshots.py` — trims dead margins and quantises (11.4 MB → 4.1 MB). Its first
+  version averaged sampled pixels per line and silently ate a 744px-wide strip of the annotations
+  panel; it now requires every pixel in a line to match the background.
+- `tools/capture-screenshots.mjs`: skip the reader half when `--only` selects no reader shot, clip to
+  real content (the app shell claims full viewport height so `fit()` alone cannot shrink a short page),
+  case-insensitive block matching (admin headings are uppercased in CSS, so the DOM text is `Controls`),
+  and a taller viewport for the internally-scrolling styles list.
+
+**Gates.** ruff clean · eslint + tsc clean (reader, admin-ui) · 496 passed, 4 deselected.
+
+**Inference.** Left pg-1952 and pg-41 parked rather than finishing them — they are what makes the two
+gate screenshots reproducible. Delete or approve them when done; `01`/`04`/`05` need re-taking after.
