@@ -2118,3 +2118,29 @@ to plain text offline.
 **Done-state.** server ruff clean, pytest **444** (+3 artset-progress); reader tsc + eslint clean,
 vitest **178** (+2 SetPicker); `just gen-types` → only `artset-list.d.ts` changed. ADR-0014 (no new
 ADR — additive UX/observability).
+
+---
+
+## M1 · Cycle 13 — admin Books list groups picture-sets under their book (2026-08-11)
+
+**Why.** The admin Books list (`GET /api/admin/books`) returns every job flat, including the per-set
+render jobs (id `{book}#{set_id}`, states `set_rendering`/`set_done`). A book with 15 style sets showed
+as 1 book row + 15 "(untitled)" rows — the book buried, the set rows meaningless. Kris wanted one row
+per book, expandable to reveal its picture sets by style name.
+
+**Shipped (admin-ui only — no server/schema/API change; the data was already on the wire).**
+- `features/books/group.ts`: pure `groupBooks(jobs)` → `{bookId, book, sets}[]` (`isSetJob` = id has
+  `#`; orphan sets → `book:null`; groups sorted newest-activity first). Unit-tested (`group.test.ts`).
+- `features/books/BooksList.tsx`: fetches the style catalog via the existing `getStyles()` and builds a
+  `style_id → name` map (client-side — no new endpoint); renders one parent row per book with a
+  "▸ N picture sets" expander; expanded rows show each set by **style name** (+ " (re-roll)" for reroll
+  kind) and a friendly badge (`set_rendering → "making pictures"`, `set_done → "ready"`). Fixes a
+  latent React key collision (rows had keyed on the shared `book_id`; now `book:{id}` / `set.id`).
+- `api/types.ts`: `set_rendering`/`set_done` added to `JobStateName`. `index.css`: `.set-subrow` +
+  `.set-toggle`.
+
+**Invariants.** Presentational admin change — no reader/read-path, no bundle/schema/immutability, no
+pipeline logic; server output unchanged.
+
+**Done-state.** admin-ui tsc + eslint clean, vitest **5** (+4 grouping), vite build OK. Verified
+against live data (Ted's Camping Trip → 15 sets group correctly).

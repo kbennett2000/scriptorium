@@ -194,6 +194,31 @@ tbody tr:hover {
   cursor: pointer;
 }
 
+/* Picture-set sub-rows nested under a book (grouped in the Books list). */
+.set-toggle {
+  margin-top: 4px;
+  padding: 1px 4px;
+  font-size: 11px;
+  color: var(--accent);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+}
+.set-toggle:hover {
+  text-decoration: underline;
+  background: transparent;
+}
+.set-subrow > td {
+  background: #fafafa;
+}
+.set-subrow > td:first-child {
+  padding-left: 24px;
+  border-left: 3px solid var(--line);
+}
+.set-subrow .set-name {
+  font-weight: 500;
+}
+
 /* --- panels / cards --- */
 .panel {
   background: var(--panel);

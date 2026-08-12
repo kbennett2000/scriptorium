@@ -31,7 +31,10 @@ export type JobStateName =
   | "published"
   | "waiting_gpu"
   | "paused"
-  | "failed";
+  | "failed"
+  // Per-user picture-set render lifecycle (artsets), shown nested under a book in the Books list.
+  | "set_rendering"
+  | "set_done";
 
 // A recorded per-unit failure (bake/runner.py). Opaque runtime shape — treated as untyped.
 export type FailedUnit = Record<string, unknown>;
