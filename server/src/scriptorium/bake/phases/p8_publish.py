@@ -35,7 +35,13 @@ from ...render.imagegen import ImagegenClient
 from ...styles import get_style
 from ..job import Job, JobState
 from .base import PipelineBug, Unit
-from .p7_render import _asset_spec, _now_iso, portrait_reference, render_to_spec
+from .p7_render import (
+    _asset_spec,
+    _now_iso,
+    portrait_reference,
+    reference_conditioning,
+    render_to_spec,
+)
 
 # The §4.3 reader-required globs, verbatim (readers download only these by default; full-res
 # archival ``images/plates/*.png`` etc. are excluded).
@@ -354,8 +360,17 @@ async def regen_published_plate(
         characters,
         library / "images" / "portraits",
     )
+    strength, start = reference_conditioning(((doc.get("derived") or {}).get("depicted")) or [])
     await render_to_spec(
-        client, wrapped, negative, spec, seed, imagegen_style, references=references
+        client,
+        wrapped,
+        negative,
+        spec,
+        seed,
+        imagegen_style,
+        references=references,
+        reference_strength=strength,
+        reference_start=start,
     )
 
     doc["render"] = {

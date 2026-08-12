@@ -93,6 +93,9 @@ export interface ReviewPayload {
   beats: Record<string, string>;
   // True while the plates are S9-stub placeholders (real render clears it) — gates the banner.
   render_stub: boolean;
+  // {slug: page plates this character's portrait will condition} — computed server-side with P7's
+  // own resolver (ADR-0028). Drives the portrait gate's review order.
+  portrait_anchor_counts: Record<string, number>;
 }
 
 // GET /api/admin/gutendex?q= (one trimmed result).

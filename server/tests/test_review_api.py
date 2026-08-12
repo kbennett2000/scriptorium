@@ -17,6 +17,7 @@ from fastapi.testclient import TestClient
 
 from scriptorium.app import app
 from scriptorium.bake import job as jobmod
+from scriptorium.bake.review_api import portrait_anchor_counts
 from scriptorium.config import load_config
 
 MD = (Path(__file__).parent / "fixtures" / "sources" / "frontmatter.md").read_text("utf-8")
@@ -309,3 +310,38 @@ def test_approve_portraits_advances_to_rendering(client, tmp_path) -> None:
 def test_approve_portraits_409_from_wrong_state(client, tmp_path) -> None:
     book_id = _seed_review(client, tmp_path)  # still at prompts_draft, not the portrait gate
     assert client.post(f"/api/admin/books/{book_id}/approve-portraits").status_code == 409
+
+
+# --- ADR-0028: the portrait gate is ranked by how much each portrait costs ---
+
+
+def test_portrait_anchor_counts_uses_the_render_resolver() -> None:
+    """The gate's ordering must agree with P7 about which portrait anchors which plate.
+
+    A separate re-implementation that resolved "Mitya" differently would rank the wrong portrait
+    first, which is worse than showing no number: it would look authoritative and mislead.
+    """
+    characters = [
+        {"slug": "mitya", "name": "Mitya", "aliases": ["Mityenka"]},
+        {"slug": "grushenka", "name": "Grushenka", "aliases": []},
+        {"slug": "nastasya", "name": "Nastasya", "aliases": []},
+    ]
+    prompts = [
+        {"page_id": "0001", "derived": {"depicted": ["Mitya", "Grushenka"]}},
+        {"page_id": "0002", "derived": {"depicted": ["Mityenka"]}},        # alias resolves
+        {"page_id": "0003", "derived": {"depicted": ["Grushenka"]}},
+        {"page_id": "0004", "derived": {"depicted": ["Someone Unknown"]}},  # unresolvable
+        {"page_id": "0005", "derived": {"depicted": []}},                   # no subject
+        {"page_id": "cover", "derived": {"depicted": ["Mitya"]}},           # not a page plate
+        {"page_id": "portrait-mitya", "derived": {"depicted": ["Mitya"]}},  # not a page plate
+    ]
+    counts = portrait_anchor_counts(prompts, characters)
+
+    # Only the PRIMARY depicted character anchors a plate (ADR-0026), so 0001 counts for Mitya
+    # and not for Grushenka.
+    assert counts == {"mitya": 2, "grushenka": 1}
+    assert "nastasya" not in counts  # a character with no plates is absent, not zero-valued
+
+
+def test_portrait_anchor_counts_is_empty_without_a_cast() -> None:
+    assert portrait_anchor_counts([{"page_id": "0001", "derived": {"depicted": ["X"]}}], []) == {}

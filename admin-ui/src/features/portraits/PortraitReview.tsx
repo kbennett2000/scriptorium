@@ -56,8 +56,17 @@ function PortraitReviewBody({
   review: ReviewPayload;
   reload: () => void;
 }) {
-  const portraits = review.prompts.filter((p) => p.page_id.startsWith(PORTRAIT_PREFIX));
   const castBySlug = new Map(review.cast.characters.map((c) => [c.slug, c]));
+  const anchors = review.portrait_anchor_counts ?? {};
+  const anchorsFor = (pageId: string) => anchors[pageId.slice(PORTRAIT_PREFIX.length)] ?? 0;
+
+  // Most-used portrait first (ADR-0028). A portrait is not one picture — it is the IP-Adapter
+  // reference for every plate its character anchors, so a flaw in the one that anchors 84 plates
+  // costs 84 plates. Reviewing in flat id order buried exactly that portrait in the middle of 69.
+  const portraits = review.prompts
+    .filter((p) => p.page_id.startsWith(PORTRAIT_PREFIX))
+    .sort((a, b) => anchorsFor(b.page_id) - anchorsFor(a.page_id) || a.page_id.localeCompare(b.page_id));
+  const totalAnchored = portraits.reduce((n, p) => n + anchorsFor(p.page_id), 0);
 
   const atGate = review.state === "portraits_review";
   const stillRendering = review.state === "portraits_rendering";
@@ -103,6 +112,14 @@ function PortraitReviewBody({
         <Notice kind="ok">This book has no character portraits to review.</Notice>
       )}
 
+      {atGate && totalAnchored > 0 && (
+        <Notice kind="warn">
+          Each portrait is the reference for every picture that character appears in, so a portrait
+          with two people in it makes two-people pictures. Most-used first — the top few are worth
+          the closest look. <strong>{totalAnchored}</strong> pictures will be drawn from these.
+        </Notice>
+      )}
+
       <div className="portrait-grid">
         {portraits.map((prompt) => (
           <PortraitCard
@@ -110,6 +127,7 @@ function PortraitReviewBody({
             id={id}
             prompt={prompt}
             character={castBySlug.get(prompt.page_id.slice(PORTRAIT_PREFIX.length)) ?? null}
+            anchors={anchorsFor(prompt.page_id)}
             editable={atGate}
             reload={reload}
           />
@@ -134,12 +152,14 @@ function PortraitCard({
   id,
   prompt,
   character,
+  anchors,
   editable,
   reload,
 }: {
   id: string;
   prompt: Prompt;
   character: Cast["characters"][number] | null;
+  anchors: number;
   editable: boolean;
   reload: () => void;
 }) {
@@ -205,7 +225,19 @@ function PortraitCard({
         </div>
       )}
       <div className="portrait-meta">
-        <div className="portrait-name">{character?.name ?? prompt.page_id}</div>
+        <div className="portrait-name">
+          {character?.name ?? prompt.page_id}{" "}
+          <span
+            className="badge"
+            title={
+              anchors === 1
+                ? "1 picture in the book will be drawn from this portrait"
+                : `${anchors} pictures in the book will be drawn from this portrait`
+            }
+          >
+            {anchors === 1 ? "1 picture" : `${anchors} pictures`}
+          </span>
+        </div>
 
         <label className="portrait-label">
           Picture instructions {edited && <span className="badge edited">edited</span>}

@@ -264,11 +264,13 @@ def _group(records: list[_Record], nodes: list[str]) -> _UnionFind:
     # Collect candidate merges (rules b, c), then apply deterministically.
     candidates: set[tuple[str, str]] = set()
 
-    # (b) a mention's declared alias names another known mention.
+    # (b) a mention's declared alias names another known mention — but only when that alias is
+    # trustworthy enough to publish (ADR-0028). See _mergeable_alias_norms.
+    mergeable = _mergeable_alias_norms(records)
     for r in records:
-        for a in r.alias_norms:
-            if a in node_set and a != r.name_norm:
-                candidates.add(_pair(r.name_norm, a))
+        for a_norm, a_disp in _declared_alias_pairs(r):
+            if a_norm in node_set and a_norm != r.name_norm and (a_norm, a_disp) in mergeable:
+                candidates.add(_pair(r.name_norm, a_norm))
 
     # (c) single-token subset of the other's content tokens — patronymic-safe.
     # A lone token contained in >= 2 distinct full names is an ambiguous shared patronymic/surname
@@ -299,6 +301,47 @@ def _group(records: list[_Record], nodes: list[str]) -> _UnionFind:
         if strong_bypass or not would_violate(x, y):
             uf.union(x, y)
     return uf
+
+
+def _mergeable_alias_norms(records: list[_Record]) -> set[tuple[str, str]]:
+    """``(norm, display)`` alias pairs allowed to drive a rule-(b) merge (ADR-0028).
+
+    ADR-0027 established which aliases are too contaminated to *publish*, but that filter ran after
+    grouping — by then the alias had already merged two mentions and, far worse, **pooled a second
+    character's descriptors into the group**. That is how `ivan` came to be canonicalised as "a
+    feeble old man with pale, bloodless lips" — the description of the monk from Obdorsk, an alias
+    Ivan's group had swallowed — and then to be drawn, and to anchor 21 plates, as that monk.
+
+    Filtering an alias out of the published list cannot undo a merge. So the same standard is
+    applied here, where it can actually prevent the damage:
+
+    * **not a name** — no capitalised token means a role or relational epithet ("the old man",
+      "the boy", "brother"). Merging on one folds an entire generic group, whose descriptors were
+      themselves pooled from everybody the book ever called that, into a specific character.
+    * **ambiguous** — an alias claimed by mentions under two or more different names identifies
+      nobody ("the old man" was claimed by nine characters).
+    * **stop-word** — a pronoun never denotes a specific person.
+
+    Conservative in the ADR-0019 sense: a rejected alias forgoes an uncertain link; it never
+    fabricates one. Rule (c)'s token-containment merges ("Dmitri" ⊆ "Dmitri Fyodorovitch") are
+    untouched, so real name variants still group.
+    """
+    claimants: dict[str, set[str]] = {}
+    for r in records:
+        for a_norm in r.alias_norms:
+            claimants.setdefault(a_norm, set()).add(r.name_norm)
+
+    allowed: set[tuple[str, str]] = set()
+    for r in records:
+        for a_norm, a_disp in _declared_alias_pairs(r):
+            if not a_norm or a_norm in _STOP_NAMES:
+                continue
+            if len(claimants.get(a_norm, ())) > 1:
+                continue
+            if not names.has_capitalised_token(a_disp):
+                continue
+            allowed.add((a_norm, a_disp))
+    return allowed
 
 
 def _forbidden_pairs(records: list[_Record]) -> list[tuple[str, str]]:

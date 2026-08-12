@@ -2319,3 +2319,70 @@ entirely. Nothing downstream can know that; fixed at source in text-transform-se
 
 **Applies to the next bake only.** `cast.json` is written at bake time, so a published book benefits
 only from a re-bake — which is why Karamazov is being re-baked rather than given a picture set.
+
+---
+
+## M1 · Cycle 18 — the portraits were the bug (2026-08-12)
+
+**Why.** Cycles 16/17 and the T19/T20 transform work all landed and all measurably worked: on the
+re-bake, published aliases fell 731 → 153, characters 239 → 200, and plate `0323`'s prompt carried
+its era anchor, `medium shot, figures large in the frame`, the hardened negative, and a correctly
+resolved primary `reference_slug: "mitya"` — while explicitly describing Grushenka's black silk
+dress, lace fichu and gold brooch. The plate still came out as two men in officers' uniforms.
+
+Because `images/portraits/mitya.png` **was itself two men in officers' uniforms**, with red
+curtains and a table bearing a red bottle. Every element that looked wrong across four plates was
+in that one file; the plates were faithful re-paintings of their reference. It anchored **84 plates,
+19% of the book**. `alyosha.png` and `ivan.png` from the same model are clean single-figure busts —
+this was never the model's ceiling.
+
+**Shipped**
+- **A portrait prompt names its subject once** (`p5_prompts.subject_attributes`,
+  `PORTRAIT_SOLO`). `assemble_portrait` had glued `one_line` and `visual_description` — two
+  complete subject noun phrases — with a comma, which SDXL reads as two people. Measured: **25 of
+  69** portrait prompts named the subject 2–3 times (`father-ferapont` three ways). Posture and
+  locomotion clauses are dropped too (they pull a bust out to a scene), and later pronoun subjects
+  fold into attributes. Portrait plates gained a `two people, group portrait, diptych` negative.
+- **Identity-only conditioning** (imagegen-service ADR-0004): `start_at` 0.0 → **0.30**, so the
+  early high-noise steps — where layout and figure count are decided — belong to the prompt alone;
+  the reference is **head-cropped** via `PrepImageForClipVision` before the CLIP-vision encode,
+  because `plus-face` fed a full bust transfers the clothing and background with the face;
+  `weight_type: "ease in-out"`; default weight 0.55 → 0.5. New `referenceStart` request field.
+- **Weaker, later anchors on multi-figure plates** (`reference_conditioning`, 0.35/0.4). **288 of
+  440** plates depict 2+ figures, and IP-Adapter is global and unmasked, so the second person
+  inherits the anchor's face and clothes by construction. `reference_strength`/`reference_start`
+  now thread through `ImagegenClient`, `render_to_spec`, art sets and published-plate regen.
+- **Alias trust enforced before grouping** (`reduce_cast._mergeable_alias_norms`). ADR-0027
+  filtered contaminated aliases at *publish* time, but rule (b) had already merged on them and
+  pooled a second character's descriptors. That is how `ivan` was canonicalised as "a feeble old
+  man with pale, bloodless lips" — the monk from Obdorsk, an alias his group had swallowed — then
+  drawn as that monk and used to anchor 21 plates.
+- **The portrait gate is ranked by cost.** `portrait_anchor_counts` (server-side, reusing P7's own
+  resolver so the number cannot disagree with what renders) orders the grid most-anchored-first and
+  badges each card "N pictures". The gate *was* on and *was* approved by a human — 69 flat,
+  unordered portraits with nothing marking the one worth 84 plates.
+- ADR-0028 here, ADR-0004 in imagegen-service.
+
+**Gates.** ruff clean · **495** server tests green with no GPU services running · eslint + tsc clean
+(reader, admin-ui) · **46** imagegen-service unit tests green against mocked ComfyUI · schemas and
+generated types in sync.
+
+**Inferences / accepted costs**
+- The §10 portrait formula changed. Prompt strings are provenance, not published page bytes, so
+  immutability and byte-stability hold; existing books keep their old portraits until re-baked.
+- ADR-0027's capitalised-token rule now costs *merges*, not just published aliases — a book typeset
+  entirely in lower case loses alias-driven grouping. Rule (c) token containment is untouched, so
+  real name variants (`"Dmitri"` ⊆ `"Dmitri Fyodorovitch"`) still group.
+- `subject_attributes` is deliberately lossy: an opening it does not recognise is left completely
+  alone rather than mangled, and posture clauses go even when they carry a little detail.
+- Verification is a Jekyll & Hyde (PG 43) bake — short book, small cast, minutes per loop. **The
+  Karamazov re-bake is Kris's to run**, once the short-book results look right.
+
+**Still open (deliberately)**
+- Regional/masked multi-identity conditioning (ADR-0023 Phase 2) — the real fix for the 288
+  multi-figure plates; this cycle mitigates.
+- Split characters: `mitya` / `dmitri` / `dmitri-fyodorovitch` / `karamazov` are four entries with
+  four faces for two men. Needs world knowledge (ADR-0019, external service).
+- `cast-canonicalize` bans the substring `'kind'`, so `kartashov` — "jolly, **kind**, dear little
+  eyes" — 422'd through the whole retry ladder and shipped with no description and no portrait. A
+  word-boundary match would fix it; text-transform-service change, not filed yet.

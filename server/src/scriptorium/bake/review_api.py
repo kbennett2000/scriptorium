@@ -33,7 +33,7 @@ from .approve import ApprovalBlocked, approve_job, approve_portraits
 from .job import Job, JobState
 from .phases.base import GpuUnavailable
 from .phases.p5_prompts import PORTRAIT_PREFIX, rederive_portrait_prompt
-from .phases.p7_render import render_plate
+from .phases.p7_render import build_cast_index, render_plate, resolve_character
 from .phases.p8_publish import regen_published_plate
 
 router = APIRouter(prefix="/api/admin")
@@ -209,7 +209,34 @@ def get_review(book_id: str) -> dict:
         # True while the plates are S9-stub placeholders; the real render (P7) clears it, flipping
         # off the post-render "placeholder" banner (S10b).
         "render_stub": job.render_stub,
+        "portrait_anchor_counts": portrait_anchor_counts(prompts, cast.get("characters", [])),
     }
+
+
+def portrait_anchor_counts(prompts: list[dict], characters: list[dict]) -> dict[str, int]:
+    """``{slug: plates this portrait will condition}`` (ADR-0028).
+
+    The portrait gate is the last point at which a bad reference is cheap to fix, but it presented
+    69 portraits as a flat, unordered grid. Nothing distinguished the one that would anchor 84
+    plates from the one that would anchor 7, so the expensive one was approved along with the rest
+    and every plate it conditioned inherited its defect.
+
+    Uses P7's own resolver, so the count is exactly the set of plates that will use this portrait —
+    a re-implementation that disagreed would be worse than no number at all.
+    """
+    index = build_cast_index(characters)
+    counts: dict[str, int] = {}
+    for doc in prompts:
+        page_id = str(doc.get("page_id", ""))
+        if page_id.startswith(PORTRAIT_PREFIX) or page_id == "cover":
+            continue
+        depicted = ((doc.get("derived") or {}).get("depicted")) or []
+        if not depicted:
+            continue
+        slug = resolve_character(depicted[0], index)
+        if slug:
+            counts[slug] = counts.get(slug, 0) + 1
+    return counts
 
 
 @router.put("/books/{book_id}/review/prompt/{page_id}")

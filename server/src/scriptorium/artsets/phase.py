@@ -41,6 +41,7 @@ from ..bake.phases.p7_render import (
     _asset_spec,
     _is_page_plate,
     portrait_reference,
+    reference_conditioning,
     render_to_spec,
     wrap_prompt,
 )
@@ -209,6 +210,9 @@ class SetRender:
                 _cast_chars(cfg, job),
                 set_dir / "images" / "portraits",
             )
+        strength, start = reference_conditioning(
+            ((doc.get("derived") or {}).get("depicted")) or []
+        )
         await render_to_spec(
             self._client(cfg),
             wrapped,
@@ -217,6 +221,8 @@ class SetRender:
             seed,
             style.get("imagegen_style"),
             references=references,
+            reference_strength=strength,
+            reference_start=start,
         )
         _write_json(
             set_dir / "prompts" / f"{plate_id}.json",

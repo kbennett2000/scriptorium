@@ -7,8 +7,13 @@ strings *are* asserted, against the §10 formulas.
 
 from __future__ import annotations
 
+import re
+
+import pytest
+
 from scriptorium.bake.phases.p5_prompts import (
     CAST_CAP,
+    PORTRAIT_SOLO,
     assemble_cover,
     assemble_portrait,
     condense,
@@ -16,6 +21,7 @@ from scriptorium.bake.phases.p5_prompts import (
     eligible_portraits,
     illustration_options,
     present_cast,
+    subject_attributes,
 )
 from scriptorium.styles import get_style
 
@@ -134,7 +140,93 @@ def test_assemble_portrait_matches_design_formula() -> None:
     one_line = "The keeper of the workshop at the end of the lane."
     vd = "a spare, white-haired artisan in a leather apron, hands stained with brass polish"
     got = assemble_portrait(_ENGRAVING, one_line, vd)
-    assert got == f"{_ENGRAVING['portrait_prefix']}{one_line}, {vd}"
+    # ADR-0028: solo framing, the subject named once (one_line, its full stop dropped so the
+    # attributes read as a continuation), then the description as attribute clauses.
+    assert got == (
+        f"{_ENGRAVING['portrait_prefix']}{PORTRAIT_SOLO}"
+        "The keeper of the workshop at the end of the lane, "
+        + vd
+    )
+
+
+# --- ADR-0028: the portrait prompt names its subject exactly once -----------
+
+# Real (one_line, visual_description) pairs from the published pg-28054 bake, whose portraits fed
+# IP-Adapter for 348 plates. 25 of that book's 69 portrait prompts named the subject 2-3 times;
+# `mitya` is the one that mattered — its portrait rendered as two officers and anchored 84 plates.
+_REAL_CAST = [
+    ("Young man in stained officer's uniform with bloody face and hands",
+     "A young Russian gentleman with a blood-stained face and trembling fingers, dressed in an "
+     "officer's uniform that appears rumpled from running like a madman."),
+    ("Feeble old monk with pale lips and downcast eyes",
+     "A feeble old man with pale, bloodless lips and frightened little eyes sits unmoved with "
+     "downcast gaze. He wears a hat held in his hand as he sways while walking."),
+    ("Frenzied twenty-seven-year-old man in feverish agitation",
+     "A twenty-seven-year-old man with a frenzied face and feverish agitation stands mounted on "
+     "something, his powerful hand gripping tightly as he leaps up."),
+    ("Golden-haired young man of twenty-eight, medium height, thin build with hollow cheeks",
+     "A young man of eight and twenty with golden hair stands at medium height, appearing rather "
+     "thin. He is muscular yet shows signs of considerable physical strength."),
+    ("Plump Russian woman in black silk dress, lace fichu, and gold-brooch shawl",
+     "A plump, rosy beauty of the Russian type with a full figure and slim, delicate limbs. She "
+     "wears a black silk dress with a dainty lace fichu on her head."),
+    ("Old man with bashful expression and melting voice",
+     "An old man with a bashful expression and melting voice stands before Captain Snegiryov's "
+     "lodging, his eyes full of pity."),
+    ("Tall vigorous old monk in red coarse coat with rope waist, grey eyes",
+     "A tall, vigorous old man with an athletic build stands erect and carries himself well."),
+    ("Stout Russian servant in simple dress, marked by smallpox",
+     "A stout woman of forty with a full figure and small-pox marks on her face."),
+    ("Man of unspecified age with a plain era-appropriate build",
+     "A man of unspecified apparent age with a plain, era-appropriate build stands in the setting "
+     "of Russia during the 1870s."),
+]
+
+# A determiner + optional modifiers + person noun: an *independent* subject. One is the subject
+# itself; a second one is the defect this ADR exists to stop.
+_SUBJECT_PHRASE = re.compile(
+    r"\b(?:a|an|the)\s+(?:[\w'-]+,?\s+){0,5}?"
+    r"(?:man|woman|boy|girl|gentleman|lady|monk|priest|peasant|youth|beauty|servant)s?\b",
+    re.I,
+)
+
+
+@pytest.mark.parametrize(("one_line", "vd"), _REAL_CAST)
+def test_portrait_prompt_never_names_a_second_subject(one_line: str, vd: str) -> None:
+    got = assemble_portrait(_ENGRAVING, one_line, vd)
+    attributes = got.split(one_line.rstrip(" ."), 1)[1]
+    assert not _SUBJECT_PHRASE.search(attributes), (
+        f"description still opens a second subject: {attributes!r}"
+    )
+
+
+@pytest.mark.parametrize(("one_line", "vd"), _REAL_CAST)
+def test_portrait_prompt_states_solo_framing_and_names_subject_once(one_line: str, vd: str) -> None:
+    got = assemble_portrait(_ENGRAVING, one_line, vd)
+    assert PORTRAIT_SOLO in got
+    assert got.count(one_line.rstrip(" .")) == 1
+
+
+def test_subject_attributes_drops_posture_and_setting() -> None:
+    got = subject_attributes(
+        "A man of unspecified apparent age with a plain build stands in the setting of Russia."
+    )
+    assert "stands" not in got
+    assert "Russia" not in got
+    assert "plain build" in got
+
+
+def test_subject_attributes_folds_a_pronoun_clause_into_an_attribute() -> None:
+    got = subject_attributes("A stout woman of forty. She wears a black silk dress.")
+    assert got.startswith("of forty")
+    assert "wearing a black silk dress" in got
+    assert "She wears" not in got
+
+
+def test_subject_attributes_leaves_an_unrecognised_opening_alone() -> None:
+    # No leading person noun => nothing is stripped (pre-ADR-0028 behaviour, never silently wrong).
+    text = "weathered hands and a squint earned at sea"
+    assert subject_attributes(text) == text
 
 
 def test_condense_passes_short_text_through() -> None:

@@ -230,17 +230,18 @@ def test_unload_failure_parks_waiting_gpu(tmp_path) -> None:
     assert not (cfg.work_dir / "b" / "images" / "plates" / "0001.png").is_file()
 
 
-@respx.mock
-def test_page_plate_uses_depicted_characters_portrait_as_reference(tmp_path) -> None:
-    # Character consistency (ADR-0023): a page plate whose derived.depicted names a major with a
-    # portrait renders with that portrait's bytes as a reference; the portrait renders first so the
-    # file exists; cover/portrait plates pass no reference.
-    cfg = _cfg(tmp_path)
+def _seed_for_reference(cfg, depicted: list[str]) -> tuple[Path, Path]:
+    """A one-page book with one major (portrait-bearing) character. Returns ``(book, prompts)``.
+
+    ``depicted`` drives the page plate's ``derived.depicted`` — its *length* is what selects the
+    conditioning strength (ADR-0028), so a one- vs two-name list is the whole difference between
+    the two tests that use this.
+    """
     book = cfg.work_dir / "b"
     prompts = book / "prompts"
     prompts.mkdir(parents=True, exist_ok=True)
     page = _prompt_doc("0001", "the clockmaker at his bench")
-    page["derived"]["depicted"] = ["the Clockmaker"]  # matches the cast name below
+    page["derived"]["depicted"] = depicted  # "the Clockmaker" matches the cast name below
     (prompts / "0001.json").write_text(json.dumps(page), encoding="utf-8")
     (prompts / "portrait-clockmaker.json").write_text(
         json.dumps(_prompt_doc("portrait-clockmaker", "engraved bust of the clockmaker")),
@@ -258,6 +259,16 @@ def test_page_plate_uses_depicted_characters_portrait_as_reference(tmp_path) -> 
         "plates": [{"page_id": "0001", "reason": "chapter_open", "salience": 0.8,
                     "status": "approved", "added_in_revision": 1}],
     }), encoding="utf-8")
+    return book, prompts
+
+
+@respx.mock
+def test_page_plate_uses_depicted_characters_portrait_as_reference(tmp_path) -> None:
+    # Character consistency (ADR-0023): a page plate whose derived.depicted names a major with a
+    # portrait renders with that portrait's bytes as a reference; the portrait renders first so the
+    # file exists; cover/portrait plates pass no reference.
+    cfg = _cfg(tmp_path)
+    book, prompts = _seed_for_reference(cfg, depicted=["the Clockmaker"])
     Job(id="b", book_id="b", state=JobState.APPROVED, started=True,
         bake_config={"style_id": "engraving"}).save(cfg)
     respx.post(f"{TTS}/v1/models/unload").mock(return_value=httpx.Response(200, json={}))
@@ -287,6 +298,36 @@ def test_page_plate_uses_depicted_characters_portrait_as_reference(tmp_path) -> 
     assert page_doc["render"]["reference_slug"] == "clockmaker"
     portrait_doc = json.loads((prompts / "portrait-clockmaker.json").read_text(encoding="utf-8"))
     assert portrait_doc["render"]["reference_slug"] is None
+
+
+@respx.mock
+def test_multi_figure_plate_sends_a_weaker_later_anchor_to_imagegen(tmp_path) -> None:
+    """ADR-0028: the tuned conditioning actually reaches the client, not just the pure helper."""
+    cfg = _cfg(tmp_path)
+    book, prompts = _seed_for_reference(cfg, depicted=["the clockmaker", "the stranger"])
+    Job(id="b", book_id="b", state=JobState.APPROVED, started=True,
+        bake_config={"style_id": "engraving"}).save(cfg)
+    respx.post(f"{TTS}/v1/models/unload").mock(return_value=httpx.Response(200, json={}))
+
+    calls: list[dict] = []
+
+    class _KwargRecording(FakeImagegen):
+        async def txt2img(self, *args, **kwargs) -> bytes:
+            calls.append(kwargs)
+            return await super().txt2img(*args, **kwargs)
+
+    job = _drive(cfg, _KwargRecording())
+    assert job.state == JobState.RENDERED, f"stuck at {job.state}"
+
+    conditioned = [c for c in calls if c.get("references")]
+    assert len(conditioned) == 1
+    assert conditioned[0]["reference_strength"] == 0.35
+    assert conditioned[0]["reference_start"] == 0.4
+
+    # The portrait plate itself is unconditioned and must not carry tuning at all.
+    unconditioned = [c for c in calls if not c.get("references")]
+    assert unconditioned
+    assert all(c.get("reference_strength") is None for c in unconditioned)
 
 
 @respx.mock
