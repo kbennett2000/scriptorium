@@ -1,7 +1,7 @@
 import { Fragment, useMemo, useState } from "react";
 
 import { getStyles, listBooks } from "../../api/client";
-import { ErrorNotice, Loading, useAsync } from "../../components/common";
+import { ErrorNotice, formatTimestamp, Loading, useAsync } from "../../components/common";
 import type { Job } from "../../api/types";
 import { navigate } from "../../routes";
 import { type BookGroup, groupBooks } from "./group";
@@ -119,7 +119,7 @@ function BookRow({
       <td>{book && <span className="badge state">{book.state}</span>}</td>
       <td>{book ? book.warnings.length || "" : ""}</td>
       <td>{book ? book.failed_units.length || "" : ""}</td>
-      <td className="muted">{book ? book.updated_at.replace("T", " ").slice(0, 19) : ""}</td>
+      <td className="muted">{book ? formatTimestamp(book.updated_at) : ""}</td>
     </tr>
   );
 }
@@ -150,7 +150,7 @@ function SetRow({ set, styleName }: { set: Job; styleName: (id: string) => strin
       </td>
       <td></td>
       <td></td>
-      <td className="muted">{set.updated_at.replace("T", " ").slice(0, 19)}</td>
+      <td className="muted">{formatTimestamp(set.updated_at)}</td>
     </tr>
   );
 }

@@ -14,6 +14,20 @@ export function errorText(err: unknown): string {
   return String(err);
 }
 
+// Server timestamps are UTC ISO-8601. Render them in the operator's LOCAL time, keeping the compact
+// "YYYY-MM-DD HH:MM:SS" shape. If a naive value (no zone) ever slips through, we treat it as UTC.
+export function formatTimestamp(iso: string | null | undefined): string {
+  if (!iso) return "";
+  const hasZone = /[zZ]$|[+-]\d\d:?\d\d$/.test(iso);
+  const d = new Date(hasZone ? iso : `${iso}Z`);
+  if (Number.isNaN(d.getTime())) return iso; // unparseable → show it raw rather than "Invalid Date"
+  const p = (n: number) => String(n).padStart(2, "0");
+  return (
+    `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ` +
+    `${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`
+  );
+}
+
 export interface Async<T> {
   data: T | null;
   error: unknown;
