@@ -856,6 +856,37 @@ img.cast-portrait {
   font-size: 0.8rem;
   color: var(--muted);
 }
+/* A slim "making pictures" bar that fills as the set renders (rides the 2s poll). */
+.setpicker-genbar {
+  flex: 0 0 auto;
+  width: 5rem;
+  height: 0.4rem;
+  border: none;
+  border-radius: 0.2rem;
+  accent-color: var(--accent, #2a5db0);
+}
+.setpicker-genbar::-webkit-progress-bar {
+  background: var(--hairline);
+  border-radius: 0.2rem;
+}
+.setpicker-genbar::-webkit-progress-value {
+  background: var(--accent, #2a5db0);
+  border-radius: 0.2rem;
+}
+.setpicker-retry {
+  flex: 0 0 auto;
+  font-size: 0.8rem;
+  padding: 0.3rem 0.6rem;
+  background: transparent;
+  border: 1px solid var(--accent, #2a5db0);
+  border-radius: 0.4rem;
+  color: var(--accent, #2a5db0);
+  cursor: pointer;
+}
+.setpicker-retry:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
 .setpicker-note,
 .setpicker-error {
   margin: 0.6rem 0.9rem 0;

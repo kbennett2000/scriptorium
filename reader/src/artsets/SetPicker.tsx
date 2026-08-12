@@ -13,7 +13,12 @@ import { DEFAULT_SET_ID } from "./activeSet";
 
 function primaryLabel(row: SetRow, active: boolean): string {
   if (active) return "✓ In use";
-  if (row.status === "generating") return "Making your pictures…";
+  if (row.status === "generating") {
+    const p = row.render_progress;
+    // The live count makes "making pictures" visibly move; plain text when the server hasn't sent one
+    // yet (or we're offline on a cached list).
+    return p && p.total > 0 ? `Making your pictures… ${p.done} of ${p.total}` : "Making your pictures…";
+  }
   if (row.status === "failed") return "Couldn’t make this one";
   if (row.residency === "resident") return "Use";
   return "Download & use";
@@ -29,6 +34,7 @@ export function SetPicker({
   onChoose,
   onCreate,
   onDelete,
+  onRetry,
   onClose,
 }: {
   sets: SetRow[];
@@ -40,6 +46,7 @@ export function SetPicker({
   onChoose: (setId: string) => void;
   onCreate: (kind: "style" | "reroll", styleId?: string) => void;
   onDelete: (setId: string) => void;
+  onRetry: (setId: string) => void;
   onClose: () => void;
 }) {
   const [adding, setAdding] = useState(false);
@@ -81,10 +88,29 @@ export function SetPicker({
                 <span className="setpicker-label">{s.label}</span>
                 <span className="setpicker-action">{primaryLabel(s, active)}</span>
               </button>
+              {s.status === "generating" && s.render_progress && s.render_progress.total > 0 && (
+                <progress
+                  className="setpicker-genbar"
+                  aria-label={`Making ${s.label}`}
+                  max={s.render_progress.total}
+                  value={s.render_progress.done}
+                />
+              )}
               {s.progress && (
                 <span className="setpicker-progress" aria-live="polite">
                   Downloading… {s.progress.done}/{s.progress.total}
                 </span>
+              )}
+              {s.status === "failed" && (
+                <button
+                  type="button"
+                  className="setpicker-retry"
+                  aria-label={`Retry ${s.label}`}
+                  disabled={!online || busy}
+                  onClick={() => onRetry(s.set_id)}
+                >
+                  Retry
+                </button>
               )}
               {s.set_id !== DEFAULT_SET_ID && (
                 <button

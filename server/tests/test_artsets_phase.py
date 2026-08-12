@@ -20,9 +20,10 @@ import respx
 
 from scriptorium import schemas
 from scriptorium.artsets import service
-from scriptorium.artsets.phase import SetRender
+from scriptorium.artsets.phase import SetRender, set_render_progress
 from scriptorium.bake import job as jobmod
 from scriptorium.bake.job import JobState, can_transition
+from scriptorium.bake.phases.p7_render import _asset_spec
 from scriptorium.bake.runner import Runner
 from scriptorium.config import Config
 from scriptorium.render.imagegen import FakeImagegen
@@ -228,3 +229,59 @@ def test_unload_failure_parks_then_resumes(tmp_path) -> None:
     # Subsequent ticks resume to set_rendering and complete.
     job = _drive(cfg, FakeImagegen(), job_id)
     assert job.state == JobState.SET_DONE
+
+
+# --- render progress (the reader's "Pictures" live status) -----------------
+#
+# The seeded book has 2 page plates (0001, 0003) + cover + 1 major portrait = 4 pictures.
+
+
+@respx.mock
+def test_list_reports_render_progress_while_generating(tmp_path) -> None:
+    cfg = _cfg(tmp_path)
+    _seed_library(cfg)
+    set_id = service.create_set(cfg, "kris", BOOK, "style", "engraving", None)["set_id"]
+
+    listing = service.list_sets(cfg, "kris", BOOK)
+    schemas.validate("artset-list", listing)  # the new optional field stays schema-valid
+    row = next(s for s in listing["sets"] if s["set_id"] == set_id)
+    assert row["status"] == "generating"
+    assert row["render_progress"] == {"done": 0, "total": 4}  # nothing rendered yet
+    # The synthetic default set never carries progress.
+    default = next(s for s in listing["sets"] if s["set_id"] == "default")
+    assert "render_progress" not in default
+
+
+def test_render_progress_counts_rendered_pictures(tmp_path) -> None:
+    cfg = _cfg(tmp_path)
+    _seed_library(cfg)
+    set_id = service.create_set(cfg, "kris", BOOK, "style", "engraving", None)["set_id"]
+    job = jobmod.load(cfg, service.set_job_id(BOOK, set_id))
+
+    assert set_render_progress(cfg, job) == (0, 4)
+    # A picture counts as done only once all three derivatives exist (mirrors SetRender.unit_done).
+    spec = _asset_spec(_set_dir(cfg, "kris", BOOK, set_id), "0001")
+    for p in (spec.src, spec.web, spec.thumb):
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_bytes(b"x")
+    assert set_render_progress(cfg, job) == (1, 4)
+
+
+@respx.mock
+def test_ready_and_failed_sets_carry_no_progress(tmp_path) -> None:
+    cfg = _cfg(tmp_path)
+    _seed_library(cfg)
+    respx.post(f"{TTS}/v1/models/unload").mock(return_value=httpx.Response(200, json={}))
+
+    ready_id = service.create_set(cfg, "kris", BOOK, "style", "engraving", None)["set_id"]
+    _drive(cfg, FakeImagegen(), service.set_job_id(BOOK, ready_id))
+    ready = next(s for s in service.list_sets(cfg, "kris", BOOK)["sets"] if s["set_id"] == ready_id)
+    assert ready["status"] == "ready" and "render_progress" not in ready
+
+    # A set whose job vanished reconciles to failed — and failed carries no progress.
+    stalled_id = service.create_set(cfg, "kris", BOOK, "style", "engraving", None)["set_id"]
+    jobmod.job_path(cfg, service.set_job_id(BOOK, stalled_id)).unlink()
+    failed = next(
+        s for s in service.list_sets(cfg, "kris", BOOK)["sets"] if s["set_id"] == stalled_id
+    )
+    assert failed["status"] == "failed" and "render_progress" not in failed

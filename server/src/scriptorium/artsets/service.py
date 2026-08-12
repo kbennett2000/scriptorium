@@ -24,6 +24,7 @@ from ..bake import job as jobmod
 from ..bake.job import Job, JobState
 from ..config import Config
 from ..styles import get_style, load_styles
+from .phase import set_render_progress
 
 _SET_ID_RE = re.compile(r"^set-[0-9a-f]{12}$")
 _KINDS = ("style", "reroll")
@@ -119,16 +120,27 @@ def delete_set(cfg: Config, user: str, book: str, set_id: str) -> None:
 def _summary(cfg: Config, book: str, doc: dict) -> dict:
     """A set-list summary from a set.json doc, reconciling a stalled 'generating' vs its job."""
     status = doc["status"]
+    progress: dict | None = None
     if status == "generating":
         job = jobmod.load(cfg, set_job_id(book, doc["set_id"]))
         if job is None or job.state == JobState.FAILED:
             status = "failed"
+        elif job.state == JobState.SET_RENDERING:
+            # A live count so the reader shows "… X of Y" moving, not frozen text. Best-effort:
+            # any read failure (e.g. the book's selection went missing) just omits it.
+            try:
+                done, total = set_render_progress(cfg, job)
+                progress = {"done": done, "total": total}
+            except (OSError, KeyError, ValueError):
+                progress = None
     summary = {
         "set_id": doc["set_id"], "kind": doc["kind"], "label": doc["label"], "status": status,
     }
     for key in ("style_id", "source_revision", "created"):
         if key in doc:
             summary[key] = doc[key]
+    if progress is not None:
+        summary["render_progress"] = progress
     return summary
 
 

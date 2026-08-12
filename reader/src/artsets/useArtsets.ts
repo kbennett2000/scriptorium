@@ -38,6 +38,8 @@ export interface Artsets {
   create: (kind: "style" | "reroll", styleId?: string) => Promise<void>;
   /** Delete a personal set (server + this device); reverts to Default if it was active. */
   remove: (setId: string) => Promise<void>;
+  /** Retry a failed set: delete it, then make a fresh one with the same style. */
+  retry: (setId: string) => Promise<void>;
 }
 
 const DEFAULT_ROW: SetRow = {
@@ -236,5 +238,17 @@ export function useArtsets(
     [api, storage, user, book, activeSetId, chooseSet, refresh],
   );
 
-  return { sets, styles, online, busy, error, activeSetId, choose, create, remove };
+  // Retry a failed set by remaking it with the same style — the failed one has no usable output, so
+  // dropping it and creating afresh (reusing the pending→auto-download→switch flow) is the whole job.
+  const retry = useCallback(
+    async (setId: string): Promise<void> => {
+      const failed = sets.find((r) => r.set_id === setId);
+      if (!failed) return;
+      await remove(setId);
+      await create(failed.kind === "reroll" ? "reroll" : "style", failed.style_id);
+    },
+    [sets, remove, create],
+  );
+
+  return { sets, styles, online, busy, error, activeSetId, choose, create, remove, retry };
 }

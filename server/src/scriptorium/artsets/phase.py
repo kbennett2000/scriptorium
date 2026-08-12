@@ -95,6 +95,33 @@ def _set_seed(book_id: str, set_id: str, plate_id: str) -> int:
     return int(digest[:8], 16)
 
 
+def _picture_ids(cfg: Any, job: Job) -> list[str]:
+    """Every picture a set renders — page plates + cover + one portrait per major.
+
+    The real work of ``SetRender.units()`` minus the ``__unload__`` / ``__finalize__`` pseudo-units,
+    so ``len(...)`` is the picture total the reader shows ("… of N").
+    """
+    portraits = [f"{PORTRAIT_PREFIX}{c['slug']}" for c in _portrait_chars(cfg, job)]
+    return [*_page_plate_ids(cfg, job), COVER_ID, *portraits]
+
+
+def set_render_progress(cfg: Any, job: Job) -> tuple[int, int]:
+    """``(done, total)`` pictures for a set-render job, for the reader's "Pictures" status.
+
+    ``total`` comes from the book's stable ``selection.json`` + ``cast.json`` (NOT
+    ``prompts/*.json``, which a set writes lazily as it renders — that would make total track done).
+    ``done`` counts the pictures whose files exist, exactly as ``SetRender.unit_done`` does.
+    """
+    set_dir = _set_dir(cfg, job)
+    ids = _picture_ids(cfg, job)
+    done = 0
+    for pid in ids:
+        spec = _asset_spec(set_dir, pid)
+        if spec.src.is_file() and spec.web.is_file() and spec.thumb.is_file():
+            done += 1
+    return done, len(ids)
+
+
 # --- the phase --------------------------------------------------------------
 
 

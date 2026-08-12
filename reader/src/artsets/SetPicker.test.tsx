@@ -100,6 +100,7 @@ function Harness({ api, download, storage }: { api: ArtsetApi; download: ArtsetC
       onChoose={a.choose}
       onCreate={a.create}
       onDelete={a.remove}
+      onRetry={a.retry}
       onClose={() => {}}
     />
   );

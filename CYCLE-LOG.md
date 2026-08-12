@@ -2084,3 +2084,37 @@ depend on the default.
 
 **Done-state.** server ruff clean, pytest green (non-gpu). No schema change → `shared/types`
 untouched.
+
+---
+
+## M1 · Cycle 12 — trustworthy "Pictures" status: live count + bar + retry (2026-08-11)
+
+**Why.** Making a picture set (ADR-0014) showed the reader a static "Making your pictures…" forever —
+no progress, no liveness. Kris hit it: his "Comic Book" set had actually finished (`ready`/`set_done`)
+but the screen still read "Making your pictures…", so he couldn't tell working from done from dead.
+Root cause: the server sends only a 3-word status (`generating`/`ready`/`failed`) with no count, even
+though it renders pictures one-by-one and knows exactly how many are done.
+
+**Shipped (server).** `artsets/phase.py`: new `set_render_progress(cfg, job) -> (done, total)` —
+`total` from the book's stable `selection.json` + `cast.json` (page plates + cover + one portrait per
+major), `done` = pictures whose files all exist (reuses `_asset_spec`, mirrors `SetRender.unit_done`).
+Deliberately NOT the generic `phase_progress` SET_RENDERING branch, whose `count(prompts)` total
+tracks done (a set writes prompts lazily as it renders). `artsets/service.py` `_summary` (already
+loads the job to reconcile a stalled generating→failed) attaches `render_progress {done,total}` while
+`SET_RENDERING`; best-effort try/except so status never 500s; ready/failed carry none.
+
+**Shipped (schema + reader).** `artset-list.schema.json`: additive optional `render_progress` on the
+set item (regen → `shared/types/artset-list.d.ts`; `SetRow` inherits it via its `Summary` spread).
+`SetPicker.tsx`: generating row shows "Making your pictures… X of Y" + a `<progress>` bar (rides the
+existing 2s poll), failed row gains a **Retry** button. `useArtsets.ts`: `retry(setId)` = delete +
+re-create with the same style (reuses the pending→auto-download→switch flow; no new endpoint).
+`Reader.tsx` wires `onRetry`. `index.css`: slim gen-bar + retry button.
+
+**Invariants.** No bundle bytes / page text / prompts / seeds change; the set render is untouched.
+Additive optional field on a non-bundle sync/list format. No new network in the reader — the
+ESLint zero-online read-path boundary test stays green; progress rides the existing poll and degrades
+to plain text offline.
+
+**Done-state.** server ruff clean, pytest **444** (+3 artset-progress); reader tsc + eslint clean,
+vitest **178** (+2 SetPicker); `just gen-types` → only `artset-list.d.ts` changed. ADR-0014 (no new
+ADR — additive UX/observability).

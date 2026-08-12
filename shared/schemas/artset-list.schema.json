@@ -55,6 +55,24 @@
             "type": "string",
             "enum": ["generating", "ready", "failed"]
           },
+          "render_progress": {
+            "description": "While status is 'generating', how many of the set's pictures have rendered so far. Absent once the set is 'ready' or 'failed', and absent offline (the reader falls back to plain 'making…' text).",
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["done", "total"],
+            "properties": {
+              "done": {
+                "description": "Pictures rendered so far.",
+                "type": "integer",
+                "minimum": 0
+              },
+              "total": {
+                "description": "Total pictures the set will render (page plates + cover + one portrait per major character).",
+                "type": "integer",
+                "minimum": 0
+              }
+            }
+          },
           "created": {
             "description": "ISO-8601 UTC creation timestamp. Absent for the synthetic default set.",
             "type": "string",

@@ -31,6 +31,19 @@ export interface ArtsetList {
     source_revision?: number;
     status: "generating" | "ready" | "failed";
     /**
+     * While status is 'generating', how many of the set's pictures have rendered so far. Absent once the set is 'ready' or 'failed', and absent offline (the reader falls back to plain 'making…' text).
+     */
+    render_progress?: {
+      /**
+       * Pictures rendered so far.
+       */
+      done: number;
+      /**
+       * Total pictures the set will render (page plates + cover + one portrait per major character).
+       */
+      total: number;
+    };
+    /**
      * ISO-8601 UTC creation timestamp. Absent for the synthetic default set.
      */
     created?: string;

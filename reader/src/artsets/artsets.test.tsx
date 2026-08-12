@@ -51,6 +51,7 @@ describe("SetPicker", () => {
     onChoose: noop,
     onCreate: noop,
     onDelete: noop,
+    onRetry: noop,
     onClose: noop,
   };
 
@@ -73,5 +74,42 @@ describe("SetPicker", () => {
     render(<SetPicker {...base} sets={SETS} activeSetId="default" onClose={onClose} />);
     await userEvent.click(screen.getByRole("button", { name: "Done" }));
     expect(onClose).toHaveBeenCalled();
+  });
+
+  it("shows a live count and a progress bar while a set is generating", () => {
+    const sets = [
+      ...SETS,
+      {
+        set_id: "set-0a1b2c3d4e5f",
+        kind: "style" as const,
+        label: "Comic Book",
+        status: "generating" as const,
+        residency: "available" as const,
+        render_progress: { done: 3, total: 8 },
+      },
+    ];
+    render(<SetPicker {...base} sets={sets} activeSetId="default" />);
+    expect(screen.getByText("Making your pictures… 3 of 8")).toBeInTheDocument();
+    const bar = screen.getByRole("progressbar", { name: "Making Comic Book" });
+    expect(bar).toHaveAttribute("value", "3");
+    expect(bar).toHaveAttribute("max", "8");
+  });
+
+  it("offers Retry on a failed set and reports it", async () => {
+    const onRetry = vi.fn();
+    const sets = [
+      ...SETS,
+      {
+        set_id: "set-aaaabbbbcccc",
+        kind: "style" as const,
+        label: "Comic Book",
+        status: "failed" as const,
+        residency: "available" as const,
+      },
+    ];
+    render(<SetPicker {...base} sets={sets} activeSetId="default" onRetry={onRetry} />);
+    expect(screen.getByText("Couldn’t make this one")).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Retry Comic Book" }));
+    expect(onRetry).toHaveBeenCalledWith("set-aaaabbbbcccc");
   });
 });
