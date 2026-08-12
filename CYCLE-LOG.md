@@ -2221,3 +2221,67 @@ badge strip.
 
 **Out of scope (noted).** Real screenshots (placeholders only — next pass); Docker/Play-Store/
 desktop-installer packaging; the still-missing developer `system-overview.md`.
+
+## M1 · Cycle 16 — illustration quality: primary-only reference, period anchor, composition (2026-08-12)
+
+**Why.** Kris reviewed the published *Brothers Karamazov* (458 plates, oil-painting) and found plates
+that contradict their own caption — *"The woman kneels before Elder Zossima…"* drawn as two East Asian
+Buddhist-looking monks with no woman; *"Pyotr Ilyitch sits while Madame Hohlakov shrieks…"* drawn as two
+young women with no Pyotr — and asked whether this is simply the ceiling of a local model. It is not.
+Measured over all 458 plates: **39% asked for 3–4 figures**, 78% for 2+, only 3.5% single-figure;
+`derived.shot` reached the prompt on **2/458**; the configured era reached it on **32/458**; 198 plates
+carried a "depicted not in cast" warning; **10 plates were anchored on a non-primary character**.
+
+**Root cause (a bug, not a limit).** `_portrait_reference` violated its own ADR. ADR-0023 specifies
+"primary character only", but the code looped over `derived.depicted` and took *the first label that
+happened to resolve and have a portrait on disk*. When the real subject was a minor (no portrait) or the
+transform over-qualified their name, a **secondary** character's face silently became the whole plate's
+identity anchor. Plate 0033 fell through Nastasya (a minor) to the elder's monk portrait; plate 0345 fell
+through the invented "Pyotr Ilyitch Karamazov" to Madame Hohlakov. Both symptoms are exactly "the anchor
+character duplicated, the real subject missing".
+
+**Shipped** (see [ADR-0026](docs/adr/0026-primary-only-reference-and-prompt-anchoring.md)):
+- **Primary-only reference.** `portrait_reference()` resolves `depicted[0]` and nothing else; no match or
+  no portrait → prompt-only render. Never borrow another character's face.
+- **Real label resolution.** `build_cast_index` / `resolve_character`: exact fold → article/honorific
+  strip ("The Elder", "Madame Hohlakov", "Father Zossima") → token-subset, most-specific-wins
+  ("Pyotr Ilyitch Karamazov" → `pyotr-ilyitch`). An alias claimed by two characters is **ambiguous and
+  resolves to nothing** — guessing a face is worse than none.
+- **Provenance.** `render.reference_slug` added to `prompt.schema.json` (+ regenerated types), so a
+  mis-anchored plate is findable without eyeballing the art.
+- **Period anchor.** `wrap_prompt` gained `era` and emits `prefix + [era, ] + subject + [, shot] + suffix`.
+  Previously `era` reached only the text transforms, so "monk in a red coarse coat" had no cue that it
+  was Russian Orthodox.
+- **Composition.** `derived.shot` finally used (close/medium/wide → framing language), closing the M1
+  retro finding that person-centric beats render as landscapes with a speck — which is plausibly *why*
+  ADR-0023's conditioning never visibly helped.
+- **Global negative.** SDXL's stock failure modes (`duplicate, cloned face, two heads, extra limbs,
+  bad anatomy, crowd, extra people`, …) now apply to all 16 styles, with anti-anachronism terms promoted
+  out of `oil-painting`'s ad-hoc negative. Terms are de-duplicated; the subject's trailing full stop is
+  dropped so the suffix no longer reads `"…her father., canvas texture"`.
+- **References on every path.** Picture sets render **portraits first** and condition page plates on
+  *that set's own* portraits (a set was previously rendered entirely prompt-only);
+  `regen_published_plate` re-conditions instead of silently dropping the anchor.
+
+**Decisions (confirmed with Kris).** Fix in-repo *and* in `text-transform-service` (see that repo's T19);
+verify by baking a new picture set on the published book; resolve epithets/variant names to cast entries.
+
+**Verification.** `ruff` clean; `uv run pytest -q` → **459 passed, 5 deselected** with no GPU services
+running (was 444; +15 new). eslint + tsc clean on reader and admin-ui; `gen-types.mjs` idempotent. New
+tests are strings-and-choices only, never image content: the two bad plates are pinned as regressions
+(minor primary and unresolvable primary must **not** fall through to a secondary), plus era/shot/negative
+composition and the first end-to-end assertion that `references` actually reach `txt2img` on the art-set
+path.
+
+**Immutability.** No published bytes change. Prompt strings differ for *new* renders only; new art lands
+in `artsets/…` or as an additive `-rN`. The paginator and its byte-stability golden are untouched.
+
+**Out of scope (flagged).** Corrupt cast merges — the `elder` entry has swallowed `Father Ferapont`,
+`Zossima` and `Nastya` as aliases, and there are near-duplicate `Pyotr Ilyitch` entries; ADR-0022's filter
+was meant to catch this and didn't (separate root cause in `reduce_cast.py`; the new ambiguity rule limits
+the blast radius). Caption accuracy — the reader caption is `ledger.best_visual_beat` from P3, a different
+string from the image prompt, and carries its own factual errors ("Dmitri must have killed *her* father").
+Hand-edited descriptions leaking into art (`madame-hohlakov.visual_description` is currently
+`"a dumb bitch who keeps talking"`, baked verbatim into her portrait). steps/cfg/sampler control — the
+imagegen service exposes none (ADR-0011).
+

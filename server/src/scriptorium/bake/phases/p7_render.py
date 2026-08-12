@@ -44,7 +44,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from ... import schemas
+from ... import names, schemas
 from ...render.derivatives import make_derivatives
 from ...render.imagegen import ImagegenClient, RealImagegenClient
 from ...styles import get_style
@@ -151,63 +151,165 @@ def _join_avoid(avoid: Any) -> str:
     return ", ".join(str(a) for a in avoid)
 
 
-def wrap_prompt(style: dict, plate_id: str, prompt_doc: dict) -> tuple[str, str]:
+# Composition language for ``derived.shot`` (ADR-0026). The transform has always emitted a shot
+# type and P7 always threw it away, so person-centric beats rendered as landscapes with a speck
+# (the M1 retro's headline composition finding) — and an IP-Adapter reference cannot express an
+# identity on a 40-pixel face, which is why character conditioning never visibly helped.
+_SHOT_TERMS = {
+    "close": "close-up, head and shoulders, the figure fills the frame",
+    "medium": "medium shot, figures large in the frame, waist up",
+    "wide": "wide establishing shot",
+}
+
+# Appended to every style's negative (ADR-0026). SDXL's stock failure modes — a subject duplicated
+# across the frame, mangled anatomy — and period slips were previously guarded only on
+# `oil-painting`, added ad hoc. Terms already present in a style's own negative are de-duplicated.
+_GLOBAL_NEGATIVE = (
+    "duplicate, cloned face, two heads, extra limbs, extra fingers, deformed, mutated, "
+    "bad anatomy, disfigured, crowd, extra people, "
+    "modern clothing, contemporary dress, modern money, banknotes, paper currency, "
+    "wristwatch, sunglasses"
+)
+
+
+def _dedupe_terms(*parts: str) -> str:
+    """Join comma-separated prompt fragments, dropping repeats (first occurrence wins)."""
+    seen: set[str] = set()
+    out: list[str] = []
+    for part in parts:
+        for term in (t.strip() for t in (part or "").split(",")):
+            if term and term.casefold() not in seen:
+                seen.add(term.casefold())
+                out.append(term)
+    return ", ".join(out)
+
+
+def wrap_prompt(
+    style: dict, plate_id: str, prompt_doc: dict, era: str | None = None
+) -> tuple[str, str]:
     """The §10 (wrapped, negative) strings for one plate.
 
-    Page plates wrap ``style.prefix + final_subject_prompt + style.suffix`` and build the negative
-    from ``style.negative`` + ``derived.avoid``. The ``cover``/``portrait-*`` pseudo-plates were
-    fully assembled (style baked in) by P5, so their ``final_subject_prompt`` passes through and the
-    negative is just ``style.negative`` (P7 must not re-wrap them — see p5_prompts docstring).
+    Page plates wrap ``style.prefix + [era] + final_subject_prompt + [shot] + style.suffix`` and
+    build the negative from ``style.negative`` + :data:`_GLOBAL_NEGATIVE` + ``derived.avoid``. The
+    ``cover``/``portrait-*`` pseudo-plates were fully assembled (style baked in) by P5, so their
+    ``final_subject_prompt`` passes through and only the negative is extended (P7 must not re-wrap
+    them — see p5_prompts docstring).
+
+    ``era`` is the book's free-text period/place ("Russia 1870s"). Before ADR-0026 it reached only
+    the text transforms, so the image model had no period anchor at all and fell back to its own
+    priors — a Russian Orthodox "monk in a red coarse coat" renders as a Buddhist one.
     """
     final = prompt_doc["final_subject_prompt"]
-    if _is_page_plate(plate_id):
-        wrapped = f"{style['prefix']}{final}{style['suffix']}"
-        avoid = _join_avoid((prompt_doc.get("derived") or {}).get("avoid"))
-        negative = f"{style['negative']}, {avoid}" if avoid else style["negative"]
-        return wrapped, negative
-    return final, style["negative"]
-
-
-def _norm_name(s: Any) -> str:
-    """Normalized match key for a character label (collapse ws + casefold)."""
-    return " ".join(str(s).split()).casefold()
-
-
-def _portrait_reference(cfg: Any, job: Job, plate_id: str, doc: dict) -> list[bytes] | None:
-    """Portrait bytes of the primary depicted character for IP-Adapter conditioning (ADR-0023).
-
-    Page plates only. Reads ``derived.depicted`` (character labels), maps the first that resolves —
-    by name or alias — to a cast character whose portrait PNG exists, and returns its bytes. Returns
-    ``None`` for cover/portrait pseudo-plates, when nothing is depicted, or when no depicted
-    character has a rendered portrait (→ the plate renders prompt-only, byte-identical to before).
-    Portraits render before page plates (see :meth:`Render.units`), so the file is present by now.
-    """
     if not _is_page_plate(plate_id):
-        return None
-    depicted = ((doc.get("derived") or {}).get("depicted")) or []
-    if not depicted:
-        return None
-    book = _book_dir(cfg, job)
-    cast_path = book / "cast.json"
-    if not cast_path.is_file():
-        return None
-    characters = (_read_json(cast_path) or {}).get("characters", [])
-    lookup: dict[str, str] = {}
+        return final, _dedupe_terms(style["negative"], _GLOBAL_NEGATIVE)
+
+    derived = prompt_doc.get("derived") or {}
+    # The subject is a sentence; drop its full stop so the style suffix reads as a continuation of
+    # the comma-separated prompt rather than "...killed her father., canvas texture".
+    subject = final.strip()
+    if subject.endswith("."):
+        subject = subject[:-1]
+    era_seg = f"{era.strip()}, " if era and era.strip() else ""
+    shot = _SHOT_TERMS.get(str(derived.get("shot") or "").strip().casefold(), "")
+    shot_seg = f", {shot}" if shot else ""
+    wrapped = f"{style['prefix']}{era_seg}{subject}{shot_seg}{style['suffix']}"
+    negative = _dedupe_terms(style["negative"], _GLOBAL_NEGATIVE, _join_avoid(derived.get("avoid")))
+    return wrapped, negative
+
+
+# --- depicted-label → cast resolution (ADR-0026) ----------------------------
+
+# Label folding is shared with cast reduction (scriptorium.names) so "Father Zossima" ≡ "Zossima"
+# means the same thing in both places — disagreeing is how a plate gets anchored on the wrong face.
+_tokens = names.tokens
+_core_tokens = names.core_tokens
+
+
+#: ``(exact, by_tokens)`` — the match tables :func:`resolve_character` reads.
+CastIndex = tuple[dict[str, set[str]], list[tuple[frozenset, str]]]
+
+
+def build_cast_index(characters: list[dict]) -> CastIndex:
+    """``(exact, by_tokens)`` match tables over every name/alias the cast claims.
+
+    A key claimed by two characters is *ambiguous* — the cast reducer can leave an alias shared
+    between entries (ADR-0019/0022) — and resolution refuses it rather than guessing a face.
+    """
+    exact: dict[str, set[str]] = {}
+    by_tokens: list[tuple[frozenset, str]] = []
     for c in characters:
         slug = c.get("slug")
         if not slug:
             continue
-        lookup.setdefault(_norm_name(c.get("name", "")), slug)
-        for alias in c.get("aliases", []):
-            lookup.setdefault(_norm_name(alias), slug)
-    for name in depicted:
-        slug = lookup.get(_norm_name(name))
-        if not slug:
-            continue
-        png = book / "images" / "portraits" / f"{slug}.png"
-        if png.is_file():
-            return [png.read_bytes()]
-    return None
+        for label in [c.get("name", ""), *(c.get("aliases") or [])]:
+            for key in {" ".join(_tokens(label)), " ".join(_core_tokens(label))}:
+                if key:
+                    exact.setdefault(key, set()).add(slug)
+            core = frozenset(_core_tokens(label))
+            if core:
+                by_tokens.append((core, slug))
+    return exact, by_tokens
+
+
+def resolve_character(label: Any, index: CastIndex) -> str | None:
+    """The cast slug a depicted label names, or ``None`` when unknown or ambiguous."""
+    exact, by_tokens = index
+    for key in (" ".join(_tokens(label)), " ".join(_core_tokens(label))):
+        slugs = exact.get(key) if key else None
+        if slugs:
+            return next(iter(slugs)) if len(slugs) == 1 else None
+    # Fall back to a token-subset match so a fuller or descriptive label still finds its character
+    # ("Pyotr Ilyitch Karamazov" → pyotr-ilyitch). Most specific wins; a tie between two different
+    # characters is ambiguous and resolves to nothing.
+    have = set(_core_tokens(label))
+    if not have:
+        return None
+    hits = [(len(toks), slug) for toks, slug in by_tokens if toks <= have]
+    if not hits:
+        return None
+    top = max(n for n, _ in hits)
+    winners = {slug for n, slug in hits if n == top}
+    return next(iter(winners)) if len(winners) == 1 else None
+
+
+def portrait_reference(
+    depicted: list, characters: list[dict], portraits_dir: Path
+) -> tuple[list[bytes] | None, str | None]:
+    """``(reference bytes, slug)`` for the **primary** depicted character, else ``(None, None)``.
+
+    ADR-0023 specifies "primary character only", but the original loop took the *first depicted
+    label that happened to resolve and have a portrait* — so whenever the real subject was a minor
+    (no portrait) or the transform invented a name, a **secondary** character's face silently
+    became the whole plate's identity anchor. That is what drew two monks for "Nastasya kneels
+    before the elder" and two Madame Hohlakovs for "Pyotr Ilyitch sits while she shrieks".
+
+    ADR-0026 makes it literal: resolve the primary label only; if it does not resolve, or has no
+    portrait, render prompt-only rather than anchoring on someone else.
+    """
+    if not depicted:
+        return None, None
+    slug = resolve_character(depicted[0], build_cast_index(characters))
+    if not slug:
+        return None, None
+    png = portraits_dir / f"{slug}.png"
+    if not png.is_file():
+        return None, None
+    return [png.read_bytes()], slug
+
+
+def _portrait_reference(
+    cfg: Any, job: Job, plate_id: str, doc: dict
+) -> tuple[list[bytes] | None, str | None]:
+    """:func:`portrait_reference` against the work tree (page plates only)."""
+    if not _is_page_plate(plate_id):
+        return None, None
+    book = _book_dir(cfg, job)
+    cast_path = book / "cast.json"
+    if not cast_path.is_file():
+        return None, None
+    characters = (_read_json(cast_path) or {}).get("characters", [])
+    depicted = ((doc.get("derived") or {}).get("depicted")) or []
+    return portrait_reference(depicted, characters, book / "images" / "portraits")
 
 
 def _default_seed(book_id: str, plate_id: str) -> int:
@@ -272,12 +374,12 @@ async def render_plate(
     prompt_path = _prompts_dir(cfg, job) / f"{plate_id}.json"
     doc = _read_json(prompt_path)
     style = get_style(job.bake_config["style_id"])
-    wrapped, negative = wrap_prompt(style, plate_id, doc)
+    wrapped, negative = wrap_prompt(style, plate_id, doc, job.bake_config.get("era"))
     spec = _asset_spec(book, plate_id)
     if seed is None:
         seed = _default_seed(job.book_id, plate_id)
 
-    references = _portrait_reference(cfg, job, plate_id, doc)
+    references, reference_slug = _portrait_reference(cfg, job, plate_id, doc)
     await render_to_spec(
         client, wrapped, negative, spec, seed, style.get("imagegen_style"), references=references
     )
@@ -289,6 +391,9 @@ async def render_plate(
         "at": _now_iso(),
         "params_echo": {"seed": seed, "width": spec.width, "height": spec.height},
         "attempts": prev_attempts + 1,
+        # Which face conditioned this plate (ADR-0026) — previously invisible, so a plate anchored
+        # on the wrong character could only be found by eye.
+        "reference_slug": reference_slug,
     }
     schemas.validate("prompt", doc)
     _write_json(prompt_path, doc)

@@ -48,5 +48,9 @@ export interface Prompt {
      * Number of render attempts made for this plate.
      */
     attempts: number;
+    /**
+     * Slug of the cast character whose portrait conditioned this render as an IP-Adapter reference (ADR-0023, primary-only per ADR-0026), or null when the plate rendered prompt-only. Page plates only; absent on records written before ADR-0026.
+     */
+    reference_slug?: string | null;
   };
 }

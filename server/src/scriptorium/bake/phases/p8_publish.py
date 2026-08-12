@@ -35,7 +35,7 @@ from ...render.imagegen import ImagegenClient
 from ...styles import get_style
 from ..job import Job, JobState
 from .base import PipelineBug, Unit
-from .p7_render import _asset_spec, _now_iso, render_to_spec
+from .p7_render import _asset_spec, _now_iso, portrait_reference, render_to_spec
 
 # The §4.3 reader-required globs, verbatim (readers download only these by default; full-res
 # archival ``images/plates/*.png`` etc. are excluded).
@@ -344,12 +344,25 @@ async def regen_published_plate(
         web=_suffix_path(base.web, suffix),
         thumb=_suffix_path(base.thumb, suffix),
     )
-    await render_to_spec(client, wrapped, negative, spec, seed, imagegen_style)
+    # Re-condition on the same character portrait the original render used (ADR-0023/0026).
+    # Without this a regen silently drops the identity anchor, so the one plate you asked to be
+    # redrawn comes back with a different-looking character than every other page.
+    cast_path = library / "cast.json"
+    characters = (_read_json(cast_path) or {}).get("characters", []) if cast_path.is_file() else []
+    references, reference_slug = portrait_reference(
+        ((doc.get("derived") or {}).get("depicted")) or [],
+        characters,
+        library / "images" / "portraits",
+    )
+    await render_to_spec(
+        client, wrapped, negative, spec, seed, imagegen_style, references=references
+    )
 
     doc["render"] = {
         "at": _now_iso(),
         "params_echo": {"seed": seed, "width": spec.width, "height": spec.height},
         "attempts": int((doc.get("render") or {}).get("attempts", 0)) + 1,
+        "reference_slug": reference_slug,
     }
     schemas.validate("prompt", doc)
     _write_json(prompt_path, doc)

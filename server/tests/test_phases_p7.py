@@ -281,6 +281,13 @@ def test_page_plate_uses_depicted_characters_portrait_as_reference(tmp_path) -> 
     # The reference bytes are exactly the rendered portrait PNG (rendered first, hence available).
     assert refs[0] == (book / "images" / "portraits" / "clockmaker.png").read_bytes()
 
+    # ADR-0026: which face conditioned the plate is recorded, so a mis-anchored plate is findable
+    # without eyeballing the art. Pseudo-plates record no reference.
+    page_doc = json.loads((prompts / "0001.json").read_text(encoding="utf-8"))
+    assert page_doc["render"]["reference_slug"] == "clockmaker"
+    portrait_doc = json.loads((prompts / "portrait-clockmaker.json").read_text(encoding="utf-8"))
+    assert portrait_doc["render"]["reference_slug"] is None
+
 
 @respx.mock
 def test_render_is_idempotent(tmp_path) -> None:

@@ -285,3 +285,49 @@ def test_ready_and_failed_sets_carry_no_progress(tmp_path) -> None:
         s for s in service.list_sets(cfg, "kris", BOOK)["sets"] if s["set_id"] == stalled_id
     )
     assert failed["status"] == "failed" and "render_progress" not in failed
+
+
+@respx.mock
+def test_set_conditions_page_plates_on_its_own_portraits_and_anchors_the_era(tmp_path) -> None:
+    """ADR-0026: a picture set is no longer rendered prompt-only.
+
+    Before this, a set fed no ``references`` at all, so every re-illustration lost the character
+    consistency the book's own render had — and it never saw the book's era, because a set job's
+    bake_config carries only ``style_id``. Portraits must also render *before* the page plates so
+    the reference file exists inside the set.
+    """
+    cfg = _cfg(tmp_path)
+    _seed_library(cfg)
+    lib = cfg.library_dir / BOOK
+    meta = json.loads((lib / "meta.json").read_text())
+    meta["era"] = "Russia 1870s"
+    (lib / "meta.json").write_text(json.dumps(meta), encoding="utf-8")
+    doc = json.loads((lib / "prompts" / "0001.json").read_text())
+    doc["derived"]["depicted"] = ["the Clockmaker"]
+    doc["derived"]["shot"] = "medium"
+    (lib / "prompts" / "0001.json").write_text(json.dumps(doc), encoding="utf-8")
+    respx.post(f"{TTS}/v1/models/unload").mock(return_value=httpx.Response(200, json={}))
+
+    calls: list[tuple[str, object]] = []
+
+    class _RefRecording(FakeImagegen):
+        async def txt2img(self, *args, **kwargs) -> bytes:
+            calls.append((args[0], kwargs.get("references")))
+            return await super().txt2img(*args, **kwargs)
+
+    set_id = service.create_set(cfg, "kris", BOOK, "style", "engraving", None)["set_id"]
+    job = _drive(cfg, _RefRecording(), service.set_job_id(BOOK, set_id))
+    assert job.state == JobState.SET_DONE, f"stuck at {job.state}"
+
+    set_dir = _set_dir(cfg, "kris", BOOK, set_id)
+    with_refs = [(p, r) for (p, r) in calls if r]
+    assert len(with_refs) == 1, "exactly the one depicted page plate should carry a reference"
+    prompt, refs = with_refs[0]
+    # The reference is the portrait rendered into *this set*, not the book's.
+    assert refs == [(set_dir / "images" / "portraits" / "the-clockmaker.png").read_bytes()]
+    assert "Russia 1870s, a lamplit workshop" in prompt
+    assert "medium shot" in prompt
+
+    recorded = json.loads((set_dir / "prompts" / "0001.json").read_text())
+    assert recorded["reference_slug"] == "the-clockmaker"
+    assert json.loads((set_dir / "prompts" / "0003.json").read_text())["reference_slug"] is None
