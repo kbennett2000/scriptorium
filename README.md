@@ -46,8 +46,8 @@ the internet switched off.
 
 ## Screenshots
 
-> Real screenshots land next pass — these are placeholders. The full capture list is in
-> **[docs/SCREENSHOTS.md](docs/SCREENSHOTS.md)**.
+Captured from a live stack against a real baked book — *The Strange Case of Dr. Jekyll and Mr. Hyde*,
+illustrated end to end by the pipeline below. More in **[docs/SCREENSHOTS.md](docs/SCREENSHOTS.md)**.
 
 | Reading a book | The cast page | Choosing pictures |
 |:---:|:---:|:---:|
