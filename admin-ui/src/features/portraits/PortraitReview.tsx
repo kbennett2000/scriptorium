@@ -149,6 +149,19 @@ function PortraitCard({
   const [error, setError] = useState<unknown>(null);
   // Cache-bust the image after a regenerate (same URL, new bytes).
   const [bump, setBump] = useState(0);
+  // Click-to-zoom lightbox for this portrait (the tile is small).
+  const [zoomed, setZoomed] = useState(false);
+
+  const src = `${plateImageUrl(id, prompt.page_id)}?v=${bump}`;
+  const label = character?.name ?? prompt.page_id;
+
+  // Close the lightbox on Escape while it is open.
+  useEffect(() => {
+    if (!zoomed) return;
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && setZoomed(false);
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [zoomed]);
 
   const promptDirty = promptDraft !== prompt.final_subject_prompt;
   const edited = prompt.edited_prompt !== null;
@@ -180,10 +193,17 @@ function PortraitCard({
     <div className="portrait-card">
       <img
         className="portrait-img"
-        src={`${plateImageUrl(id, prompt.page_id)}?v=${bump}`}
-        alt={character?.name ?? prompt.page_id}
+        src={src}
+        alt={label}
         loading="lazy"
+        title="Click to enlarge"
+        onClick={() => setZoomed(true)}
       />
+      {zoomed && (
+        <div className="lightbox" onClick={() => setZoomed(false)} role="dialog" aria-label={label}>
+          <img className="lightbox-img" src={src} alt={label} />
+        </div>
+      )}
       <div className="portrait-meta">
         <div className="portrait-name">{character?.name ?? prompt.page_id}</div>
 
