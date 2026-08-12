@@ -12,6 +12,7 @@ from __future__ import annotations
 from scriptorium.bake.phases.p7_render import (
     build_cast_index,
     portrait_reference,
+    reference_conditioning,
     resolve_character,
     wrap_prompt,
 )
@@ -168,3 +169,47 @@ def test_pseudo_plates_pass_their_prompt_through_but_still_get_the_guards() -> N
         wrapped, negative = wrap_prompt(style, plate_id, doc, "Russia 1870s")
         assert wrapped == "engraved bust of the clockmaker"
         assert "duplicate" in negative and style["negative"].split(",")[0] in negative
+
+
+# --- ADR-0028: conditioning strength scales with how many figures are in frame ---
+
+
+def test_single_figure_plate_accepts_the_service_conditioning_defaults() -> None:
+    assert reference_conditioning(["Pyotr Ilyitch"]) == (None, None)
+
+
+def test_no_depicted_characters_accepts_the_service_defaults() -> None:
+    assert reference_conditioning([]) == (None, None)
+    assert reference_conditioning(None) == (None, None)
+
+
+def test_multi_figure_plate_gets_a_weaker_later_anchor() -> None:
+    # IP-Adapter is global and unmasked: on a two-person plate the second person otherwise
+    # inherits the anchor's face and clothes. 288 of 440 plates on the sample book were like this.
+    strength, start = reference_conditioning(["Mitya", "Grushenka"])
+    assert strength is not None and start is not None
+    solo_strength, solo_start = 0.5, 0.3  # the imagegen-service defaults a solo plate would use
+    assert strength < solo_strength, "a crowded frame must not be anchored as hard as a solo one"
+    assert start > solo_start, "and identity must land later, after composition is settled"
+
+
+def test_three_figure_plate_is_treated_like_any_other_multi_figure_plate() -> None:
+    assert reference_conditioning(["A", "B", "C"]) == reference_conditioning(["A", "B"])
+
+
+def test_portrait_plate_negative_bans_a_second_sitter() -> None:
+    # A portrait is the reference for every plate its character anchors, so a two-figure portrait
+    # is not one bad picture — it is every plate that character appears on.
+    style = get_style("engraving")
+    _, negative = wrap_prompt(style, "portrait-zossima", _doc("engraved bust of the elder"))
+    assert "two people" in negative
+    assert "group portrait" in negative
+
+
+def test_page_plate_negative_does_not_carry_the_portrait_only_terms() -> None:
+    # Page plates legitimately depict more than one person; banning "two people" there would
+    # fight the prompt.
+    style = get_style("engraving")
+    _, negative = wrap_prompt(style, "0001", _doc("two men at a bench", depicted=["A", "B"]))
+    assert "group portrait" not in negative
+    assert "duplicate" in negative  # the global anatomy guards still apply

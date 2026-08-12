@@ -57,12 +57,18 @@ class ImagegenClient(Protocol):
         seed: int | None = None,
         style: str | None = None,
         references: list[bytes] | None = None,
+        reference_strength: float | None = None,
+        reference_start: float | None = None,
     ) -> bytes:
         """Render ``prompt`` to PNG bytes at ``width``×``height``, optionally under ``style``.
 
         ``references`` is an optional list of reference-image PNG bytes (a character's portrait) fed
         to the service as image-prompt conditioning for character consistency (ADR-0023). ``None``
         (the default) keeps the prompt-only, byte-identical behaviour.
+
+        ``reference_strength`` (IP-Adapter weight) and ``reference_start`` (the fraction of the
+        denoising schedule that runs before identity is injected) tune that conditioning per plate;
+        ``None`` leaves the service's own defaults in place (ADR-0028).
         """
         ...
 
@@ -97,6 +103,8 @@ class RealImagegenClient:
         seed: int | None = None,
         style: str | None = None,
         references: list[bytes] | None = None,
+        reference_strength: float | None = None,
+        reference_start: float | None = None,
     ) -> bytes:
         """``POST /generate`` → PNG bytes. Maps 503/conn → GpuUnavailable, 422 → UnitFailed."""
         if self._base is None:
@@ -117,6 +125,12 @@ class RealImagegenClient:
         # conditions on these portrait images (ADR-0023). Absent → prompt-only, byte-identical.
         if references:
             body["references"] = [base64.b64encode(r).decode("ascii") for r in references]
+            # Only meaningful alongside a reference; sent only when the caller overrides the
+            # service default, so an unconditioned request stays byte-identical (ADR-0028).
+            if reference_strength is not None:
+                body["referenceStrength"] = reference_strength
+            if reference_start is not None:
+                body["referenceStart"] = reference_start
         url = f"{self._base}/generate"
         try:
             async with httpx.AsyncClient(timeout=_GENERATE_TIMEOUT_S) as client:
@@ -173,12 +187,14 @@ def _digest(
     seed: int | None,
     style: str | None = None,
     references: list[bytes] | None = None,
+    reference_strength: float | None = None,
+    reference_start: float | None = None,
 ) -> str:
     """A stable hex digest of the full render request (drives both color and burned-in text).
 
-    ``style`` and ``references`` are folded in only when set, so the default (``None``) yields
+    Every optional argument is folded in only when set, so the default (``None``) yields
     byte-identical placeholders to the pre-existing fake (determinism/round-trip fixtures stay
-    green), while distinct styles/references produce visibly distinct stand-ins.
+    green), while distinct styles/references/conditioning produce visibly distinct stand-ins.
     """
     payload = f"{prompt}\x00{width}x{height}\x00{seed}".encode()
     if style is not None:
@@ -187,6 +203,12 @@ def _digest(
         # Fold a hash of each reference's bytes (not the raw bytes) to keep the payload small.
         for ref in references:
             payload += b"\x00" + hashlib.sha256(ref).digest()
+        # Conditioning strength changes the real render, so it must change the stand-in too —
+        # otherwise a test could not tell a multi-figure plate's weaker anchor from a solo one.
+        if reference_strength is not None:
+            payload += f"\x00w={reference_strength}".encode()
+        if reference_start is not None:
+            payload += f"\x00s={reference_start}".encode()
     return hashlib.sha256(payload).hexdigest()
 
 
@@ -206,9 +228,18 @@ class FakeImagegen:
         seed: int | None = None,
         style: str | None = None,
         references: list[bytes] | None = None,
+        reference_strength: float | None = None,
+        reference_start: float | None = None,
     ) -> bytes:
         return self.render(
-            prompt, width=width, height=height, seed=seed, style=style, references=references
+            prompt,
+            width=width,
+            height=height,
+            seed=seed,
+            style=style,
+            references=references,
+            reference_strength=reference_strength,
+            reference_start=reference_start,
         )
 
     async def health(self) -> bool:
@@ -223,9 +254,13 @@ class FakeImagegen:
         seed: int | None = None,
         style: str | None = None,
         references: list[bytes] | None = None,
+        reference_strength: float | None = None,
+        reference_start: float | None = None,
     ) -> bytes:
         """Synchronous core: deterministic placeholder PNG bytes for ``prompt``."""
-        digest = _digest(prompt, width, height, seed, style, references)
+        digest = _digest(
+            prompt, width, height, seed, style, references, reference_strength, reference_start
+        )
         # Background: a muted color from the digest so distinct prompts look distinct.
         bg = (int(digest[0:2], 16) // 2, int(digest[2:4], 16) // 2, int(digest[4:6], 16) // 2)
         img = Image.new("RGB", (width, height), bg)
