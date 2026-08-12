@@ -2175,3 +2175,46 @@ untouched). No change to GPU parking / review gate / transition table.
 (stopped worker → set `state=paused, prev_state=mentions_running` in its job record → relaunched) so
 Ted's-Camping-Trip-v2 could take the worker. Root trigger of the wider outage was an unattended NVIDIA
 driver upgrade (595.71.05→595.84) needing a reboot; picture-set renders resumed cleanly afterward.
+
+---
+
+## M1 · Cycle 15 — documentation, onboarding & repo polish (2026-08-11)
+
+**Shipped.** First end-user-facing documentation set (previously the repo had developer/architect docs
+only). Nothing in `server/`, `reader/`, `admin-ui/`, or `shared/` app code changed — docs, shell
+scripts, and repo metadata only.
+
+- **Banner + badges:** hand-authored self-contained SVGs — `docs/assets/banner.svg` (illuminated
+  initial-capital wordmark) and `docs/assets/badges.svg` (local status pills, no shields.io dependency,
+  keeping with the no-cloud ethos).
+- **Rewritten `README.md`:** human-first — banner, plain-language pitch, a "two ways in" fork
+  (read books / run a bakery), highlights, a Mermaid how-it-works diagram, screenshot gallery
+  (placeholders), companion-project links (text-transform-service + imagegen-service, both public repos),
+  trimmed layout table, brief dev quickstart.
+- **Three guides under `docs/guide/`:** `reading-books.md` (warm, jargon-free reader onboarding — browser
+  first, phone app second), `making-books.md` (the "load a book, go to bed, wake to a finished book" bake
+  walkthrough), `self-hosting.md` (full operator setup: per-OS server + the GPU box, an env-var table, and
+  unattended `AUTO_START`/`AUTO_APPROVE` mode).
+- **One-command onboarding:** `scripts/setup.{sh,ps1}` (check tools → `uv sync` → build reader+admin dist)
+  and `scripts/start.{sh,ps1}` (launch uvicorn on :8720; default `SCRIPTORIUM_DATA` to a stable
+  repo-local `./scriptorium-data` so books never vanish — honors the data-dir rule). Complements the
+  justfile dev flow; no Docker.
+- **Screenshot tracking:** `docs/SCREENSHOTS.md` (authoritative capture list, 15 screens + hero) with a
+  reusable `docs/assets/screenshots/_placeholder.svg` referenced everywhere until real shots land.
+- **Per-package READMEs:** `server/`, `reader/`, `admin-ui/`, `shared/` — one screen each, linking back
+  to the guides.
+- **Repo metadata:** GitHub description + topics set; annotated tag `v0.1.0`.
+
+**Decisions (confirmed with Kris).** Docs + start scripts (no Docker); hand-crafted SVG banner now (not a
+placeholder); full self-host guide including the GPU box; both companion services linked to their public
+GitHub repos.
+
+**Verification.** All three banner/placeholder SVGs parse as valid XML; every relative markdown link
+across the new docs resolves; `bash -n` clean on both `.sh` scripts; live boot test — `start.sh` on an
+alt port served `/health` (JSON), reader at `/`, and admin `200` at `/admin/`. `.ps1` scripts verified by
+review only (Windows path noted as less-tested in the guide). No app code touched, so `lint-all`/tests
+are unaffected.
+
+**Out of scope (noted).** Real screenshots (placeholders only — next pass); a LICENSE file (recommended,
+but the license choice is Kris's — README states all-rights-reserved until one is added); Docker/Play-Store/
+desktop-installer packaging; the still-missing developer `system-overview.md`.
