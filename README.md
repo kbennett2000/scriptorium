@@ -51,7 +51,7 @@ the internet switched off.
 
 | Reading a book | The cast page | Choosing pictures |
 |:---:|:---:|:---:|
-| ![Reading surface](docs/assets/screenshots/_placeholder.svg) | ![Cast page](docs/assets/screenshots/_placeholder.svg) | ![Pictures picker](docs/assets/screenshots/_placeholder.svg) |
+| ![Reading surface](docs/assets/screenshots/09-reading-surface.png) | ![Cast page](docs/assets/screenshots/10-cast-page.png) | ![Pictures picker](docs/assets/screenshots/11-pictures-picker.png) |
 
 ## How it works
 
