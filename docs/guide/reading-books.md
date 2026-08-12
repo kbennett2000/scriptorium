@@ -27,7 +27,7 @@ That's it — no install. Bookmark it and you're set.
 > number followed by `:8720`. If a plain name doesn't work, ask them for the number version (something
 > like `http://192.168.1.10:8720`).
 
-![The shelf, in a browser](../assets/screenshots/_placeholder.svg)
+![The shelf, in a browser](../assets/screenshots/08-shelf.png)
 
 ### The cozy way: the phone app
 
@@ -43,7 +43,7 @@ browser version below.
 The first time you open Scriptorium, you'll see a row of **profiles** — one per person in the house.
 Tap yours. No passwords; it just keeps everyone's books, bookmarks, and highlights separate.
 
-![Choosing a profile](../assets/screenshots/_placeholder.svg)
+![Choosing a profile](../assets/screenshots/07-profile-picker.png)
 
 You can switch profiles anytime from **Settings**.
 
@@ -59,7 +59,7 @@ You'll land on your **Shelf**. Books come in two flavors:
 Tap an available book to **download** it. You'll see a little progress bar; when it fills, the book is
 yours to read anywhere, no internet needed.
 
-![The shelf](../assets/screenshots/_placeholder.svg)
+![The shelf](../assets/screenshots/08-shelf.png)
 
 > Downloading once is all it takes. After that, the book stays on your device even with the Wi-Fi off.
 > Removing a book to free up space is safe — your highlights and bookmarks are kept, so you can
@@ -72,7 +72,7 @@ yours to read anywhere, no internet needed.
 Open a book and read. Text flows to fit your screen, with **illustrations right where they belong** in
 the story. Tap the edges (or swipe) to turn pages.
 
-![Reading a page](../assets/screenshots/_placeholder.svg)
+![Reading a page](../assets/screenshots/09-reading-surface.png)
 
 Along the toolbar you'll find a few delightful extras:
 
@@ -83,27 +83,27 @@ Handy when you're 300 pages in and thinking "wait, who's this again?"
 
 It's spoiler-safe: you'll only see characters you've already met, never ones waiting further ahead.
 
-![The cast page](../assets/screenshots/_placeholder.svg)
+![The cast page](../assets/screenshots/10-cast-page.png)
 
 ### 🎨 Pictures — change the art style
 
 Tap **Pictures** to switch the whole book's illustrations to a different style — a comic look, a
 woodcut, a watercolor. Every book starts on its **Default** set, and you can even make your own.
 
-![Choosing a picture set](../assets/screenshots/_placeholder.svg)
+![Choosing a picture set](../assets/screenshots/11-pictures-picker.png)
 
 ### 🔍 Search
 
 Tap **Search** to find any word or phrase in the book. Tap a result to jump straight to that page.
 
-![Searching a book](../assets/screenshots/_placeholder.svg)
+![Searching a book](../assets/screenshots/12-search.png)
 
 ### ✍️ Highlight, note & bookmark
 
 Select some text to **highlight** it (in a few colors), attach a **note**, or drop a **bookmark**.
 Your **Annotations** panel gathers them all in one place so you can flip back to a favorite passage.
 
-![The annotations panel](../assets/screenshots/_placeholder.svg)
+![The annotations panel](../assets/screenshots/13-annotations.png)
 
 Your highlights and bookmarks quietly sync back to the home server whenever it's in reach — so if you
 read on your phone and later open the same book in a browser, they'll be waiting for you.
@@ -112,7 +112,7 @@ read on your phone and later open the same book in a browser, they'll be waiting
 
 Tap any illustration to blow it up full-screen. Tap again to close.
 
-![A picture, enlarged](../assets/screenshots/_placeholder.svg)
+![A picture, enlarged](../assets/screenshots/14-lightbox.png)
 
 ---
 
@@ -125,7 +125,7 @@ Open **Settings** to read the way *you* like:
 - **Theme** — bright, warm sepia, or easy-on-the-eyes dark.
 - Switch **profiles**, sync now, and check how much is stored on your device.
 
-![Settings](../assets/screenshots/_placeholder.svg)
+![Settings](../assets/screenshots/15-settings.png)
 
 ---
 

@@ -30,11 +30,11 @@ That's it. The long version below just explains each screen.
 
 From the **Books** list (your library so far), click **New Book**.
 
-![The Books list](../assets/screenshots/_placeholder.svg)
+![The Books list](../assets/screenshots/01-books-list.png)
 
 The wizard is one friendly form with a few numbered steps:
 
-![The New Book wizard](../assets/screenshots/_placeholder.svg)
+![The New Book wizard](../assets/screenshots/02-new-book-wizard.png)
 
 1. **Choose a book.** Search a big catalog of free classics (Project Gutenberg), paste text, or upload
    a file. Searching is the easiest — type a title or author and pick from the list.
@@ -56,7 +56,7 @@ The book appears on the Books list with a live status. Open it to watch the **pr
 its stages — finding the characters, working out each scene's time and place, choosing what to
 illustrate, writing a description for each picture, then drawing.
 
-![Book progress](../assets/screenshots/_placeholder.svg)
+![Book progress](../assets/screenshots/03-book-detail.png)
 
 You don't have to babysit it. The heavy AI work is handed to the graphics card, and if the card is
 asleep or busy, the job simply **waits and resumes** on its own. Big books take a while — this is a
@@ -77,18 +77,18 @@ Before any pictures are drawn, you can look over the plan on the **Review** scre
 to illustrate, and the cast of characters with their descriptions. Tweak a description, adjust which
 scenes get a picture, then press **Approve** to send it to the easel.
 
-![The review gate](../assets/screenshots/_placeholder.svg)
+![The review gate](../assets/screenshots/04-review-gate.png)
 
 If you asked to review portraits, you'll get a screen showing each character's portrait beside its
 description. Don't love how someone looks? Edit the description and **regenerate** just that portrait
 until you're happy, then approve.
 
-![Portrait review](../assets/screenshots/_placeholder.svg)
+![Portrait review](../assets/screenshots/05-portrait-review.png)
 
 After the pictures are painted, an optional **post-render** screen lets you spot-check the finished
 plates as thumbnails and redraw any single one you'd like to improve.
 
-![Post-render review](../assets/screenshots/_placeholder.svg)
+![Post-render review](../assets/screenshots/06-post-render.png)
 
 ---
 
