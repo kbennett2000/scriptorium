@@ -13,7 +13,7 @@ import asyncio
 
 import pytest
 
-from fake_phases import CountingPhase, FakeFlaky, FakeGpuDown
+from fake_phases import CountingPhase, FakeFlaky, FakeGpuDown, PausingPhase
 from scriptorium.bake import job as jobmod
 from scriptorium.bake import runner as runnermod
 from scriptorium.bake.job import Job, JobState
@@ -161,6 +161,23 @@ def test_review_gated_job_does_not_starve_newer_jobs(tmp_path) -> None:
     assert jobmod.load(cfg, "parked").state == JobState.PROMPTS_DRAFT
     assert phase.executed == ["u1"]
     assert jobmod.load(cfg, "fresh").state == JobState.MENTIONS_RUNNING
+
+
+def test_pause_mid_phase_is_honored_not_overwritten(tmp_path) -> None:
+    # A long phase used to run to completion even if the operator paused mid-way, because the
+    # per-unit save overwrote the pause. The runner now re-reads before each save and stops.
+    cfg = _cfg(tmp_path)
+    job = _started_job(cfg, JobState.INGESTED)
+    phase = PausingPhase(["u1", "u2", "u3"], pause_on="u1")  # operator pauses during u1
+    runner = Runner(cfg, [phase], sleep=_noop_sleep)
+
+    asyncio.run(runner.advance_job(job))
+
+    reloaded = jobmod.load(cfg, "b")
+    assert reloaded.state == JobState.PAUSED  # the pause survived — not steamrolled
+    assert reloaded.prev_state == JobState.INGESTED  # Resume returns to where it was
+    assert phase.executed == ["u1"]  # units after the pause never ran
+    assert reloaded.state != JobState.MENTIONS_RUNNING  # phase did NOT complete to its to_state
 
 
 # --- GPU hand-off: free the image GPU before a text phase (single-GPU sequencing) ---------

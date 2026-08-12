@@ -175,6 +175,14 @@ class Runner:
                     job.transition(JobState.WAITING_GPU)
                     job.save(self.cfg)
                     return
+                # Honor an operator Pause (or delete) requested WHILE this unit ran: the API wrote
+                # the new state to disk, but our in-memory ``job`` doesn't know. Re-read before
+                # saving — if it no longer matches what we're advancing, stop and DON'T overwrite,
+                # so Pause takes effect within one unit instead of only between phases. The unit's
+                # artifact is already on disk (``unit_done`` will skip it on resume).
+                persisted = jobmod.load(self.cfg, job.id)
+                if persisted is None or persisted.state != job.state:
+                    return
                 job.save(self.cfg)  # persist after every unit — resumability invariant
         except Exception:  # bug-class → fail the whole job (§7.3)
             job.transition(JobState.FAILED)

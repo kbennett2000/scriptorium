@@ -2144,3 +2144,34 @@ pipeline logic; server output unchanged.
 
 **Done-state.** admin-ui tsc + eslint clean, vitest **5** (+4 grouping), vite build OK. Verified
 against live data (Ted's Camping Trip → 15 sets group correctly).
+
+---
+
+## M1 · Cycle 14 — Pause takes effect mid-phase, not just between phases (2026-08-11)
+
+**Why.** Kris paused a running bake (Karamazov, mid "finding characters" over 600 pages) and it kept
+going. Root cause: `runner.advance_job` runs a whole phase's units in one loop, saving the job's
+in-memory (running) state after every unit — so an operator Pause written to disk by the API is
+overwritten within a second. `tick()` only checks for PAUSED *between* phases, so a pause during a long
+phase was effectively ignored until the phase finished (~30 min for Karamazov).
+
+**Shipped.** `bake/runner.py`: in the per-unit loop, after running a unit and before saving, re-read
+the persisted record (`jobmod.load`); if it's gone or its state no longer matches the state we're
+advancing (i.e. the operator paused/deleted it mid-phase), **stop without saving** — leaving the pause
+intact. The unit's artifact is already on disk, so `unit_done` skips it on resume. Pause now lands
+within one unit instead of never. Happy path is byte-identical (persisted state matches → normal save).
+
+**Test.** `tests/fake_phases.py` `PausingPhase` (loads a separate Job and transitions it to PAUSED
+while a unit runs — models an API pause mid-phase); `tests/test_runner.py`
+`test_pause_mid_phase_is_honored_not_overwritten` asserts the job stays PAUSED with
+`prev_state` set for Resume, and units after the pause never run.
+
+**Invariants.** Resumability preserved (still persists after every unit on the happy path; artifacts
+untouched). No change to GPU parking / review gate / transition table.
+
+**Done-state.** server ruff clean, pytest **445** (+1). No schema/type/reader/admin change.
+
+**Ops note (this incident).** The already-clobbered pause on pg-28054 was made durable out-of-band
+(stopped worker → set `state=paused, prev_state=mentions_running` in its job record → relaunched) so
+Ted's-Camping-Trip-v2 could take the worker. Root trigger of the wider outage was an unattended NVIDIA
+driver upgrade (595.71.05→595.84) needing a reboot; picture-set renders resumed cleanly afterward.

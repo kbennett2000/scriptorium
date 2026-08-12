@@ -118,3 +118,33 @@ class CountingPhase(_ArtifactPhase):
         if unit.id == self.crash_on:
             raise asyncio.CancelledError()
         self._write_artifact(cfg, job, unit)
+
+
+class PausingPhase(_ArtifactPhase):
+    """Simulates an operator pausing the job (via the API → disk) DURING the phase.
+
+    While running ``pause_on``, it loads a SEPARATE Job instance and transitions it to PAUSED —
+    exactly what the pause endpoint does — mimicking a pause that lands mid-phase without the
+    in-memory worker knowing. Used to prove the runner re-checks and honors it instead of
+    steamrolling it with the next per-unit save.
+    """
+
+    name = "fake_pausing"
+
+    def __init__(self, unit_ids: list[str], pause_on: str) -> None:
+        self.unit_ids = unit_ids
+        self.pause_on = pause_on
+        self.executed: list[str] = []
+
+    def units(self, job: Job, cfg) -> list[Unit]:
+        return [Unit(id=uid) for uid in self.unit_ids]
+
+    def run_unit(self, job: Job, cfg, unit: Unit) -> None:
+        self.executed.append(unit.id)
+        self._write_artifact(cfg, job, unit)
+        if unit.id == self.pause_on:
+            from scriptorium.bake import job as jobmod
+
+            other = jobmod.load(cfg, job.id)
+            other.transition(JobState.PAUSED)
+            other.save(cfg)
