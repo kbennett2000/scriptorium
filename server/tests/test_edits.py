@@ -152,15 +152,16 @@ def test_commit_writes_overlay_and_leaves_library_untouched(tmp_path) -> None:
              for p in sorted(lib.rglob("*")) if p.is_file()}
     assert after == before
 
-    # The override landed in the private edits overlay, outside library/.
+    # The override landed in the private edits overlay, outside library/, under its scope (ADR-0035
+    # — the base book is "default").
     overlay = cfg.artsets_dir / _USER / _BOOK / "edits"
-    assert (overlay / "images" / "web" / "plates" / "0001.webp").is_file()
-    assert (overlay / "images" / "thumbs" / "plates" / "0001.webp").is_file()
-    assert (overlay / "images" / "plates" / "0001.png").is_file()  # archival, for the next re-edit
+    assert (overlay / "images" / "web" / "plates" / "default" / "0001.webp").is_file()
+    assert (overlay / "images" / "thumbs" / "plates" / "default" / "0001.webp").is_file()
+    assert (overlay / "images" / "plates" / "default" / "0001.png").is_file()  # archival source
     edits_doc = json.loads((overlay / "edits.json").read_text("utf-8"))
     schemas.validate("artset-edits", edits_doc)
-    assert edits_doc["plates"]["0001"]["caption"] == "a brighter lamp"
-    assert edits_doc["plates"]["0001"]["denoise"] == 0.55
+    assert edits_doc["plates"]["0001"]["default"]["caption"] == "a brighter lamp"
+    assert edits_doc["plates"]["0001"]["default"]["denoise"] == 0.55
 
 
 def test_overlay_manifest_marks_edits_json_reader_required(tmp_path) -> None:
@@ -172,14 +173,16 @@ def test_overlay_manifest_marks_edits_json_reader_required(tmp_path) -> None:
     )
     assert "edits.json" in manifest["reader_required"]
     paths = {f["path"] for f in manifest["files"]}
-    assert "images/web/plates/0001.webp" in paths
+    assert "images/web/plates/default/0001.webp" in paths
 
 
 def test_reedit_starts_from_prior_overlay_image(tmp_path) -> None:
     cfg = _cfg(tmp_path)
     _publish_book(cfg)
     _commit_one(cfg, caption="first")
-    overlay_png = (cfg.artsets_dir / _USER / _BOOK / "edits" / "images" / "plates" / "0001.png")
+    overlay_png = (
+        cfg.artsets_dir / _USER / _BOOK / "edits" / "images" / "plates" / "default" / "0001.png"
+    )
     first = overlay_png.read_bytes()
     # The context caption now reflects the committed override, not the page ledger.
     ctx = asyncio.run(edits_service.plate_context(cfg, _USER, _BOOK, "0001"))
@@ -281,9 +284,11 @@ def test_edit_records_style_and_model_in_edits_json(tmp_path) -> None:
         (cfg.artsets_dir / _USER / _BOOK / "edits" / "edits.json").read_text("utf-8")
     )
     schemas.validate("artset-edits", doc)
-    entry = doc["plates"]["0001"]
+    # The edit is filed under the set's scope (not "default"), and is self-describing.
+    entry = doc["plates"]["0001"][_SET_ID]
     assert entry["style_id"] == "comic-book"
     assert entry["model"] == _SET_MODEL
+    assert entry["set_id"] == _SET_ID
 
 
 def test_edit_on_set_starts_from_set_plate_not_base(tmp_path) -> None:
@@ -297,6 +302,78 @@ def test_edit_on_set_starts_from_set_plate_not_base(tmp_path) -> None:
     assert base != set_plate  # precondition: the set re-illustrated the plate
     got = edits_service._current_plate_png(cfg, _USER, _BOOK, "0001", _SET_ID)
     assert got == set_plate  # img2img starts from what the reader is actually viewing
+
+
+# --- scoping: an edit only overrides the reader it was made on (ADR-0035) ---------------------
+
+
+def test_edit_on_set_is_scoped_to_that_set_only(tmp_path) -> None:
+    cfg = _cfg(tmp_path)
+    _publish_book(cfg)
+    _add_comic_set(cfg)
+    token = asyncio.run(edits_service.generate_candidate(
+        cfg, _USER, _BOOK, "0001", prompt="p", set_id=_SET_ID, client=FakeImagegen(),
+    ))["token"]
+    edits_service.commit_edit(cfg, _USER, _BOOK, "0001", token=token, caption="comic caption")
+
+    overlay = cfg.artsets_dir / _USER / _BOOK / "edits"
+    # The replacement lives under the SET's scope, and NOT under the base book's "default".
+    assert (overlay / "images" / "web" / "plates" / _SET_ID / "0001.webp").is_file()
+    assert not (overlay / "images" / "web" / "plates" / "default" / "0001.webp").exists()
+
+    # The base book (default reader) does not see the comic edit: its context falls back to the page
+    # caption, and its img2img starts from the base plate — switching off the set restores it.
+    base_ctx = asyncio.run(edits_service.plate_context(cfg, _USER, _BOOK, "0001"))
+    assert base_ctx["caption"] == "a lamp glows"
+    base_start = edits_service._current_plate_png(cfg, _USER, _BOOK, "0001", None)
+    assert base_start == (cfg.library_dir / _BOOK / "images" / "plates" / "0001.png").read_bytes()
+
+    # The comic reader DOES resume from its own edit.
+    set_ctx = asyncio.run(edits_service.plate_context(
+        cfg, _USER, _BOOK, "0001", set_id=_SET_ID, client=FakeImagegen(),
+    ))
+    assert set_ctx["caption"] == "comic caption"
+
+
+def test_edits_on_base_and_set_coexist(tmp_path) -> None:
+    cfg = _cfg(tmp_path)
+    _publish_book(cfg)
+    _add_comic_set(cfg)
+    t1 = asyncio.run(edits_service.generate_candidate(
+        cfg, _USER, _BOOK, "0001", prompt="p", client=FakeImagegen(),
+    ))["token"]
+    edits_service.commit_edit(cfg, _USER, _BOOK, "0001", token=t1, caption="base")
+    t2 = asyncio.run(edits_service.generate_candidate(
+        cfg, _USER, _BOOK, "0001", prompt="p", set_id=_SET_ID, client=FakeImagegen(),
+    ))["token"]
+    edits_service.commit_edit(cfg, _USER, _BOOK, "0001", token=t2, caption="comic")
+
+    overlay = cfg.artsets_dir / _USER / _BOOK / "edits"
+    assert (overlay / "images" / "web" / "plates" / "default" / "0001.webp").is_file()
+    assert (overlay / "images" / "web" / "plates" / _SET_ID / "0001.webp").is_file()
+    doc = json.loads((overlay / "edits.json").read_text("utf-8"))
+    schemas.validate("artset-edits", doc)
+    assert doc["plates"]["0001"]["default"]["caption"] == "base"
+    assert doc["plates"]["0001"][_SET_ID]["caption"] == "comic"
+
+
+def test_commit_migrates_legacy_flat_edit(tmp_path) -> None:
+    cfg = _cfg(tmp_path)
+    _publish_book(cfg)
+    # A pre-ADR-0035 flat edits.json (the entry sat directly under plate_id, with no scope key).
+    overlay = cfg.artsets_dir / _USER / _BOOK / "edits"
+    overlay.mkdir(parents=True, exist_ok=True)
+    legacy_entry = {"caption": "old", "prompt": "p", "created": "2020-01-01T00:00:00+00:00"}
+    (overlay / "edits.json").write_text(json.dumps({
+        "book_id": _BOOK, "user_id": _USER, "source_revision": 1,
+        "plates": {"0002": legacy_entry},
+    }), encoding="utf-8")
+    # A new scoped commit succeeds; the un-scopeable legacy entry is dropped (else it fails schema).
+    _commit_one(cfg)
+    doc = json.loads((overlay / "edits.json").read_text("utf-8"))
+    schemas.validate("artset-edits", doc)
+    assert "0002" not in doc["plates"]
+    assert doc["plates"]["0001"]["default"]["caption"] == "a brighter lamp"
 
 
 # --- endpoints --------------------------------------------------------------

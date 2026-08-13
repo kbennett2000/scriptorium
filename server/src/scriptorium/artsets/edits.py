@@ -27,6 +27,7 @@ from __future__ import annotations
 import json
 import secrets
 import shutil
+from dataclasses import replace
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -34,6 +35,7 @@ from typing import Any
 from .. import schemas
 from ..bake.phases.p7_render import (
     _asset_spec,
+    _AssetSpec,
     _is_page_plate,
     portrait_reference,
     reference_conditioning,
@@ -110,6 +112,42 @@ def _page_id_of(plate_id: str) -> str:
 def _is_set(set_id: str | None) -> bool:
     """True iff ``set_id`` names a real style set (not the base book / the edits overlay)."""
     return bool(set_id) and set_id not in (DEFAULT_SET_ID, EDITS_SET_ID)
+
+
+def _scope_of(set_id: str | None) -> str:
+    """The overlay *scope* an edit belongs to (ADR-0035): a style set's own id, else ``"default"``
+    for the base book. An edit only ever overrides the reader it was made from, so its image + entry
+    are filed under this scope and switching sets shows that set's own picture."""
+    return set_id if _is_set(set_id) else DEFAULT_SET_ID
+
+
+def _scoped_spec(edits_dir: Path, plate_id: str, scope: str) -> _AssetSpec:
+    """The overlay asset paths for one plate *within a scope* — the base spec with a ``{scope}/``
+    segment inserted before each filename (``images/web/plates/{scope}/{plate_id}.webp``), so an
+    edit made on the comic set and one made on the base book coexist as separate files."""
+    spec = _asset_spec(edits_dir, plate_id)
+
+    def scoped(p: Path) -> Path:
+        return p.parent / scope / p.name
+
+    return replace(spec, src=scoped(spec.src), web=scoped(spec.web), thumb=scoped(spec.thumb))
+
+
+def _plate_scopes(edits: dict, plate_id: str) -> dict:
+    """The ``{scope: entry}`` edits for one plate, tolerant of the pre-ADR-0035 flat shape
+    (``plates[plate_id]`` was a single entry). A legacy flat entry has no scope key, so it can't be
+    attributed to a reader — it is ignored (returns ``{}``) and dropped on the next commit."""
+    entry = (edits.get("plates") or {}).get(plate_id)
+    if not isinstance(entry, dict) or "caption" in entry:
+        return {}
+    return entry
+
+
+def _normalized_plates(edits: dict) -> dict:
+    """``plates`` with any legacy flat (un-scopeable) entries dropped — a one-time migration to the
+    scoped shape so a mixed old/new ``edits.json`` still validates after the next commit."""
+    plates = edits.get("plates") or {}
+    return {pid: by_scope for pid, by_scope in plates.items() if _plate_scopes(edits, pid)}
 
 
 def _set_json(cfg: Config, user: str, book: str, set_id: str) -> dict | None:
@@ -193,14 +231,15 @@ def _current_plate_png(
 ) -> bytes:
     """The image the editor starts from (the img2img starting image), in priority order:
 
-    1. the profile's prior overlay edit for this plate (so re-edits chain from the last result),
+    1. the profile's prior overlay edit *for this scope* (so re-edits chain from the last result on
+       the same reader),
     2. the **active set's** rendered plate, when a style set is being viewed — so an edit repaints
        the comic image the reader sees, not the book's base plate,
     3. the book's current (highest ``-rN``) archival plate.
 
     Raises :class:`EditError` if none exists.
     """
-    overlay = _edits_dir(cfg, user, book) / "images" / "plates" / f"{plate_id}.png"
+    overlay = _scoped_spec(_edits_dir(cfg, user, book), plate_id, _scope_of(set_id)).src
     if overlay.is_file():
         return overlay.read_bytes()
     set_dir = _set_dir_if_ready(cfg, user, book, set_id)
@@ -221,10 +260,10 @@ def _current_plate_png(
     return best_path.read_bytes()
 
 
-def _current_caption(cfg: Config, user: str, book: str, plate_id: str) -> str:
-    """The caption to pre-fill: a prior overlay caption if present, else the page's auto-derived
-    ``best_visual_beat`` (only the base plate carries one; extras get an empty caption)."""
-    existing = _load_edits(cfg, user, book).get("plates", {}).get(plate_id)
+def _current_caption(cfg: Config, user: str, book: str, plate_id: str, scope: str) -> str:
+    """The caption to pre-fill: a prior overlay caption for this scope if present, else the page's
+    auto-derived ``best_visual_beat`` (only the base plate has one; extras get an empty caption)."""
+    existing = _plate_scopes(_load_edits(cfg, user, book), plate_id).get(scope)
     if existing is not None:
         return str(existing.get("caption", ""))
     if "-" in plate_id:
@@ -265,11 +304,12 @@ async def plate_context(
     params = (doc.get("render") or {}).get("params_echo") or {}
     subject = doc.get("final_subject_prompt") or ((doc.get("derived") or {}).get("prompt") or "")
 
+    scope = _scope_of(set_id)
     reader_cfg = _reader_bake_config(cfg, meta, user, book, set_id)
     style = resolve_style(reader_cfg)
     _, wrapped_negative = wrap_prompt(style, plate_id, doc, meta.get("era"))
 
-    prior = _load_edits(cfg, user, book).get("plates", {}).get(plate_id) or {}
+    prior = _plate_scopes(_load_edits(cfg, user, book), plate_id).get(scope) or {}
 
     def _prefer(key: str, fallback: Any) -> Any:
         return prior[key] if key in prior and prior[key] is not None else fallback
@@ -284,7 +324,7 @@ async def plate_context(
         "width": int(params.get("width", spec.width)),
         "height": int(params.get("height", spec.height)),
         "denoise_default": _prefer("denoise", DENOISE_DEFAULT),
-        "caption": _current_caption(cfg, user, book, plate_id),
+        "caption": _current_caption(cfg, user, book, plate_id, scope),
         # Style / model of the active reader (or the prior edit), + the override lists.
         "style_id": _prefer("style_id", reader_cfg["style_id"]),
         "custom_style": _prefer("custom_style", reader_cfg["custom_style"]),
@@ -400,6 +440,8 @@ async def generate_candidate(
             "model": bake_config["model"],
             "quality": q,
             "reference_strength": strength if references else None,
+            # The scope (base book or a style set) this edit belongs to, so commit files it there.
+            "set_id": _scope_of(set_id),
         },
     )
     return {"token": token, "width": spec.width, "height": spec.height}
@@ -422,9 +464,10 @@ def commit_edit(
     if not cand.is_file():
         raise EditError(f"no such candidate {token!r}")
     cand_meta = _read_json(cand.with_suffix(".json")) if cand.with_suffix(".json").is_file() else {}
+    scope = cand_meta.get("set_id") or DEFAULT_SET_ID
 
     edits_dir = _edits_dir(cfg, user, book)
-    spec = _asset_spec(edits_dir, plate_id)
+    spec = _scoped_spec(edits_dir, plate_id, scope)
     spec.src.parent.mkdir(parents=True, exist_ok=True)
     shutil.move(str(cand), spec.src)  # the archival overlay PNG (used as the next re-edit's source)
     make_derivatives(spec.src, spec.web, spec.thumb, web_max_width=spec.web_max)
@@ -435,12 +478,15 @@ def commit_edit(
     edits["book_id"] = book
     edits["user_id"] = user
     edits["source_revision"] = source_rev
-    plates = edits.setdefault("plates", {})
+    # Migrate any legacy flat (pre-ADR-0035) plate entries out before writing the scoped shape.
+    plates = _normalized_plates(edits)
+    edits["plates"] = plates
     entry = {
         "caption": caption,
         "prompt": str(cand_meta.get("prompt", "")),
         "seed": cand_meta.get("seed"),
         "denoise": cand_meta.get("denoise"),
+        "set_id": scope,
         "created": _now_iso(),
     }
     # Record the style/model/negative/quality the replacement was rendered with, so a later re-edit
@@ -448,7 +494,7 @@ def commit_edit(
     for key in ("negative", "style_id", "custom_style", "model", "quality", "reference_strength"):
         if cand_meta.get(key) is not None:
             entry[key] = cand_meta[key]
-    plates[plate_id] = entry
+    plates.setdefault(plate_id, {})[scope] = entry
     schemas.validate("artset-edits", edits)
     _write_json(_edits_json_path(cfg, user, book), edits)
 

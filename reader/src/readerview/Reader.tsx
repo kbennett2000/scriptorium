@@ -26,7 +26,7 @@ import {
   type Span,
 } from "../annotations";
 import { useBackHandler, type Storage } from "../shell";
-import { HttpArtsetApi, HttpArtsetClient, setState } from "../shelf";
+import { artsetCheckout, HttpArtsetApi, HttpArtsetClient, setState } from "../shelf";
 import { SYNC_EVENT, SyncStatusBadge, type SyncStatus } from "../sync";
 import type { BundleReader } from "./BundleReader";
 import { Lightbox } from "./Lightbox";
@@ -234,6 +234,25 @@ export function Reader({
   // Release the reader's object URLs (and any pending flash timer) when the surface unmounts.
   useEffect(() => () => reader.dispose(), [reader]);
 
+  // Keep the private edits overlay in sync with home when reachable. An edit committed on another
+  // device — or a server-side format migration (ADR-0035) — only reaches this device via a
+  // re-checkout, so refresh it once per open. Best-effort: offline (or no overlay on the server)
+  // keeps the resident copy untouched. Bumps editsVersion so the layering effect re-runs with it.
+  useEffect(() => {
+    let live = true;
+    void (async () => {
+      try {
+        await artsetCheckout(new HttpArtsetClient(), storage, user, bookId, EDITS_SET);
+        if (live) setEditsVersion((v) => v + 1);
+      } catch {
+        /* unreachable, or the book has no edits overlay → keep whatever is resident */
+      }
+    })();
+    return () => {
+      live = false;
+    };
+  }, [storage, user, bookId]);
+
   // Point image reads at the active picture set (ADR-0014 Phase 4). Default (or a not-yet-downloaded
   // set) → the base book `reader`; a resident personal set → a SetImageBundleReader that draws images
   // from artsets/{user}/{book}/{setId}/ while delegating all text/JSON to the book. Swapping the reader
@@ -260,17 +279,16 @@ export function Reader({
           /* fall back to Default art */
         }
       }
-      // 2. Layer the profile's private per-plate edits overlay (ADR-0033) on top, if resident.
+      // 2. Layer the profile's private per-plate edits overlay (ADR-0033) on top, if resident. The
+      //    overlay is SCOPED to the reader in view (ADR-0035): it only surfaces edits made from the
+      //    active set (or the base book), so switching sets shows that set's own picture.
       try {
         if ((await setState(storage, user, bookId, EDITS_SET)) === "resident") {
           const root = `artsets/${user}/${bookId}/${EDITS_SET}`;
-          const manifest = JSON.parse(
-            await storage.readText(`${root}/manifest.local.json`),
-          ) as Manifest;
           const edits = JSON.parse(
             await storage.readText(`${root}/edits.json`),
           ) as ArtsetEdits;
-          const overlay = new OverlayImageBundleReader(imageReader, storage, root, manifest, edits);
+          const overlay = new OverlayImageBundleReader(imageReader, storage, root, edits, activeSetId);
           built.push(overlay);
           imageReader = overlay;
         }

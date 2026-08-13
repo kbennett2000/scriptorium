@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://scriptorium.local/schemas/artset-edits.schema.json",
   "title": "artset-edits",
-  "description": "One household profile's private picture edits for one book (artsets/{user}/{book}/edits/edits.json). Each entry records a plate the reader hand-edited after publish: a replaced image (stored beside this file at the SAME relative paths as the bundle, e.g. images/web/plates/{plate_id}.webp) plus an editable caption. Additive and private per profile — it never touches the shared, immutable published bundle or pages/*.json (extends ADR-0014, the per-user art-set channel).",
+  "description": "One household profile's private picture edits for one book (artsets/{user}/{book}/edits/edits.json). Each entry records a plate the reader hand-edited after publish: a replaced image plus an editable caption. Edits are SCOPED to the reader they were made from (ADR-0035): plates[plate_id] maps a scope ('default' for the base book, or a 'set-…' id for a style set) to the edit made while viewing that reader, and the replacement image is stored beside this file under a scope segment (images/web/plates/{scope}/{plate_id}.webp). So switching sets shows that set's own picture unless it too has been edited. Additive and private per profile — it never touches the shared, immutable published bundle or pages/*.json (extends ADR-0014, the per-user art-set channel).",
   "type": "object",
   "additionalProperties": false,
   "required": ["book_id", "user_id", "source_revision", "plates"],
@@ -23,10 +23,14 @@
       "minimum": 1
     },
     "plates": {
-      "description": "Map of plate_id (4-digit page id, or {page_id}-N for an extra same-page plate) to the edit for that plate.",
+      "description": "Map of plate_id (4-digit page id, or {page_id}-N for an extra same-page plate) to that plate's edits, one per scope. The inner map keys a scope ('default' for the base book, or a 'set-…' style-set id) to the edit made while viewing that reader (ADR-0035), so an edit only overrides the set it was made on.",
       "type": "object",
       "propertyNames": { "pattern": "^[0-9]{4}(-[0-9]+)?$" },
       "additionalProperties": {
+        "description": "The edits for one plate, keyed by the scope ('default' or a 'set-…' id) they were made under.",
+        "type": "object",
+        "propertyNames": { "pattern": "^(default|set-[0-9a-f]{12})$" },
+        "additionalProperties": {
         "type": "object",
         "additionalProperties": false,
         "required": ["caption", "prompt", "created"],
@@ -71,11 +75,17 @@
             "description": "IP-Adapter likeness strength applied to the character reference photo, or null when no reference was used or the service default was accepted.",
             "type": ["number", "null"]
           },
+          "set_id": {
+            "description": "The reader (scope) this edit was made from: 'default' for the base book, or a 'set-…' style-set id. Redundant with the plate's scope key, recorded so an entry is self-describing.",
+            "type": "string",
+            "pattern": "^(default|set-[0-9a-f]{12})$"
+          },
           "created": {
             "description": "ISO-8601 UTC timestamp this edit was committed.",
             "type": "string",
             "format": "date-time"
           }
+        }
         }
       }
     }

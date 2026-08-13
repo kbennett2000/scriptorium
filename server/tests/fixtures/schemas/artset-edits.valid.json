@@ -4,16 +4,29 @@
   "source_revision": 1,
   "plates": {
     "0001": {
-      "caption": "a brighter lamp on the workbench",
-      "prompt": "a lamplit workshop, warmer light",
-      "seed": 12345,
-      "denoise": 0.55,
-      "created": "2026-08-13T02:00:00Z"
+      "default": {
+        "caption": "a brighter lamp on the workbench",
+        "prompt": "a lamplit workshop, warmer light",
+        "seed": 12345,
+        "denoise": 0.55,
+        "set_id": "default",
+        "created": "2026-08-13T02:00:00Z"
+      },
+      "set-b0c82de768ce": {
+        "caption": "a brighter lamp, comic style",
+        "prompt": "a lamplit workshop, warmer light",
+        "style_id": "comic-book",
+        "model": "juggernautXL_ragnarok.safetensors",
+        "set_id": "set-b0c82de768ce",
+        "created": "2026-08-13T02:10:00Z"
+      }
     },
     "0007-2": {
-      "caption": "",
-      "prompt": "the fox at the tree line",
-      "created": "2026-08-13T02:05:00Z"
+      "default": {
+        "caption": "",
+        "prompt": "the fox at the tree line",
+        "created": "2026-08-13T02:05:00Z"
+      }
     }
   }
 }

@@ -2632,3 +2632,44 @@ See [ADR-0034](docs/adr/0034-edit-picture-fidelity-and-parity.md).
 
 **Gates.** ruff clean · eslint + tsc clean (reader) · non-gpu server tests green (563) · schemas ↔
 types in sync (`gen-types` diff clean).
+
+---
+
+## M1 · edit scoping per picture set (ADR-0035) (2026-08-13)
+
+**Shipped**
+- **Bug.** Switching picture sets "had no effect": the private per-plate edits overlay (ADR-0033)
+  is layered on **every** reader unconditionally and keyed by `plate_id` only, so a plate edited on
+  the Comic Book set masked that plate on every set. With all plates edited, no set switch was ever
+  visible.
+- **Fix — edits are SCOPED to the reader they were made on.** An edit is now identified by
+  `(scope, plate_id)`, where `scope` is `default` (base book) or a `set-…` id. Switching sets shows
+  that set's own picture unless it too has been edited.
+- **Schema.** `artset-edits` `plates[plate_id]` is now a `{ scope → entry }` map (was a single
+  entry); entry gains an optional self-describing `set_id`. Regenerated `shared/types` (diff
+  committed, regen deterministic).
+- **Server (`edits.py`).** Overlay images stored under a scope segment
+  (`images/{web,thumbs,plates}/plates/{scope}/{plate_id}.…`) via `_scoped_spec`; `plate_context`,
+  `_current_caption`, `_current_plate_png` resolve the prior edit for the active scope only; the
+  candidate sidecar records the scope; `commit_edit` writes the nested entry. A one-time migration
+  (`_normalized_plates`) drops pre-0035 flat entries on the next commit so a mixed file still
+  validates.
+- **Reader.** `OverlayImageBundleReader` takes the active `scope`, surfaces only edits filed under
+  it (inserts `/{scope}/` into the requested plate path), and ignores legacy flat entries; the
+  manifest arg is dropped (existence is checked on disk). `Reader.tsx` passes `activeSetId`.
+- Tests: server — an edit on a set is scoped to it (base book unaffected, img2img starts from the
+  base plate); base + set edits coexist as separate files/entries; legacy flat edit is migrated
+  out. reader — active-scope override only, a comic edit doesn't mask the base book, legacy flat
+  entry ignored.
+
+**Decisions**
+- **Scope over global** (owner's call): an edit overrides the set it was made on, matching "I
+  switched sets, show me the new set." A whole-book re-illustration (a set) is the tool for changing
+  every plate's look; an edit is a per-plate touch-up within one look.
+- **Legacy edits are inert, not force-deleted.** Pre-0035 flat entries recorded no scope, so they
+  can't be attributed to a reader; the reader ignores them (they stop masking immediately) and they
+  are dropped from `edits.json` on the next commit. Files are left on disk (no destructive delete
+  without the owner's say-so).
+
+**Gates.** ruff clean · eslint + tsc clean (reader) · non-gpu server tests green (566) · reader
+tests green (185) · schemas ↔ types in sync (`gen-types` diff clean).
