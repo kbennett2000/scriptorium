@@ -4,7 +4,18 @@ import { useEffect, useState } from "react";
 // or Esc closes; clicking the image toggles a basic 1×/2× zoom (pinch-zoom on touch is the browser's
 // native gesture on the zoomed image). Minimal by design — the designed skin is R4.
 
-export function Lightbox({ src, alt, onClose }: { src: string; alt: string; onClose: () => void }) {
+export function Lightbox({
+  src,
+  alt,
+  onClose,
+  onEdit,
+}: {
+  src: string;
+  alt: string;
+  onClose: () => void;
+  /** Post-publish picture edit (ADR-0033): shown only when the bakery is reachable. */
+  onEdit?: () => void;
+}) {
   const [zoomed, setZoomed] = useState(false);
 
   useEffect(() => {
@@ -26,6 +37,18 @@ export function Lightbox({ src, alt, onClose }: { src: string; alt: string; onCl
           setZoomed((z) => !z);
         }}
       />
+      {onEdit && (
+        <button
+          type="button"
+          className="lightbox-edit"
+          onClick={(e) => {
+            e.stopPropagation();
+            onEdit();
+          }}
+        >
+          Edit picture
+        </button>
+      )}
       <button type="button" className="lightbox-close" aria-label="Close" onClick={onClose}>
         ×
       </button>

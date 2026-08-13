@@ -43,7 +43,7 @@ export function Page({
   chapterTitle: string | null;
   /** This page's illustrations, ordered top-to-bottom by anchor (may be empty). */
   plates: PagePlate[];
-  onOpenLightbox: (src: string) => void;
+  onOpenLightbox: (src: string, plateId: string) => void;
   /** Highlight/note spans on this page, in canonical offsets (bookmarks excluded). */
   annotations?: Span[];
   /** Annotation id to flash briefly after a jump, or null. */
@@ -56,15 +56,28 @@ export function Page({
   // The page's depicted-moment line (scene ledger's best_visual_beat) captions the base plate. The
   // ledger is opaque provenance in the schema, so read the one field narrowly. Derived from this
   // page's own text only → spoiler-safe. One beat per page → only the base (top) plate is captioned.
+  // A private per-plate edit (ADR-0033) can override it: `reader.captionFor` returns the override
+  // (including "" → show no caption) or undefined → fall back to the beat.
   const beat = (page.ledger as { best_visual_beat?: string } | undefined)?.best_visual_beat?.trim();
-  const caption = beat ? beat : null;
+  const captionForPlate = (plateId: string): string | null => {
+    const override = reader.captionFor?.(plateId);
+    if (override !== undefined) return override.trim() ? override : null;
+    return beat ? beat : null;
+  };
 
   // A stable 1-based slot per plate (for a distinguishable alt); a lone plate keeps the legacy alt.
   const slotOf = new Map(plates.map((p, i) => [p.plateId, i + 1]));
   const altFor = (p: PagePlate) =>
     plates.length === 1 ? `Plate for page ${page.seq}` : `Plate ${slotOf.get(p.plateId)} for page ${page.seq}`;
   const renderPlate = (p: PagePlate, cap: string | null = null) => (
-    <Plate key={p.plateId} reader={reader} relPath={p.relPath} alt={altFor(p)} caption={cap} onOpen={onOpenLightbox} />
+    <Plate
+      key={p.plateId}
+      reader={reader}
+      relPath={p.relPath}
+      alt={altFor(p)}
+      caption={cap}
+      onOpen={(src) => onOpenLightbox(src, p.plateId)}
+    />
   );
 
   // Resolve each plate to the paragraph it precedes. Anchor 0 (base image) → the top, above the text.
@@ -84,7 +97,7 @@ export function Page({
   return (
     <article className="page" data-page-seq={page.seq}>
       {chapterTitle && <h2 className="chapter-title">{chapterTitle}</h2>}
-      {topPlates.map((p, i) => renderPlate(p, i === 0 ? caption : null))}
+      {topPlates.map((p, i) => renderPlate(p, i === 0 ? captionForPlate(p.plateId) : null))}
       <div className="page-text">
         {paragraphs.map((para, i) => {
           const runs = paintParagraph(para, starts[i], annotations);

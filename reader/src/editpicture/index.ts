@@ -1,0 +1,1 @@
+export { EditPicture } from "./EditPicture";

@@ -18,6 +18,13 @@ export interface BundleReader {
    * hand back an object/data URL — the caller never needs to know about revisions.
    */
   imageUrl(relPath: string): Promise<string | null>;
+  /**
+   * A private per-plate caption override for a page's base plate (ADR-0033), or `undefined` when this
+   * reader has no override for it. `undefined` → the caller falls back to the page's auto-derived
+   * `best_visual_beat`; a string (including `""`, meaning "show no caption") wins. Only the overlay
+   * reader implements this; all others leave it absent.
+   */
+  captionFor?(pageId: string): string | undefined;
   /** Release any object URLs this reader minted. Call on unmount. No-op for data-URL readers. */
   dispose(): void;
 }

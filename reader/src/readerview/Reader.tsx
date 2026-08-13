@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
-import type { Annotations, Cast, Manifest, Page as PageDoc, Positions, Selection, Structure } from "@scriptorium/shared";
+import type { ArtsetEdits, Annotations, Cast, Manifest, Page as PageDoc, Positions, Selection, Structure } from "@scriptorium/shared";
 
 import { DEFAULT_SET_ID, SetPicker, useArtsets } from "../artsets";
 import { CastPage } from "../cast";
+import { EditPicture } from "../editpicture";
 import { SearchPanel } from "../search/SearchPanel";
 import {
   AnnotationsPanel,
@@ -29,6 +30,7 @@ import { HttpArtsetApi, HttpArtsetClient, setState } from "../shelf";
 import { SYNC_EVENT, SyncStatusBadge, type SyncStatus } from "../sync";
 import type { BundleReader } from "./BundleReader";
 import { Lightbox } from "./Lightbox";
+import { OverlayImageBundleReader } from "./OverlayImageBundleReader";
 import { SetImageBundleReader } from "./SetImageBundleReader";
 import { edgeTapAction } from "./nav";
 import { Page, type PagePlate } from "./Page";
@@ -46,6 +48,8 @@ import { deviceId, readPosition, writePosition } from "./position";
 // paragraph offset; we persist on page-turn, on a throttled scroll, and on unmount.
 
 const PLATE_DIR = "images/web/plates";
+// The reserved private per-plate edits overlay (ADR-0033), layered over the active image reader.
+const EDITS_SET = "edits";
 const SCROLL_PERSIST_MS = 500;
 const FLASH_MS = 1200;
 const SWIPE_PX = 60;
@@ -97,7 +101,11 @@ export function Reader({
   const { activeSetId } = artsets;
   const [effectiveReader, setEffectiveReader] = useState<BundleReader>(reader);
   const [pageDoc, setPageDoc] = useState<PageDoc | null>(null);
-  const [lightboxSrc, setLightboxSrc] = useState<string | null>(null);
+  const [lightbox, setLightbox] = useState<{ src: string; plateId: string } | null>(null);
+  // Post-publish "Edit picture" (ADR-0033): the plate being edited + its current image (the img2img
+  // starting image). `editsVersion` bumps after a commit to re-read the overlay into effectiveReader.
+  const [editTarget, setEditTarget] = useState<{ plateId: string; src: string } | null>(null);
+  const [editsVersion, setEditsVersion] = useState(0);
   const [error, setError] = useState<string | null>(null);
 
   // R2 annotation UI state.
@@ -233,33 +241,53 @@ export function Reader({
   // choice changes or the surface unmounts; the base reader is owned by its own dispose effect above.
   useEffect(() => {
     let live = true;
-    let built: SetImageBundleReader | null = null;
-    if (activeSetId === DEFAULT_SET_ID) {
-      setEffectiveReader(reader);
-    } else {
-      void (async () => {
+    const built: BundleReader[] = []; // readers this effect owns, disposed newest-first on cleanup
+    void (async () => {
+      // 1. The base image reader: Default art (the book) or a resident personal style set.
+      let imageReader: BundleReader = reader;
+      if (activeSetId !== DEFAULT_SET_ID) {
         try {
-          if ((await setState(storage, user, bookId, activeSetId)) !== "resident") {
-            if (live) setEffectiveReader(reader); // not downloaded yet — stay on Default art
-            return;
+          if ((await setState(storage, user, bookId, activeSetId)) === "resident") {
+            const root = `artsets/${user}/${bookId}/${activeSetId}`;
+            const manifest = JSON.parse(
+              await storage.readText(`${root}/manifest.local.json`),
+            ) as Manifest;
+            const setReader = new SetImageBundleReader(reader, storage, root, manifest);
+            built.push(setReader);
+            imageReader = setReader;
           }
-          const root = `artsets/${user}/${bookId}/${activeSetId}`;
+        } catch {
+          /* fall back to Default art */
+        }
+      }
+      // 2. Layer the profile's private per-plate edits overlay (ADR-0033) on top, if resident.
+      try {
+        if ((await setState(storage, user, bookId, EDITS_SET)) === "resident") {
+          const root = `artsets/${user}/${bookId}/${EDITS_SET}`;
           const manifest = JSON.parse(
             await storage.readText(`${root}/manifest.local.json`),
           ) as Manifest;
-          if (!live) return;
-          built = new SetImageBundleReader(reader, storage, root, manifest);
-          setEffectiveReader(built);
-        } catch {
-          if (live) setEffectiveReader(reader);
+          const edits = JSON.parse(
+            await storage.readText(`${root}/edits.json`),
+          ) as ArtsetEdits;
+          const overlay = new OverlayImageBundleReader(imageReader, storage, root, manifest, edits);
+          built.push(overlay);
+          imageReader = overlay;
         }
-      })();
-    }
+      } catch {
+        /* no overlay (or unreadable) → the base/set reader */
+      }
+      if (!live) {
+        for (const r of built.reverse()) r.dispose();
+        return;
+      }
+      setEffectiveReader(imageReader);
+    })();
     return () => {
       live = false;
-      if (built) built.dispose();
+      for (const r of built.reverse()) r.dispose();
     };
-  }, [activeSetId, reader, storage, user, bookId]);
+  }, [activeSetId, reader, storage, user, bookId, editsVersion]);
   useEffect(() => () => {
     if (flashTimer.current) clearTimeout(flashTimer.current);
   }, []);
@@ -356,16 +384,16 @@ export function Reader({
     [pageIds.length, persistScroll],
   );
 
-  // Keyboard navigation (desktop). Ignored while the lightbox is open (it owns Esc).
+  // Keyboard navigation (desktop). Ignored while the lightbox or picture editor is open.
   useEffect(() => {
-    if (lightboxSrc) return;
+    if (lightbox || editTarget) return;
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "ArrowRight") go(1);
       else if (e.key === "ArrowLeft") go(-1);
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [go, lightboxSrc]);
+  }, [go, lightbox, editTarget]);
 
   // Touch: a horizontal drag past the threshold is a swipe page-turn; a quick tap in the outer edge
   // is an edge page-turn (edgeTapAction). Both go through `go`, which ignores them mid-selection. The
@@ -425,11 +453,11 @@ export function Reader({
 
   useEffect(() => {
     // While a modal-ish surface owns the interaction, don't track selection.
-    if (lightboxSrc || panelOpen || noteTarget) return;
+    if (lightbox || editTarget || panelOpen || noteTarget) return;
     const onSel = () => captureSelection();
     document.addEventListener("selectionchange", onSel);
     return () => document.removeEventListener("selectionchange", onSel);
-  }, [captureSelection, lightboxSrc, panelOpen, noteTarget]);
+  }, [captureSelection, lightbox, editTarget, panelOpen, noteTarget]);
 
   const clearSelection = useCallback(() => {
     document.getSelection()?.removeAllRanges();
@@ -601,7 +629,8 @@ export function Reader({
   // leave to the shelf — never let Back fall through to backgrounding the app while a book is open.
   // No-op on the web (the handler is only ever invoked by the native back button; see shell/native).
   useBackHandler(() => {
-    if (lightboxSrc) setLightboxSrc(null);
+    if (editTarget) setEditTarget(null);
+    else if (lightbox) setLightbox(null);
     else if (noteTarget) setNoteTarget(null);
     else if (hlMenu) setHlMenu(null);
     else if (panelOpen) setPanelOpen(false);
@@ -711,7 +740,7 @@ export function Reader({
             reader={effectiveReader}
             chapterTitle={chapterTitle}
             plates={currentPlates}
-            onOpenLightbox={setLightboxSrc}
+            onOpenLightbox={(src, plateId) => setLightbox({ src, plateId })}
             annotations={pageSpans}
             flashId={flashId}
             onHighlightClick={onHighlightClick}
@@ -781,8 +810,34 @@ export function Reader({
         />
       )}
 
-      {lightboxSrc && (
-        <Lightbox src={lightboxSrc} alt="Plate" onClose={() => setLightboxSrc(null)} />
+      {lightbox && (
+        <Lightbox
+          src={lightbox.src}
+          alt="Plate"
+          onClose={() => setLightbox(null)}
+          onEdit={
+            artsets.online
+              ? () => {
+                  setEditTarget({ plateId: lightbox.plateId, src: lightbox.src });
+                  setLightbox(null);
+                }
+              : undefined
+          }
+        />
+      )}
+
+      {editTarget && (
+        <EditPicture
+          user={user}
+          book={bookId}
+          plateId={editTarget.plateId}
+          storage={storage}
+          currentSrc={editTarget.src}
+          onDone={(changed) => {
+            setEditTarget(null);
+            if (changed) setEditsVersion((v) => v + 1);
+          }}
+        />
       )}
 
       {searchOpen && (
