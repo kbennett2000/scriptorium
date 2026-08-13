@@ -47,7 +47,7 @@ from typing import Any
 from ... import names, schemas
 from ...render.derivatives import make_derivatives
 from ...render.imagegen import ImagegenClient, RealImagegenClient
-from ...styles import get_style
+from ...styles import resolve_style
 from ..job import Job, JobState
 from ..tts_client import TtsClient
 from .base import GpuUnavailable, Unit
@@ -418,7 +418,7 @@ async def render_plate(
     book = _book_dir(cfg, job)
     prompt_path = _prompts_dir(cfg, job) / f"{plate_id}.json"
     doc = _read_json(prompt_path)
-    style = get_style(job.bake_config["style_id"])
+    style = resolve_style(job.bake_config)
     wrapped, negative = wrap_prompt(style, plate_id, doc, job.bake_config.get("era"))
     spec = _asset_spec(book, plate_id)
     if seed is None:

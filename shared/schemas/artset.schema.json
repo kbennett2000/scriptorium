@@ -41,6 +41,10 @@
       "description": "Base SDXL model / checkpoint this set was rendered with (a ComfyUI ckpt_name; ADR-0030), or null to have used the imagegen service's configured default. Absent on sets created before ADR-0030.",
       "type": ["string", "null"]
     },
+    "custom_style": {
+      "description": "Free-text look for the 'custom' style_id (e.g. 'photorealistic'; ADR-0031), or null for a catalog style. Absent on sets created before ADR-0031.",
+      "type": ["string", "null"]
+    },
     "source_revision": {
       "description": "The book revision whose frozen selection/prompts this set derived from.",
       "type": "integer",

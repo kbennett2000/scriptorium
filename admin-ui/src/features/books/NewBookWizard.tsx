@@ -39,6 +39,8 @@ export function NewBookWizard() {
   const [era, setEra] = useState("");
 
   const [styleId, setStyleId] = useState<string | null>(null);
+  // Free-text look when the "Custom" tile is chosen (ADR-0031).
+  const [customStyle, setCustomStyle] = useState("");
   // null → let the imagegen service pick its default model (ADR-0030).
   const [model, setModel] = useState<string | null>(null);
   const [density, setDensity] = useState<DensityPreset>("classic");
@@ -92,6 +94,7 @@ export function NewBookWizard() {
         portraits_enabled: portraits,
         portrait_review: portraits && portraitReview,
         model,
+        custom_style: effectiveStyle === "custom" ? customStyle || null : null,
         title: title || null,
         author: author || null,
       },
@@ -257,7 +260,40 @@ export function NewBookWizard() {
               </div>
             </button>
           ))}
+          {/* Custom free-text look (ADR-0031) — not a catalog entry, so it's its own tile. */}
+          <button
+            type="button"
+            className={`style-tile${effectiveStyle === "custom" ? " selected" : ""}`}
+            onClick={() => setStyleId("custom")}
+            aria-pressed={effectiveStyle === "custom"}
+          >
+            <StyleSwatch id="custom" />
+            <div className="name">Custom…</div>
+            <div className="muted" style={{ fontSize: 11 }}>
+              describe the look yourself
+            </div>
+          </button>
         </div>
+
+        {effectiveStyle === "custom" && (
+          <div style={{ marginTop: 10 }}>
+            <label className="portrait-label" htmlFor="custom-style">
+              Describe the look
+            </label>
+            <input
+              id="custom-style"
+              type="text"
+              placeholder="e.g. photorealistic, 35mm film, dramatic lighting"
+              value={customStyle}
+              onChange={(e) => setCustomStyle(e.target.value)}
+              style={{ width: "100%" }}
+            />
+            <p className="muted" style={{ fontSize: 11, marginTop: 2 }}>
+              Leads the prompt for every picture. Leave blank to send the text to the model with no
+              style at all (same as “No style”).
+            </p>
+          </div>
+        )}
 
         {/* Optional base model (ADR-0030). Only shown when the imagegen service lists installed
             checkpoints; otherwise the bake uses the service's own default. */}

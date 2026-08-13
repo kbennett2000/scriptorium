@@ -46,7 +46,12 @@ export function SetPicker({
   busy: boolean;
   error: string | null;
   onChoose: (setId: string) => void;
-  onCreate: (kind: "style" | "reroll", styleId?: string, model?: string | null) => void;
+  onCreate: (
+    kind: "style" | "reroll",
+    styleId?: string,
+    model?: string | null,
+    customStyle?: string | null,
+  ) => void;
   onDelete: (setId: string) => void;
   onRetry: (setId: string) => void;
   onClose: () => void;
@@ -55,6 +60,8 @@ export function SetPicker({
   // "" → omit the model so the home server picks its default image engine (ADR-0030).
   const [model, setModel] = useState<string>("");
   const chosenModel = model || undefined;
+  // A free-text look (ADR-0031); "Make it" sends it as the "custom" style.
+  const [custom, setCustom] = useState<string>("");
 
   return (
     <section className="setpicker" role="dialog" aria-label="Pictures">
@@ -175,6 +182,27 @@ export function SetPicker({
                 {st.name}
               </button>
             ))}
+            <div className="setpicker-custom">
+              <input
+                type="text"
+                aria-label="Describe your own look"
+                placeholder="Or describe your own look…"
+                value={custom}
+                disabled={busy}
+                onChange={(e) => setCustom(e.target.value)}
+              />
+              <button
+                type="button"
+                className="setpicker-style"
+                disabled={busy || custom.trim().length === 0}
+                onClick={() => {
+                  onCreate("style", "custom", chosenModel, custom.trim());
+                  setAdding(false);
+                }}
+              >
+                Make it
+              </button>
+            </div>
             <button type="button" className="setpicker-cancel" onClick={() => setAdding(false)}>
               Cancel
             </button>

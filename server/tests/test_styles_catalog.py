@@ -7,7 +7,10 @@ silently fall back to prompt-only rendering (the service ignores unknown style n
 
 from __future__ import annotations
 
-from scriptorium.styles import load_styles
+import pytest
+
+from scriptorium.bake.phases.base import PipelineBug
+from scriptorium.styles import CUSTOM_STYLE_ID, load_styles, resolve_style
 
 # imagegen-service's LoRA-backed preset names (its GET /styles catalog, ADR-0011/0012). A style's
 # `imagegen_style` must match one of these exactly to apply the LoRA; anything else renders
@@ -40,3 +43,36 @@ def test_original_prompt_only_styles_stay_null() -> None:
     by_id = {s["id"]: s for s in load_styles()["styles"]}
     for sid in ("engraving", "woodcut", "watercolor", "gouache-storybook"):
         assert by_id[sid]["imagegen_style"] is None
+
+
+# --- No-style + custom-style resolution (ADR-0031) --------------------------
+
+
+def test_no_style_is_a_prompt_only_catalog_entry() -> None:
+    # "No style" is a real catalog entry with empty prompt strings + null LoRA, so the subject goes
+    # to the model raw.
+    none = {s["id"]: s for s in load_styles()["styles"]}["none"]
+    assert none["imagegen_style"] is None
+    assert none["prefix"] == "" and none["suffix"] == "" and none["portrait_prefix"] == ""
+
+
+def test_resolve_style_custom_builds_prompt_only_prefix() -> None:
+    style = resolve_style({"style_id": CUSTOM_STYLE_ID, "custom_style": "photorealistic"})
+    assert style["imagegen_style"] is None  # custom never applies a LoRA
+    assert style["prefix"] == "photorealistic, "
+    assert style["portrait_prefix"] == "photorealistic, "
+
+
+def test_resolve_style_custom_empty_is_pure_subject() -> None:
+    # Empty custom text ⇒ no prefix, identical to the "No style" entry.
+    style = resolve_style({"style_id": CUSTOM_STYLE_ID, "custom_style": "  "})
+    assert style["prefix"] == "" and style["suffix"] == ""
+
+
+def test_resolve_style_catalog_id_passes_through() -> None:
+    assert resolve_style({"style_id": "engraving"})["id"] == "engraving"
+
+
+def test_resolve_style_unknown_id_still_raises() -> None:
+    with pytest.raises(PipelineBug):
+        resolve_style({"style_id": "no-such-style"})

@@ -48,3 +48,36 @@ def get_style(style_id: str) -> dict[str, Any]:
         if style.get("id") == style_id:
             return style
     raise PipelineBug(f"unknown style_id {style_id!r}")
+
+
+# The sentinel style id (ADR-0031) for "use the owner's free-text look" — not a catalog entry, so
+# the bake carries the text in ``bake_config['custom_style']`` and :func:`resolve_style` synthesises
+# the style dict. ("No style" is a real catalog entry with empty prefix/suffix, so it needs nothing
+# special here.)
+CUSTOM_STYLE_ID = "custom"
+
+
+def resolve_style(bake_config: dict[str, Any]) -> dict[str, Any]:
+    """Materialise the style dict for a bake/art-set (ADR-0031).
+
+    For the ``custom`` sentinel, build a synthetic prompt-only style from the free-text
+    ``custom_style`` (e.g. "photorealistic") — no LoRA, the text as the prefix so it leads the
+    wrapped prompt, empty text ⇒ pure subject (identical to the "No style" catalog entry). Every
+    other id resolves through :func:`get_style`.
+    """
+    style_id = bake_config.get("style_id")
+    if style_id == CUSTOM_STYLE_ID:
+        text = (bake_config.get("custom_style") or "").strip()
+        prefix = f"{text}, " if text else ""
+        return {
+            "id": CUSTOM_STYLE_ID,
+            "name": "Custom",
+            "consistency_friendly": False,
+            "imagegen_style": None,
+            "prefix": prefix,
+            "suffix": "",
+            "negative": "",
+            "portrait_prefix": prefix,
+            "params": {"steps": None, "cfg": None},
+        }
+    return get_style(style_id)

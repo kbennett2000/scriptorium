@@ -139,6 +139,8 @@ export interface CreateBookBody {
     portrait_review: boolean;
     // Optional base model / checkpoint (ADR-0030); null → the imagegen service's default.
     model?: string | null;
+    // Free-text look for the "custom" style_id (ADR-0031), e.g. "photorealistic"; null otherwise.
+    custom_style?: string | null;
     title?: string | null;
     author?: string | null;
   };

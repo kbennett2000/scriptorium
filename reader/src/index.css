@@ -935,6 +935,36 @@ img.cast-portrait {
   opacity: 0.5;
   cursor: default;
 }
+/* Free-text "custom look" row (ADR-0031): an input beside its Make-it button. */
+.setpicker-custom {
+  display: flex;
+  gap: 0.4rem;
+}
+.setpicker-custom input {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 0.8rem 1rem;
+  background: transparent;
+  border: 1px solid var(--hairline);
+  border-radius: 0.5rem;
+  color: inherit;
+  font-size: 1rem;
+}
+.setpicker-custom .setpicker-style {
+  flex: 0 0 auto;
+}
+/* The base-model selector (ADR-0030) in the New-set panel. */
+.setpicker-model {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+.setpicker-model select {
+  padding: 0.5rem;
+  font-size: 0.95rem;
+}
 .setpicker-cancel {
   align-self: flex-start;
   margin-top: 0.2rem;

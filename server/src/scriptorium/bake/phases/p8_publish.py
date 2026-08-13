@@ -32,7 +32,7 @@ import httpx
 
 from ... import schemas
 from ...render.imagegen import ImagegenClient
-from ...styles import get_style
+from ...styles import resolve_style
 from ..job import Job, JobState
 from .base import PipelineBug, Unit
 from .p7_render import (
@@ -233,6 +233,9 @@ def build_meta(cfg: Any, job: Job, bundle_dir: Path, revision: int) -> dict:
         "source": _source_block(job),
         "era": cfgd.get("era") or "unspecified",
         "style_id": cfgd["style_id"],
+        # The free-text look for the ``custom`` style (ADR-0031), or null for a catalog style.
+        # Pinned so -rN regens and art-set re-rolls reproduce this book's exact custom prompt.
+        "custom_style": cfgd.get("custom_style"),
         "density_preset": cfgd.get("density_preset", "classic"),
         "images_per_scene": int(cfgd.get("images_per_scene", 1)),
         "portraits_enabled": bool(cfgd.get("portraits_enabled", True)),
@@ -345,7 +348,7 @@ async def regen_published_plate(
     # The rendered strings were pinned at publish; a regen re-fires the same prompt with a new seed.
     wrapped = doc.get("wrapped_prompt", doc["final_subject_prompt"])
     negative = doc.get("negative_prompt", "")
-    imagegen_style = get_style(meta["style_id"]).get("imagegen_style")
+    imagegen_style = resolve_style(job.bake_config).get("imagegen_style")
     base = _asset_spec(library, page_id)
     suffix = f"-r{new_rev}"
     spec = replace(

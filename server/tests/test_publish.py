@@ -149,6 +149,21 @@ def test_chosen_model_is_pinned_in_meta_provenance(tmp_path) -> None:
     assert pinned == "chosen.safetensors"
 
 
+def test_custom_style_text_is_pinned_in_meta(tmp_path) -> None:
+    # ADR-0031: a book's free-text custom look is pinned in meta.custom_style so art-set re-rolls
+    # and -rN regens reproduce it; a catalog style pins null.
+    from scriptorium.bake.phases.p8_publish import build_meta
+    cfg, book_id, library = _published(tmp_path)
+    job = jobmod.load(cfg, book_id)
+
+    assert build_meta(cfg, job, library, revision=1)["custom_style"] is None
+
+    job.bake_config["style_id"] = "custom"
+    job.bake_config["custom_style"] = "photorealistic"
+    meta = build_meta(cfg, job, library, revision=1)
+    assert meta["style_id"] == "custom" and meta["custom_style"] == "photorealistic"
+
+
 @pytest.fixture
 def published_client(monkeypatch, tmp_path):
     """A TestClient over a data dir that already holds a published bundle + its job."""

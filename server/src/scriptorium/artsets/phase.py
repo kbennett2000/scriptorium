@@ -48,7 +48,7 @@ from ..bake.phases.p7_render import (
 from ..bake.phases.p8_publish import build_manifest
 from ..bake.tts_client import TtsClient
 from ..render.imagegen import ImagegenClient, RealImagegenClient
-from ..styles import get_style
+from ..styles import resolve_style
 
 # Trailing pseudo-unit: writes the set manifest + flips set.json to ready. Non-numeric so it can
 # never collide with a page-plate / cover / portrait id (same discipline as UNLOAD_UNIT_ID).
@@ -196,7 +196,7 @@ class SetRender:
 
     async def _render(self, cfg: Any, job: Job, plate_id: str) -> None:
         set_dir = _set_dir(cfg, job)
-        style = get_style(job.bake_config["style_id"])
+        style = resolve_style(job.bake_config)
         doc = self._prompt_doc(cfg, job, plate_id, style)
         wrapped, negative = wrap_prompt(style, plate_id, doc, _era(cfg, job))
         spec = _asset_spec(set_dir, plate_id)

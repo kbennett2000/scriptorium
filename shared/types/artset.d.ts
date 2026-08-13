@@ -37,6 +37,10 @@ export interface Artset {
    */
   model?: string | null;
   /**
+   * Free-text look for the 'custom' style_id (e.g. 'photorealistic'; ADR-0031), or null for a catalog style. Absent on sets created before ADR-0031.
+   */
+  custom_style?: string | null;
+  /**
    * The book revision whose frozen selection/prompts this set derived from.
    */
   source_revision?: number;

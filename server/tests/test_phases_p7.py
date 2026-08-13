@@ -474,6 +474,32 @@ def test_bake_model_reaches_the_imagegen_client(tmp_path) -> None:
 
 
 @respx.mock
+def test_custom_style_leads_the_wrapped_prompt(tmp_path) -> None:
+    # ADR-0031: the `custom` style sentinel + bake_config["custom_style"] leads every page plate's
+    # wrapped prompt (prompt-only, no LoRA), and passes through to the imagegen `style` as None.
+    cfg = _cfg(tmp_path)
+    _seed(cfg)
+    job = jobmod.load(cfg, "b")
+    job.bake_config["style_id"] = "custom"
+    job.bake_config["custom_style"] = "photorealistic, 35mm film"
+    job.save(cfg)
+    respx.post(f"{TTS}/v1/models/unload").mock(return_value=httpx.Response(200, json={}))
+
+    styles_seen: list[str | None] = []
+
+    class _RecordingImagegen(FakeImagegen):
+        async def txt2img(self, *args, style=None, **kwargs) -> bytes:
+            styles_seen.append(style)
+            return await super().txt2img(*args, style=style, **kwargs)
+
+    job = _drive(cfg, _RecordingImagegen())
+    assert job.state == JobState.RENDERED
+    p1 = json.loads((cfg.work_dir / "b" / "prompts" / "0001.json").read_text("utf-8"))
+    assert p1["wrapped_prompt"].startswith("photorealistic, 35mm film, ")
+    assert set(styles_seen) == {None}  # custom never applies a LoRA preset
+
+
+@respx.mock
 def test_off_flag_portrait_rendered_once_not_double(tmp_path) -> None:
     # Byte-stability guard: with the flag off, PortraitRender draws the portrait and Render's
     # portraits-first list skips it (existence-based), so it is rendered exactly once as before.

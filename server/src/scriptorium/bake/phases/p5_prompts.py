@@ -40,7 +40,7 @@ from typing import Any
 
 from ... import schemas
 from ...selection.segment import even_segments
-from ...styles import get_style
+from ...styles import resolve_style
 from ..job import Job, JobState
 from ..tts_client import TtsClient
 from .base import Unit
@@ -338,7 +338,7 @@ def rederive_portrait_prompt(cfg: Any, job: Job, slug: str) -> bool:
     )
     if char is None or not char.get("visual_description"):
         return False
-    style = get_style(job.bake_config["style_id"])
+    style = resolve_style(job.bake_config)
     doc = _read_json(path)
     prompt = assemble_portrait(style, char["one_line"], char["visual_description"])
     doc["derived"] = {"prompt": prompt}
@@ -460,7 +460,7 @@ class PromptsDerive:
     # --- CPU pseudo-plates (DESIGN §10) ------------------------------------
 
     def _write_cover(self, cfg: Any, job: Job) -> None:
-        style = get_style(job.bake_config["style_id"])
+        style = resolve_style(job.bake_config)
         prompt = assemble_cover(style, _title(job), _author(job), cover_beat(_load_pages(cfg, job)))
         doc = _draft(COVER_UNIT_ID, prompt)
         schemas.validate("prompt", doc)
@@ -474,7 +474,7 @@ class PromptsDerive:
         )
         if char is None:  # pragma: no cover - units() only emits ids that exist in the cast
             return
-        style = get_style(job.bake_config["style_id"])
+        style = resolve_style(job.bake_config)
         prompt = assemble_portrait(style, char["one_line"], char["visual_description"])
         doc = _draft(unit_id, prompt)
         schemas.validate("prompt", doc)

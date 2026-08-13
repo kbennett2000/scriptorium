@@ -37,7 +37,12 @@ export interface Artsets {
   /** Switch to a set (downloading it first if it's ready but not yet on this device). */
   choose: (setId: string) => Promise<void>;
   /** Make a new set — a chosen style, or a re-roll of the book's style. Auto-downloads + switches. */
-  create: (kind: "style" | "reroll", styleId?: string, model?: string | null) => Promise<void>;
+  create: (
+    kind: "style" | "reroll",
+    styleId?: string,
+    model?: string | null,
+    customStyle?: string | null,
+  ) => Promise<void>;
   /** Delete a personal set (server + this device); reverts to Default if it was active. */
   remove: (setId: string) => Promise<void>;
   /** Retry a failed set: delete it, then make a fresh one with the same style. */
@@ -225,11 +230,21 @@ export function useArtsets(
   );
 
   const create = useCallback(
-    async (kind: "style" | "reroll", styleId?: string, model?: string | null): Promise<void> => {
+    async (
+      kind: "style" | "reroll",
+      styleId?: string,
+      model?: string | null,
+      customStyle?: string | null,
+    ): Promise<void> => {
       setBusy(true);
       setError(null);
       try {
-        const made = await api.createSet(user, book, { kind, style_id: styleId, model });
+        const made = await api.createSet(user, book, {
+          kind,
+          style_id: styleId,
+          model,
+          custom_style: customStyle,
+        });
         pendingRef.current = made.set_id;
         await refresh();
       } catch (e) {

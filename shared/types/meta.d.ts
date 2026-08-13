@@ -54,9 +54,13 @@ export interface Meta {
    */
   era: string;
   /**
-   * Id of the illustration style used for this bake, referencing an entry in styles.json (DESIGN §9). Not enum-locked because styles are data, not schema.
+   * Id of the illustration style used for this bake, referencing an entry in styles.json (DESIGN §9), or the sentinel 'custom' for a free-text look (ADR-0031). Not enum-locked because styles are data, not schema.
    */
   style_id: string;
+  /**
+   * The owner's free-text look for the 'custom' style (e.g. 'photorealistic'; ADR-0031), or null for a catalog style. Pinned so re-renders and art-set re-rolls reproduce it. Absent on bundles published before ADR-0031.
+   */
+  custom_style?: string | null;
   /**
    * Plate-density preset used for selection (DESIGN §8). One of the three v1 presets.
    */

@@ -2514,3 +2514,34 @@ already exposed the installed list (`/health.checkpoints`) and accepted a per-re
 
 **Gates.** ruff clean · eslint + tsc clean (reader, admin-ui) · non-gpu server tests green · reader +
 admin vitest green · schemas ↔ types in sync (`gen-types` diff clean).
+
+---
+
+## M1 · Cycle 22 — "No style" + free-text custom-prompt looks (2026-08-13)
+
+**Why.** The style picker (new book / new art set) only offered the fixed catalog. The owner wanted
+"No style" (send the subject to the model raw) and a free-text look ("photorealistic") that drives
+every picture. See [ADR-0031](docs/adr/0031-no-style-and-custom-prompt-styles.md).
+
+**Shipped**
+- **"No style"** is a `styles.json` entry (`none`) with empty prompt strings + null LoRA — the schema
+  allows empty strings, so zero code: it resolves/publishes/re-rolls like any style.
+- **Custom** is a `style_id: "custom"` sentinel + a `custom_style` free-text field. New
+  `resolve_style(bake_config)` synthesises a prompt-only style (text as the prefix, no LoRA); it
+  replaces `get_style(style_id)` at every materialisation site — P5 (portrait/cover/re-derive), P7
+  `render_plate`, art-set `SetRender`, and the `-rN` regen.
+- `BakeBody.custom_style` + `CreateSetBody.custom_style` → `bake_config`. Art-set re-rolls inherit the
+  book's `style_id` **and** `custom_style`. Pinned in `meta.custom_style` + `set.json.custom_style`
+  so re-renders reproduce. meta + artset schemas gained the field; types regenerated.
+- UI: admin wizard "Custom…" tile + text input (and "No style" appears as a catalog tile); reader
+  New-set panel "Or describe your own look…" input + "Make it" (and a "No style" button).
+
+**Decisions**
+- Custom is prompt-only (never a LoRA); empty custom text degrades to "No style".
+- "No style" keeps the global anti-garbage negative (bad anatomy/duplicates) — that's quality, not
+  style. A truly raw pass isn't offered.
+- Existing catalog styles resolve unchanged (`resolve_style`→`get_style`), custom_style defaults null,
+  so every existing book renders byte-identical.
+
+**Gates.** ruff clean · eslint + tsc clean (reader, admin-ui) · non-gpu server tests green · reader +
+admin vitest green · schemas ↔ types in sync (`gen-types` diff clean).

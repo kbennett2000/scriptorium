@@ -108,6 +108,36 @@ def test_style_set_records_chosen_model(client, tmp_path) -> None:
     assert job["bake_config"]["model"] == "dreamshaper.safetensors"
 
 
+def test_custom_style_set_records_free_text_look(client, tmp_path) -> None:
+    # ADR-0031: a set may render in a free-text "custom" look; the text is stored on set.json and
+    # the set's render job.
+    book = _publish(tmp_path)
+    resp = client.post(f"/api/artsets/kris/{book}", json={
+        "kind": "style", "style_id": "custom", "custom_style": "photorealistic"})
+    assert resp.status_code == 200, resp.text
+    doc = resp.json()
+    schemas.validate("artset", doc)
+    assert doc["style_id"] == "custom" and doc["custom_style"] == "photorealistic"
+    assert doc["label"] == "photorealistic"  # the look names the set
+    job = json.loads((tmp_path / "jobs" / f"{book}#{doc['set_id']}.json").read_text("utf-8"))
+    assert job["bake_config"]["custom_style"] == "photorealistic"
+
+
+def test_reroll_reproduces_a_custom_books_look(client, tmp_path) -> None:
+    # A re-roll of a custom-look book reproduces that look (from meta.custom_style).
+    book = "usr-abc123def456"
+    lib = tmp_path / "library" / book
+    lib.mkdir(parents=True, exist_ok=True)
+    (lib / "meta.json").write_text(json.dumps({
+        "book_id": book, "revision": 1, "title": "T", "author": "A",
+        "style_id": "custom", "custom_style": "photorealistic",
+    }), encoding="utf-8")
+    resp = client.post(f"/api/artsets/kris/{book}", json={"kind": "reroll"})
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["style_id"] == "custom"
+    assert resp.json()["custom_style"] == "photorealistic"
+
+
 def test_reroll_defaults_model_from_the_books_pinned_model(client, tmp_path) -> None:
     # A re-roll reproduces the book's own model, pinned at publish in meta.bake.models.imagegen.
     book = "usr-abc123def456"

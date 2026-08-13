@@ -64,6 +64,9 @@ class SourceBody(BaseModel):
 
 class BakeBody(BaseModel):
     style_id: str
+    # Free-text look for the ``custom`` style sentinel (ADR-0031), e.g. "photorealistic"; ignored
+    # for a catalog ``style_id``. "No style" is just the catalog id ``none`` (empty prefix).
+    custom_style: str | None = None
     density_preset: str = "classic"
     images_per_scene: int = Field(default=1, ge=1)
     era: str | None = None

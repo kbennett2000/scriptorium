@@ -175,6 +175,17 @@
       "negative": "photo, smooth gradients, anti-aliased, painterly, 3d render, text, watermark, signature, blurry",
       "portrait_prefix": "pixel art portrait, bust composition, limited-palette pixels, retro 16-bit look, ",
       "params": { "steps": null, "cfg": null }
+    },
+    {
+      "id": "none",
+      "name": "No style (model default)",
+      "consistency_friendly": true,
+      "imagegen_style": null,
+      "prefix": "",
+      "suffix": "",
+      "negative": "",
+      "portrait_prefix": "",
+      "params": { "steps": null, "cfg": null }
     }
   ]
 }

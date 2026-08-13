@@ -42,6 +42,8 @@ class CreateSetBody(BaseModel):
     # "reroll" defaults to the book's own model so it reproduces the book's look with new seeds.
     # None → the imagegen service's configured default.
     model: str | None = None
+    # Free-text look for the ``custom`` style sentinel (ADR-0031); ignored for a catalog style_id.
+    custom_style: str | None = None
 
 
 def _require_path(user: str, book: str) -> None:
@@ -65,7 +67,8 @@ def create_set(user: str, book: str, body: CreateSetBody) -> dict[str, Any]:
     _require_path(user, book)
     try:
         return service.create_set(
-            load_config(), user, book, body.kind, body.style_id, body.label, body.model
+            load_config(), user, book, body.kind, body.style_id, body.label, body.model,
+            body.custom_style,
         )
     except LookupError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc

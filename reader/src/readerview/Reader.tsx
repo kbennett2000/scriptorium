@@ -815,7 +815,9 @@ export function Reader({
           busy={artsets.busy}
           error={artsets.error}
           onChoose={(id) => void artsets.choose(id)}
-          onCreate={(kind, styleId, model) => void artsets.create(kind, styleId, model)}
+          onCreate={(kind, styleId, model, customStyle) =>
+            void artsets.create(kind, styleId, model, customStyle)
+          }
           onDelete={(id) => void artsets.remove(id)}
           onRetry={(id) => void artsets.retry(id)}
           onClose={() => setPicsOpen(false)}

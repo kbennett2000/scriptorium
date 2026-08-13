@@ -23,7 +23,7 @@ from .. import schemas
 from ..bake import job as jobmod
 from ..bake.job import Job, JobState
 from ..config import Config
-from ..styles import get_style, load_styles
+from ..styles import CUSTOM_STYLE_ID, get_style, load_styles
 from .phase import set_render_progress
 
 _SET_ID_RE = re.compile(r"^set-[0-9a-f]{12}$")
@@ -54,7 +54,7 @@ def _style_ids() -> set[str]:
 
 def create_set(
     cfg: Config, user: str, book: str, kind: str, style_id: str | None, label: str | None,
-    model: str | None = None,
+    model: str | None = None, custom_style: str | None = None,
 ) -> dict:
     """Create a set + enqueue its render job. Returns the ``set.json`` doc (status generating).
 
@@ -67,10 +67,13 @@ def create_set(
 
     if kind not in _KINDS:
         raise ValueError(f"kind must be one of {_KINDS}, not {kind!r}")
-    # A re-roll defaults to the book's own published style; a style set must name one.
+    # A re-roll defaults to the book's own published style (incl. its custom free-text look); a
+    # style set must name a catalog id or the ``custom`` sentinel (ADR-0031).
     if kind == "reroll" and not style_id:
         style_id = meta.get("style_id")
-    if not style_id or style_id not in _style_ids():
+        if custom_style is None:
+            custom_style = meta.get("custom_style")
+    if not style_id or (style_id != CUSTOM_STYLE_ID and style_id not in _style_ids()):
         raise ValueError(f"unknown style_id {style_id!r}")
     # Base model (ADR-0030). A re-roll with no explicit model reproduces the book's own model,
     # pinned at publish in ``meta.bake.models.imagegen``; "unknown" (imagegen offline at publish)
@@ -80,7 +83,10 @@ def create_set(
         model = pinned if pinned and pinned != "unknown" else None
 
     set_id = "set-" + secrets.token_hex(6)
-    style_name = get_style(style_id)["name"]
+    if style_id == CUSTOM_STYLE_ID:
+        style_name = (custom_style or "").strip() or "Custom"
+    else:
+        style_name = get_style(style_id)["name"]
     label = label or (style_name if kind == "style" else f"{style_name} (re-roll)")
     source_revision = int(meta.get("revision", 1))
 
@@ -91,6 +97,7 @@ def create_set(
         "kind": kind,
         "label": label,
         "style_id": style_id,
+        "custom_style": custom_style,
         "model": model,
         "source_revision": source_revision,
         "status": "generating",
@@ -104,7 +111,10 @@ def create_set(
         book_id=book,
         state=JobState.SET_RENDERING,
         source={"user": user, "set_id": set_id, "kind": kind},
-        bake_config={"style_id": style_id, "model": model, "source_revision": source_revision},
+        bake_config={
+            "style_id": style_id, "custom_style": custom_style, "model": model,
+            "source_revision": source_revision,
+        },
         started=True,
     ).save(cfg)
     return set_doc

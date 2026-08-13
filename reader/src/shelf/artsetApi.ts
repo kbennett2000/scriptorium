@@ -31,6 +31,8 @@ export interface CreateSetBody {
   label?: string;
   // Optional base model / checkpoint (ADR-0030); omitted → the imagegen service's default.
   model?: string | null;
+  // Free-text look for the "custom" style_id (ADR-0031); ignored for a catalog style.
+  custom_style?: string | null;
 }
 
 export interface ArtsetApi {
