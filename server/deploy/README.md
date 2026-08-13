@@ -57,9 +57,38 @@ restic target is the follow-up (filed in NOTES).
 
 ---
 
-## Not yet present (M1 gaps, filed in `NOTES-FOR-NEXT-CYCLES.md`)
+## Bakery service — `scriptorium-bakery.service`
 
-- **No `scriptorium.service` systemd unit.** The server is run by hand
-  (`uv run uvicorn scriptorium.app:app --host 0.0.0.0 --port 8720`). DESIGN §3 reserves this dir
-  for units; authoring one (+ the backup `.timer`) is deferred past M1. M1's kill-test (A6) used a
-  process `kill -9` instead of `systemctl restart`.
+The bakery (FastAPI, port 8720) runs as a **systemd user unit** so it survives logout and
+restarts on failure. Two files here:
+
+- `scriptorium-bakery.env` — `SCRIPTORIUM_DATA` + the GPU service URLs (`TTS_URL`,
+  `IMAGEGEN_URL`). **These are why the service works:** without `SCRIPTORIUM_DATA` the app
+  falls back to `/var/lib/scriptorium` and the library appears empty (writes 500); without the
+  GPU URLs `/health` reports `degraded` and any bake parks in `waiting_gpu`.
+- `scriptorium-bakery.service` — the unit; reads the env file, `WorkingDirectory` = this
+  `server/` dir, `ExecStart` = `uv run uvicorn …`.
+
+Install (user unit, no sudo — relies on `loginctl enable-linger kb`, already set):
+
+```bash
+ln -sf "$PWD/deploy/scriptorium-bakery.service" ~/.config/systemd/user/scriptorium-bakery.service
+systemctl --user daemon-reload
+systemctl --user enable --now scriptorium-bakery.service
+systemctl --user status scriptorium-bakery.service
+journalctl --user -u scriptorium-bakery.service -f      # logs
+```
+
+The unit is a symlink to this repo file, so editing `deploy/scriptorium-bakery.service` +
+`systemctl --user daemon-reload` picks up changes. A bake survives a restart: job state is
+persisted under `SCRIPTORIUM_DATA` and resumes from its last checkpoint (the in-flight
+prompt/render step retries), so `systemctl --user restart` is safe.
+
+> Ports: `TTS_URL` → text-transform-service :8712, `IMAGEGEN_URL` → imagegen-service :8189
+> (which fronts ComfyUI :8188). imagegen-service serves whatever git branch is checked out in
+> its repo — verify the branch after restarting it, not just that the PID is alive.
+
+### Still deferred
+
+- **No backup `.timer`** — `backup-data.sh` still runs from cron (above); a `.timer` install
+  needs sudo and isn't committed here.

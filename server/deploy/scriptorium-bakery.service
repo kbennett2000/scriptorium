@@ -1,0 +1,21 @@
+[Unit]
+Description=scriptorium bakery (FastAPI, port 8720)
+Documentation=https://github.com/  # see server/deploy/README.md
+# Best-effort ordering; the bakery degrades gracefully and retries if a GPU
+# service is not up yet, so these are Wants (not Requires) and only apply when
+# the GPU services also run as user units on this box.
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/home/kb/Desktop/projects/scriptorium/server
+EnvironmentFile=/home/kb/Desktop/projects/scriptorium/server/deploy/scriptorium-bakery.env
+ExecStart=/home/kb/.local/bin/uv run uvicorn scriptorium.app:app --host 0.0.0.0 --port 8720
+Restart=on-failure
+RestartSec=3
+# Give an in-flight bake room to finish the current phase before a stop.
+TimeoutStopSec=30
+
+[Install]
+WantedBy=default.target
