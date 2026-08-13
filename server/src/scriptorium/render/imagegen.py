@@ -63,6 +63,8 @@ class ImagegenClient(Protocol):
         references: list[bytes] | None = None,
         reference_strength: float | None = None,
         reference_start: float | None = None,
+        init_image: bytes | None = None,
+        denoise: float | None = None,
     ) -> bytes:
         """Render ``prompt`` to PNG bytes at ``width``×``height``, optionally under ``style``.
 
@@ -76,6 +78,11 @@ class ImagegenClient(Protocol):
         ``reference_strength`` (IP-Adapter weight) and ``reference_start`` (the fraction of the
         denoising schedule that runs before identity is injected) tune that conditioning per plate;
         ``None`` leaves the service's own defaults in place (ADR-0028).
+
+        ``init_image`` is optional img2img starting-image PNG bytes: the service repaints it toward
+        the prompt instead of starting from noise. ``denoise`` (0, 1] is the change amount (lower =
+        closer to the starting image). Both ``None`` (the default) keeps the txt2img,
+        byte-identical behaviour (the post-publish picture editor uses these; §post-publish edits).
         """
         ...
 
@@ -113,6 +120,8 @@ class RealImagegenClient:
         references: list[bytes] | None = None,
         reference_strength: float | None = None,
         reference_start: float | None = None,
+        init_image: bytes | None = None,
+        denoise: float | None = None,
     ) -> bytes:
         """``POST /generate`` → PNG bytes. Maps 503/conn → GpuUnavailable, 422 → UnitFailed."""
         if self._base is None:
@@ -144,6 +153,12 @@ class RealImagegenClient:
                 body["referenceStrength"] = reference_strength
             if reference_start is not None:
                 body["referenceStart"] = reference_start
+        # img2img: only forward when an init image is given, so a txt2img request stays
+        # byte-identical to the pre-edit client (the service falls back to txt2img otherwise).
+        if init_image is not None:
+            body["initImage"] = base64.b64encode(init_image).decode("ascii")
+            if denoise is not None:
+                body["denoise"] = denoise
         url = f"{self._base}/generate"
         try:
             async with httpx.AsyncClient(timeout=_GENERATE_TIMEOUT_S) as client:
@@ -230,6 +245,8 @@ def _digest(
     references: list[bytes] | None = None,
     reference_strength: float | None = None,
     reference_start: float | None = None,
+    init_image: bytes | None = None,
+    denoise: float | None = None,
 ) -> str:
     """A stable hex digest of the full render request (drives both color and burned-in text).
 
@@ -254,6 +271,12 @@ def _digest(
             payload += f"\x00w={reference_strength}".encode()
         if reference_start is not None:
             payload += f"\x00s={reference_start}".encode()
+    # img2img changes the real render, so the stand-in must differ too; folded only when set, so
+    # a txt2img request stays byte-identical to the pre-edit fake.
+    if init_image is not None:
+        payload += b"\x00init=" + hashlib.sha256(init_image).digest()
+        if denoise is not None:
+            payload += f"\x00d={denoise}".encode()
     return hashlib.sha256(payload).hexdigest()
 
 
@@ -276,6 +299,8 @@ class FakeImagegen:
         references: list[bytes] | None = None,
         reference_strength: float | None = None,
         reference_start: float | None = None,
+        init_image: bytes | None = None,
+        denoise: float | None = None,
     ) -> bytes:
         return self.render(
             prompt,
@@ -287,6 +312,8 @@ class FakeImagegen:
             references=references,
             reference_strength=reference_strength,
             reference_start=reference_start,
+            init_image=init_image,
+            denoise=denoise,
         )
 
     async def health(self) -> bool:
@@ -304,11 +331,14 @@ class FakeImagegen:
         references: list[bytes] | None = None,
         reference_strength: float | None = None,
         reference_start: float | None = None,
+        init_image: bytes | None = None,
+        denoise: float | None = None,
     ) -> bytes:
         """Synchronous core: deterministic placeholder PNG bytes for ``prompt``."""
         digest = _digest(
             prompt, width, height, seed, style, checkpoint,
             references, reference_strength, reference_start,
+            init_image, denoise,
         )
         # Background: a muted color from the digest so distinct prompts look distinct.
         bg = (int(digest[0:2], 16) // 2, int(digest[2:4], 16) // 2, int(digest[4:6], 16) // 2)

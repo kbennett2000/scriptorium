@@ -1,0 +1,11 @@
+{
+  "book_id": "usr-4feb0ab87a05",
+  "user_id": "kris",
+  "source_revision": 1,
+  "plates": {
+    "not-a-plate-id": {
+      "prompt": "missing the required caption + created",
+      "seed": 12345
+    }
+  }
+}

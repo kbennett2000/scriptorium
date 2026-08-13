@@ -20,7 +20,10 @@ from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import FileResponse, JSONResponse, Response
 from pydantic import BaseModel
 
+from ..bake.phases.base import GpuUnavailable
 from ..config import Config, load_config
+from ..render.imagegen import ImagegenClient, RealImagegenClient
+from . import edits as edits_service
 from . import service
 
 router = APIRouter(prefix="/api")
@@ -29,6 +32,14 @@ router = APIRouter(prefix="/api")
 _USER_RE = re.compile(r"^[a-z0-9]+(-[a-z0-9]+)*$")
 _BOOK_RE = re.compile(r"^(pg-[0-9]+|usr-[0-9a-f]{12})$")
 _SET_RE = re.compile(r"^set-[0-9a-f]{12}$")
+# A plate id: 4-digit page id, or {page_id}-N for an extra same-page plate. Candidate token is hex.
+_PLATE_RE = re.compile(r"^[0-9]{4}(-[0-9]+)?$")
+_TOKEN_RE = re.compile(r"^[0-9a-f]{16}$")
+
+
+def _imagegen_client(cfg: Config) -> ImagegenClient:
+    """The imagegen client for on-demand picture edits. Indirected so tests inject a fake."""
+    return RealImagegenClient(cfg)
 
 # Set images are the same asset kinds a book bundle serves (mirror library/api.py).
 _CONTENT_TYPES = {".json": "application/json", ".webp": "image/webp", ".png": "image/png"}
@@ -99,7 +110,9 @@ def _set_dir(cfg: Config, user: str, book: str, set_id: str) -> Path:
     keeps a hostile segment from escaping the root (mirrors ``library.api._bundle_dir``).
     """
     _require_path(user, book)
-    if not _SET_RE.match(set_id):
+    # The private edits overlay (edits_service.EDITS_SET_ID) is served like a set but has a reserved
+    # literal id; a literal can't traverse, and the .resolve() guard below still applies.
+    if set_id != edits_service.EDITS_SET_ID and not _SET_RE.match(set_id):
         raise HTTPException(status_code=400, detail=f"bad set id {set_id!r}")
     root = cfg.artsets_dir.resolve()
     set_dir = (root / user / book / set_id).resolve()
@@ -152,3 +165,89 @@ def get_set_file(
         return Response(status_code=304, headers={"ETag": etag})
 
     return FileResponse(target, media_type=_content_type(target), headers={"ETag": etag})
+
+
+# --- per-plate picture edits (post-publish, private per user) ---------------
+#
+# A reader replaces one published plate's image (img2img from the current image) + caption. Nothing
+# under library/{book} is touched; the result lands in the private "edits" overlay served above.
+
+
+class CandidateBody(BaseModel):
+    prompt: str
+    negative: str | None = None
+    seed: int | None = None
+    denoise: float | None = None
+
+
+class CommitBody(BaseModel):
+    token: str
+    caption: str = ""
+
+
+def _require_plate(plate_id: str) -> None:
+    if not _PLATE_RE.match(plate_id):
+        raise HTTPException(status_code=400, detail=f"bad plate id {plate_id!r}")
+
+
+@router.get("/artsets/{user}/{book}/edits/{plate_id}/context")
+def edit_context(user: str, book: str, plate_id: str) -> dict[str, Any]:
+    """The editor pre-fill for a plate (prompt, seed, size, current caption)."""
+    _require_path(user, book)
+    _require_plate(plate_id)
+    try:
+        return edits_service.plate_context(load_config(), user, book, plate_id)
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@router.post("/artsets/{user}/{book}/edits/{plate_id}/candidate")
+async def edit_candidate(
+    user: str, book: str, plate_id: str, body: CandidateBody
+) -> dict[str, Any]:
+    """img2img-render a candidate from the current image; returns a token (not yet in the book)."""
+    _require_path(user, book)
+    _require_plate(plate_id)
+    cfg = load_config()
+    try:
+        return await edits_service.generate_candidate(
+            cfg, user, book, plate_id,
+            prompt=body.prompt, negative=body.negative, seed=body.seed, denoise=body.denoise,
+            client=_imagegen_client(cfg),
+        )
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except edits_service.EditError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except GpuUnavailable as exc:
+        raise HTTPException(status_code=503, detail=f"imagegen unavailable: {exc}") from exc
+
+
+@router.get("/artsets/{user}/{book}/edits/{plate_id}/candidate/{token}.png")
+def edit_candidate_image(user: str, book: str, plate_id: str, token: str) -> FileResponse:
+    """Preview a still-uncommitted candidate PNG."""
+    _require_path(user, book)
+    _require_plate(plate_id)
+    if not _TOKEN_RE.match(token):
+        raise HTTPException(status_code=400, detail="bad token")
+    path = edits_service.candidate_path(load_config(), user, book, token)
+    if not path.is_file():
+        raise HTTPException(status_code=404, detail="no such candidate")
+    return FileResponse(path, media_type="image/png")
+
+
+@router.post("/artsets/{user}/{book}/edits/{plate_id}/commit")
+def edit_commit(user: str, book: str, plate_id: str, body: CommitBody) -> dict[str, Any]:
+    """Promote the chosen candidate + caption into the private overlay."""
+    _require_path(user, book)
+    _require_plate(plate_id)
+    if not _TOKEN_RE.match(body.token):
+        raise HTTPException(status_code=400, detail="bad token")
+    try:
+        return edits_service.commit_edit(
+            load_config(), user, book, plate_id, token=body.token, caption=body.caption
+        )
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except edits_service.EditError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc

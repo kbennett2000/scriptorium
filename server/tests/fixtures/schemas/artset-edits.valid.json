@@ -1,0 +1,19 @@
+{
+  "book_id": "usr-4feb0ab87a05",
+  "user_id": "kris",
+  "source_revision": 1,
+  "plates": {
+    "0001": {
+      "caption": "a brighter lamp on the workbench",
+      "prompt": "a lamplit workshop, warmer light",
+      "seed": 12345,
+      "denoise": 0.55,
+      "created": "2026-08-13T02:00:00Z"
+    },
+    "0007-2": {
+      "caption": "",
+      "prompt": "the fox at the tree line",
+      "created": "2026-08-13T02:05:00Z"
+    }
+  }
+}

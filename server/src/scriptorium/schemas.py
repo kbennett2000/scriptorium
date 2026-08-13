@@ -30,6 +30,7 @@ SCHEMA_KINDS: tuple[str, ...] = (
     "styles",
     "artset",
     "artset-list",
+    "artset-edits",
 )
 
 
