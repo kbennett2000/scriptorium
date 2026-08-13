@@ -78,6 +78,9 @@ def test_p0_to_p5_produces_all_valid_artifacts(tmp_path) -> None:
     runner = Runner(cfg, pb.offline_pipeline(), sleep=pb._noop_sleep, wake=lambda _c: None,
                     gpu_gate=pb._gate_up)
 
+    # Cast-review gate (ADR-0032): the runner rests at cast_done; approve to let P3→P5 run.
+    pb._pump(runner, cfg, book_id, JobState.CAST_DONE)
+    pb._approve_cast(cfg, book_id)
     for _ in range(40):
         asyncio.run(runner.tick())
         job = jobmod.load(cfg, book_id)
@@ -122,6 +125,9 @@ def test_p0_to_p7_renders_a_valid_bundle(tmp_path) -> None:
     runner = Runner(cfg, pb.offline_pipeline(), sleep=pb._noop_sleep, wake=lambda _c: None,
                     gpu_gate=pb._gate_up)
 
+    # Cast-review gate (ADR-0032): the runner rests at cast_done; approve to let P3→P5 run.
+    pb._pump(runner, cfg, book_id, JobState.CAST_DONE)
+    pb._approve_cast(cfg, book_id)
     for _ in range(40):
         asyncio.run(runner.tick())
         job = jobmod.load(cfg, book_id)

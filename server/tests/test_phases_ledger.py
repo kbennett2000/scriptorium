@@ -67,8 +67,12 @@ def _scene_envelope(pid: str) -> dict[str, Any]:
     return json.loads((_FIX / f"{pid}.json").read_text(encoding="utf-8"))
 
 
-def _seed_job(cfg: Config, n_pages: int = 6, state: str = JobState.CAST_DONE) -> Job:
-    """Seed pages (text ``PAGE {id}``) + a minimal cast.json, at the given state."""
+def _seed_job(cfg: Config, n_pages: int = 6, state: str = JobState.CAST_APPROVED) -> Job:
+    """Seed pages (text ``PAGE {id}``) + a minimal cast.json, at the given state.
+
+    Defaults to ``cast_approved`` — the state ``LedgerEnter`` now starts from once the cast-review
+    gate (ADR-0032) has been approved.
+    """
     book = cfg.work_dir / "b"
     pages = book / "pages"
     pages.mkdir(parents=True, exist_ok=True)

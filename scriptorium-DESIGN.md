@@ -267,7 +267,9 @@ Unit-tested against hand-built mention fixtures including the Weena/Eloi guard c
 
 ### 7.3 Job state machine
 
-States: `created → ingested → mentions_running → mentions_done → cast_done → ledger_running → ledger_done → selected → prompts_running → prompts_draft → in_review → approved → rendering → published`. Cross-cutting: `waiting_gpu` (any GPU phase, on 503-class from either GPU service; retried each runner tick, default every 120s), `paused` (human), `failed` (human-attention; only from bug-class errors per TTS DESIGN §8).
+States: `created → ingested → mentions_running → mentions_done → cast_done → cast_approved → ledger_running → ledger_done → selected → prompts_running → prompts_draft → in_review → approved → rendering → published`. Cross-cutting: `waiting_gpu` (any GPU phase, on 503-class from either GPU service; retried each runner tick, default every 120s), `paused` (human), `failed` (human-attention; only from bug-class errors per TTS DESIGN §8).
+
+**Cast-review gate (ADR-0032).** `cast_done` is a resting review state: after the cast descriptions are generated (P2) the job stops for a human to review/edit each character, then `approve_cast` advances `cast_done → cast_approved`, from which the ledger (P3) onward run against the approved cast. Always on; like `prompts_draft` it rests for a human and is only auto-advanced under `AUTO_APPROVE`. This is why the scene prompts (P5) derive from the *approved* cast rather than a draft.
 
 Resume rules: every GPU phase, on (re)entry, lists its units, skips units whose checkpoint artifact exists and parses, processes the rest. P3 additionally requires contiguity: it resumes from the first page lacking a ledger and threads from the previous page's stored ledger. Killing the server at any moment therefore loses at most one in-flight unit.
 
@@ -367,7 +369,8 @@ FastAPI, uv, Python 3.12 (house pattern). Serves three API groups + two static a
 | `GET /api/admin/books/{id}/review` | full review payload: selection + prompts + cast + pseudo-plates + failed units | |
 | `PUT /api/admin/books/{id}/review/prompt/{page_id}` | `{edited_prompt}` | pre-approval only for new text; post-publish allowed for regen flow |
 | `PUT /api/admin/books/{id}/review/selection` | add/remove manual plates | |
-| `PUT /api/admin/books/{id}/review/cast/{slug}` | edit visual_description/one_line → sets `edited_by_human` | |
+| `PUT /api/admin/books/{id}/review/cast/{slug}` | edit visual_description/one_line → sets `edited_by_human` | allowed at the cast gate (`cast_done`) and the prompt/portrait gates |
+| `POST /api/admin/books/{id}/approve-cast` | cast-review gate (ADR-0032): locks cast → `cast_approved`, then P3→P5 derive from it | refuses (422) if a major lacks a description |
 | `POST /api/admin/books/{id}/approve` | locks shot list → `approved` | refuses if any selected plate lacks a prompt |
 | `POST /api/admin/books/{id}/plates/{page_id}/regen` | single-plate re-render (new seed) | |
 | `POST /api/admin/books/{id}/reselect` | `{density_preset}` → §8 re-selection → back through P5(new only)→P6→P7 | |

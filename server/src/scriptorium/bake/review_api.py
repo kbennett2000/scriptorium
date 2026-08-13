@@ -32,7 +32,13 @@ from ..selection.reselect import reselect
 from ..selection.segment import expand_choices
 from ..styles import load_styles
 from . import job as jobmod
-from .approve import ApprovalBlocked, approve_job, approve_portraits
+from .approve import (
+    ApprovalBlocked,
+    CastApprovalBlocked,
+    approve_cast,
+    approve_job,
+    approve_portraits,
+)
 from .job import Job, JobState
 from .phases.base import GpuUnavailable
 from .phases.p5_prompts import PORTRAIT_PREFIX, rederive_portrait_prompt
@@ -52,6 +58,11 @@ _REVIEW_STATES = (JobState.PROMPTS_DRAFT, JobState.IN_REVIEW)
 # Prompt/cast edits are also allowed at the optional portrait gate (ADR-0025), where a human tunes
 # and regenerates portraits before the page plates draw.
 _PORTRAIT_EDIT_STATES = (*_REVIEW_STATES, JobState.PORTRAITS_REVIEW)
+# Cast edits are additionally allowed at the cast-review gate (ADR-0032) — the whole point of that
+# gate — where prompts/selection don't exist yet. Prompt edits are NOT (there are no prompts there).
+_CAST_EDIT_STATES = (*_PORTRAIT_EDIT_STATES, JobState.CAST_DONE)
+# The cast-review gate reads a cast-only payload (selection.json / prompts/ are not written yet).
+_CAST_REVIEW_STATES = (JobState.CAST_DONE, JobState.CAST_APPROVED)
 # States in which the review payload is readable (pre-approval edit window + the locked views).
 _READABLE_STATES = (
     JobState.PROMPTS_DRAFT, JobState.IN_REVIEW, JobState.APPROVED,
@@ -189,12 +200,31 @@ def get_review(book_id: str) -> dict:
     book = _book_dir(book_id)
     sel_path = book / "selection.json"
     prompts_dir = book / "prompts"
+    cast_path = book / "cast.json"
+    cast = _read_json(cast_path) if cast_path.is_file() else {"characters": []}
+
     if not sel_path.is_file() or not prompts_dir.is_dir():
+        # Cast-review gate (ADR-0032): the cast exists but the scene prompts/selection are derived
+        # only after approval. Return a cast-only payload (same keys, empty plate side) so the
+        # cast-review screen can reuse this endpoint; everything else 409s as before.
+        if job.state in _CAST_REVIEW_STATES:
+            return {
+                "book_id": book_id,
+                "state": job.state,
+                "selection": {"plates": []},
+                "cast": cast,
+                "prompts": [],
+                "warnings": job.warnings,
+                "prompt_warnings": job.prompt_warnings,
+                "failed_units": job.failed_units,
+                "beats": {},
+                "render_stub": job.render_stub,
+                "portrait_anchor_counts": {},
+                "portrait_rendered": {},
+            }
         raise HTTPException(status_code=409, detail=f"no review yet (state={job.state})")
 
     prompts = [_read_json(p) for p in sorted(prompts_dir.glob("*.json"))]
-    cast_path = book / "cast.json"
-    cast = _read_json(cast_path) if cast_path.is_file() else {"characters": []}
 
     beats: dict[str, str] = {}
     pages_dir = book / "pages"
@@ -333,7 +363,7 @@ def edit_cast(book_id: str, slug: str, body: CastEditBody) -> dict:
     """Edit a character's ``visual_description``/``one_line`` → sets ``edited_by_human`` (§4.3)."""
     cfg = load_config()
     job = _require(book_id)
-    if job.state not in _PORTRAIT_EDIT_STATES:
+    if job.state not in _CAST_EDIT_STATES:
         raise HTTPException(status_code=409,
                             detail=f"cast editable only at a review gate (state={job.state})")
     path = cfg.work_dir / book_id / "cast.json"
@@ -374,6 +404,28 @@ def approve(book_id: str) -> dict:
         raise HTTPException(
             status_code=422,
             detail={"error": "selected plates missing prompts", "page_ids": exc.page_ids},
+        ) from exc
+    return job.to_dict()
+
+
+@router.post("/books/{book_id}/approve-cast")
+def approve_cast_endpoint(book_id: str) -> dict:
+    """Approve the cast-review gate → advance ``cast_done → cast_approved`` (ADR-0032).
+
+    The human has reviewed (and possibly edited) each character; approving lets P3→P5 derive the
+    scene prompts from the approved cast. Rules live in :func:`.approve.approve_cast` so the
+    ``AUTO_APPROVE`` runner path applies the exact same guard; here we translate its errors to HTTP.
+    """
+    cfg = load_config()
+    job = _require(book_id)
+    try:
+        approve_cast(cfg, job)
+    except ValueError as exc:  # not parked at the cast gate
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except CastApprovalBlocked as exc:  # a major still has no description
+        raise HTTPException(
+            status_code=422,
+            detail={"error": "major characters missing descriptions", "slugs": exc.slugs},
         ) from exc
     return job.to_dict()
 

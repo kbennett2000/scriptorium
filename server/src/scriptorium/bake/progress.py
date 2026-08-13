@@ -26,6 +26,7 @@ from .job import Job, JobState
 # because it has its own dedicated banner.
 _NOT_EXPECTING: frozenset[str] = frozenset({
     JobState.CREATED,
+    JobState.CAST_DONE,  # cast-review gate (ADR-0032): waiting on a human
     JobState.PROMPTS_DRAFT,
     JobState.IN_REVIEW,
     JobState.PORTRAITS_REVIEW,  # optional portrait gate (ADR-0025): waiting on a human

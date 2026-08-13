@@ -9,6 +9,7 @@ export type Route =
   | { name: "list" }
   | { name: "wizard" }
   | { name: "detail"; id: string }
+  | { name: "castreview"; id: string }
   | { name: "review"; id: string }
   | { name: "portraits"; id: string }
   | { name: "postrender"; id: string };
@@ -21,6 +22,8 @@ export function routeToHash(route: Route): string {
       return "#/new";
     case "detail":
       return `#/book/${route.id}`;
+    case "castreview":
+      return `#/book/${route.id}/cast`;
     case "review":
       return `#/book/${route.id}/review`;
     case "portraits":
@@ -34,9 +37,10 @@ export function hashToRoute(hash: string): Route {
   const path = hash.replace(/^#/, "");
   if (path === "" || path === "/") return { name: "list" };
   if (path === "/new") return { name: "wizard" };
-  const m = path.match(/^\/book\/([^/]+)(?:\/(review|portraits|postrender))?$/);
+  const m = path.match(/^\/book\/([^/]+)(?:\/(cast|review|portraits|postrender))?$/);
   if (m) {
     const id = decodeURIComponent(m[1]);
+    if (m[2] === "cast") return { name: "castreview", id };
     if (m[2] === "review") return { name: "review", id };
     if (m[2] === "portraits") return { name: "portraits", id };
     if (m[2] === "postrender") return { name: "postrender", id };

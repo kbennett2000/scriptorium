@@ -169,7 +169,9 @@ def build_to_published(cfg: Config, *, freeze: bool = True) -> str:
 
         runner = Runner(cfg, offline_pipeline(), sleep=_noop_sleep, wake=lambda _c: None,
                         gpu_gate=_gate_up)
-        # P1→P5 to prompts_draft, approve, then P7 render + P8 publish to published.
+        # P1→P2 to the cast gate, approve cast, P3→P5 to prompts_draft, approve, then render.
+        _pump(runner, cfg, book_id, JobState.CAST_DONE)
+        _approve_cast(cfg, book_id)
         _pump(runner, cfg, book_id, JobState.PROMPTS_DRAFT)
         _approve(cfg, book_id)
         _pump(runner, cfg, book_id, JobState.PUBLISHED)
@@ -185,6 +187,13 @@ def _pump(runner: Runner, cfg: Config, book_id: str, target: str) -> None:
     job = jobmod.load(cfg, book_id)
     if job.state != target:
         raise RuntimeError(f"pipeline stuck at {job.state}, expected {target}")
+
+
+def _approve_cast(cfg: Config, book_id: str) -> None:
+    """Mimic the cast-review gate approve (ADR-0032): job ``cast_done → cast_approved``."""
+    job = jobmod.load(cfg, book_id)
+    job.transition(JobState.CAST_APPROVED)
+    job.save(cfg)
 
 
 def _approve(cfg: Config, book_id: str) -> None:

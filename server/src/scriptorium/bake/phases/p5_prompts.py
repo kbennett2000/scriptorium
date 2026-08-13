@@ -173,11 +173,17 @@ def _segments_per_page(plates: list[dict]) -> dict[str, int]:
 
 
 def present_cast(cast_doc: dict, ledger: dict) -> list[dict]:
-    """The ``cast`` option for a page: present characters as ``{name, one_line}`` (TTS §7.5).
+    """The ``cast`` option for a page: characters as ``{name, one_line, appearance?}`` (§7.5).
 
     A character is *present* if its canonical ``name`` or any ``alias`` appears in
     ``ledger.present``. Result is capped at :data:`CAST_CAP`, ordered by mention frequency
     (``len(mention_pages)`` desc) with the earliest first-mention page as the tie-break.
+
+    ``appearance`` (ADR-0032) is the character's approved ``visual_description``, condensed to
+    subject-less attribute clauses with the same helpers the portrait prompt uses
+    (``subject_attributes(condense(...))``), so the scene LLM sees the reviewed appearance rather
+    than only the short ``one_line``. Omitted when the character has no description (minors). How
+    strongly the ``illustration-prompt`` transform uses it is owned by the TTS template.
     """
     present = set(ledger.get("present") or [])
     matched = [
@@ -192,7 +198,18 @@ def present_cast(cast_doc: dict, ledger: dict) -> list[dict]:
         return (-len(pages), first)
 
     matched.sort(key=_rank)
-    return [{"name": c["name"], "one_line": c["one_line"]} for c in matched[:CAST_CAP]]
+    return [_present_one(c) for c in matched[:CAST_CAP]]
+
+
+def _present_one(c: dict) -> dict:
+    """One character's scene-cast entry: ``{name, one_line}`` plus ``appearance`` when described."""
+    entry = {"name": c["name"], "one_line": c["one_line"]}
+    description = (c.get("visual_description") or "").strip()
+    if description:
+        appearance = subject_attributes(condense(description))
+        if appearance:
+            entry["appearance"] = appearance
+    return entry
 
 
 def illustration_options(page: dict, cast_doc: dict, era: str | None) -> dict:

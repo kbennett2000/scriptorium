@@ -27,7 +27,9 @@ LEGAL = [
     (JobState.MENTIONS_RUNNING, JobState.MENTIONS_DONE),
     (JobState.MENTIONS_DONE, JobState.CAST_RUNNING),
     (JobState.CAST_RUNNING, JobState.CAST_DONE),
-    (JobState.CAST_DONE, JobState.LEDGER_RUNNING),
+    # Cast-review gate (ADR-0032): cast_done rests for a human, then cast_approved → ledger.
+    (JobState.CAST_DONE, JobState.CAST_APPROVED),
+    (JobState.CAST_APPROVED, JobState.LEDGER_RUNNING),
     (JobState.LEDGER_DONE, JobState.SELECTED),
     (JobState.PROMPTS_DRAFT, JobState.IN_REVIEW),
     # Optional portrait gate (ADR-0025): approved → portraits render → portraits_review → render.
@@ -55,6 +57,7 @@ ILLEGAL = [
     (JobState.FAILED, JobState.INGESTED),  # terminal
     (JobState.MENTIONS_DONE, JobState.WAITING_GPU),  # done-state, not running
     (JobState.MENTIONS_DONE, JobState.CAST_DONE),  # cast_running now sits between them
+    (JobState.CAST_DONE, JobState.LEDGER_RUNNING),  # cast gate (ADR-0032) now sits between them
 ]
 
 

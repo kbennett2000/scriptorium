@@ -50,7 +50,9 @@ def test_present_cast_matches_name_or_alias() -> None:
     ledger = {"present": ["the old clockmaker", "the Stranger"]}
     out = present_cast(cast, ledger)
     assert {c["name"] for c in out} == {"the Clockmaker", "the Stranger"}
-    assert all(set(c) == {"name", "one_line"} for c in out)  # exactly {name, one_line}
+    # {name, one_line} always; a described character (ADR-0032) also carries condensed appearance.
+    assert all({"name", "one_line"} <= set(c) <= {"name", "one_line", "appearance"} for c in out)
+    assert all(c["appearance"] == "desc" for c in out)
 
 
 def test_present_cast_empty_present_is_empty() -> None:
@@ -90,7 +92,7 @@ def test_illustration_options_shape() -> None:
     page = {"ledger": {"present": ["A"], "location": "x"}}
     opts = illustration_options(page, cast, era="an imagined coast")
     assert opts["ledger"] == page["ledger"]  # full ledger passed through
-    assert opts["cast"] == [{"name": "A", "one_line": "a"}]
+    assert opts["cast"] == [{"name": "A", "one_line": "a", "appearance": "desc"}]
     assert opts["era"] == "an imagined coast"
     # era omitted when falsy (TTS options.era is optional).
     assert "era" not in illustration_options(page, cast, era=None)

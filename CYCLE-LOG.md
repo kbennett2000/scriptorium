@@ -2545,3 +2545,43 @@ every picture. See [ADR-0031](docs/adr/0031-no-style-and-custom-prompt-styles.md
 
 **Gates.** ruff clean · eslint + tsc clean (reader, admin-ui) · non-gpu server tests green · reader +
 admin vitest green · schemas ↔ types in sync (`gen-types` diff clean).
+
+---
+
+## M1 · Cycle 23 — cast-review gate before scene-prompt generation (ADR-0032) (2026-08-13)
+
+**Why.** The single review gate (`prompts_draft`) showed the cast and the already-derived scene
+prompts together, so editing a character there left the scene prompts stale and forced plate-by-plate
+re-editing. The owner wanted to review the characters **first**, then have the scene descriptions
+generated from the approved cast. See [ADR-0032](docs/adr/0032-cast-review-gate.md).
+
+**Shipped**
+- **New gate** between P2 (cast) and P3 (ledger): `cast_done` becomes a resting review state and a new
+  `cast_approved` follows it; `LedgerEnter.from_state` moves `cast_done → cast_approved`, so P3→P5 run
+  against the approved cast. Always on; behaves like `prompts_draft` (rests for a human, auto-advances
+  only under `AUTO_APPROVE`). Runner gains a `cast_done` arm; `progress.py` treats it as a human gate.
+- **`approve_cast`** (approve.py) — a guard, not a bypass: refuses (`CastApprovalBlocked`, 422 with the
+  `slugs`) if a `major` lacks a `one_line`/`visual_description`, then transitions to `cast_approved`.
+- **API** (review_api.py): `POST …/approve-cast`; `edit_cast` allowed at `cast_done`; `GET …/review`
+  returns a cast-only payload (empty plates) before P5.
+- **Scene prompts read the approved appearance** — `present_cast` (p5_prompts.py) now also emits a
+  condensed `appearance` (`subject_attributes(condense(visual_description))`) so the scene LLM sees the
+  reviewed description, not just `one_line`.
+- **UI**: a `CastReview` screen at `#/book/{id}/cast` reusing the review payload + `CastPanel`/`editCast`
+  with an approve-cast bar; a state-gated "Review cast" button and the two new states in the progress
+  chain (BookDetail).
+- Tests: `test_cast_gate.py` (runner rest/auto-advance, guard, `present_cast` appearance),
+  review-API cast-gate cases, e2e harness threads the new gate, admin `cast-gate.test.tsx`.
+
+**Decisions**
+- **Ordering, not interpolation.** Scene prompts never baked in the full `visual_description`; the fix
+  is running P5 after cast approval. The `appearance` addition only *offers* the description to the
+  external `illustration-prompt` template (text-transform-service) — how strongly it's used lives
+  there, out of this repo.
+- **Always on, not a per-book flag** (owner's call). Unlike the portrait gate (ADR-0025); under
+  `AUTO_APPROVE` both text gates clear themselves, so unattended behaviour is byte-identical.
+- **No schema change** — the gate touches only `cast.json` + a runtime state; `gen-types` diff stays
+  clean and the publish integrity guard is untouched.
+
+**Gates.** ruff clean · eslint + tsc clean (reader, admin-ui) · non-gpu server tests green (536) ·
+admin vitest green · schemas ↔ types in sync (`gen-types` diff clean).

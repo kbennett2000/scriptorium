@@ -429,3 +429,70 @@ def test_upload_portrait_rejects_non_image(client, tmp_path) -> None:
         files={"file": ("note.txt", b"not an image", "text/plain")},
     )
     assert r.status_code == 400
+
+
+# --- cast-review gate (ADR-0032) --------------------------------------------
+
+
+def _seed_cast_gate(client: TestClient, tmp_path: Path, *, blank_major: bool = False) -> str:
+    """Create a book and seed only cast.json, leaving it parked at ``cast_done``.
+
+    Deliberately writes no selection.json / prompts — those are derived only after cast approval.
+    """
+    book_id = _create(client)
+    work = tmp_path / "work" / book_id
+    (work / "cast.json").write_text(json.dumps({"characters": [
+        {"slug": "the-keeper", "name": "the Keeper", "aliases": ["Keeper"],
+         "mention_pages": ["0001"], "major": True,
+         "visual_description": "" if blank_major else "a stooped lamplighter in a long coat",
+         "one_line": "Tends the lamp.", "tags": ["lamplighter"],
+         "portrait": None, "edited_by_human": False},
+    ]}), encoding="utf-8")
+    cfg = load_config()
+    job = jobmod.load(cfg, book_id)
+    job.state = "cast_done"
+    job.save(cfg)
+    return book_id
+
+
+def test_review_payload_is_cast_only_at_the_cast_gate(client, tmp_path) -> None:
+    book_id = _seed_cast_gate(client, tmp_path)
+    r = client.get(f"/api/admin/books/{book_id}/review")
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["state"] == "cast_done"
+    assert body["cast"]["characters"][0]["slug"] == "the-keeper"
+    assert body["prompts"] == []                    # scene prompts not derived yet
+    assert body["selection"]["plates"] == []
+
+
+def test_edit_cast_allowed_at_the_cast_gate(client, tmp_path) -> None:
+    book_id = _seed_cast_gate(client, tmp_path)
+    r = client.put(f"/api/admin/books/{book_id}/review/cast/the-keeper",
+                   json={"visual_description": "a wiry old keeper with ink-stained hands"})
+    assert r.status_code == 200, r.text
+    assert r.json()["edited_by_human"] is True
+
+
+def test_approve_cast_advances_to_cast_approved(client, tmp_path) -> None:
+    book_id = _seed_cast_gate(client, tmp_path)
+    r = client.post(f"/api/admin/books/{book_id}/approve-cast")
+    assert r.status_code == 200, r.text
+    assert r.json()["state"] == "cast_approved"
+
+
+def test_approve_cast_422_on_blank_major(client, tmp_path) -> None:
+    book_id = _seed_cast_gate(client, tmp_path, blank_major=True)
+    r = client.post(f"/api/admin/books/{book_id}/approve-cast")
+    assert r.status_code == 422, r.text
+    assert r.json()["detail"]["slugs"] == ["the-keeper"]
+
+
+def test_approve_cast_409_when_not_at_gate(client, tmp_path) -> None:
+    book_id = _seed_cast_gate(client, tmp_path)
+    cfg = load_config()
+    job = jobmod.load(cfg, book_id)
+    job.state = "cast_approved"  # already past the gate
+    job.save(cfg)
+    r = client.post(f"/api/admin/books/{book_id}/approve-cast")
+    assert r.status_code == 409, r.text

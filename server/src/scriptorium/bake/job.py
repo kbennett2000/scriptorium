@@ -32,7 +32,13 @@ class JobState:
     MENTIONS_RUNNING = "mentions_running"
     MENTIONS_DONE = "mentions_done"
     CAST_RUNNING = "cast_running"
+    # Cast-review gate (ADR-0032). CAST_DONE is a resting state: cast descriptions are generated,
+    # and the job pauses here for a human to review/edit each character before the scene prompts
+    # are derived from them (P5). Like PROMPTS_DRAFT, it rests for a human and is only auto-advanced
+    # when AUTO_APPROVE is set. Approval transitions CAST_DONE -> CAST_APPROVED, from which P3
+    # (ledger) onward run against the approved cast.
     CAST_DONE = "cast_done"
+    CAST_APPROVED = "cast_approved"
     LEDGER_RUNNING = "ledger_running"
     LEDGER_DONE = "ledger_done"
     SELECTED = "selected"
@@ -70,6 +76,7 @@ _CHAIN: tuple[str, ...] = (
     JobState.MENTIONS_DONE,
     JobState.CAST_RUNNING,
     JobState.CAST_DONE,
+    JobState.CAST_APPROVED,
     JobState.LEDGER_RUNNING,
     JobState.LEDGER_DONE,
     JobState.SELECTED,

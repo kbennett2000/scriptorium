@@ -18,6 +18,8 @@ import { navigate } from "../../routes";
 const MILESTONES: { state: JobStateName; label: string }[] = [
   { state: "ingested", label: "Ingested (P0)" },
   { state: "cast_done", label: "Cast (P1–P2)" },
+  // Cast-review gate (ADR-0032): approve descriptions before the scene prompts derive from them.
+  { state: "cast_approved", label: "Cast approved (review gate)" },
   { state: "ledger_done", label: "Ledger (P3)" },
   { state: "selected", label: "Selected (P4)" },
   { state: "prompts_draft", label: "Prompts (P5)" },
@@ -27,8 +29,9 @@ const MILESTONES: { state: JobStateName; label: string }[] = [
 ];
 const CHAIN_ORDER: JobStateName[] = [
   "created", "ingested", "mentions_running", "mentions_done", "cast_running", "cast_done",
-  "ledger_running", "ledger_done", "selected", "prompts_running", "prompts_draft", "in_review",
-  "approved", "portraits_rendering", "portraits_review", "rendering", "rendered", "published",
+  "cast_approved", "ledger_running", "ledger_done", "selected", "prompts_running", "prompts_draft",
+  "in_review", "approved", "portraits_rendering", "portraits_review", "rendering", "rendered",
+  "published",
 ];
 
 // The optional portrait gate (ADR-0025) is a real stop between approval and the page render, but
@@ -46,6 +49,9 @@ function milestonesFor(job: Job): { state: JobStateName; label: string }[] {
   return [...MILESTONES.slice(0, i), PORTRAIT_MILESTONE, ...MILESTONES.slice(i)];
 }
 
+// Cast-review gate (ADR-0032): the "Review cast" screen is reachable while the job rests at the gate
+// (cast_done) and briefly as it advances past it (cast_approved).
+const CAST_REVIEW_STATES: JobStateName[] = ["cast_done", "cast_approved"];
 const REVIEW_STATES: JobStateName[] = ["prompts_draft", "in_review", "approved"];
 // Optional portrait gate (ADR-0025): the "Review portraits" screen is reachable while portraits
 // draw and while the job rests at the gate.
@@ -195,6 +201,7 @@ function BookDetailBody({ job, reload }: { job: Job; reload: () => void }) {
   }
 
   const promptWarningPages = Object.keys(job.prompt_warnings);
+  const canCastReview = CAST_REVIEW_STATES.includes(job.state);
   const canReview = REVIEW_STATES.includes(job.state);
   const canPortraits = PORTRAIT_STATES.includes(job.state);
   const canPostRender = POSTRENDER_STATES.includes(job.state);
@@ -239,11 +246,12 @@ function BookDetailBody({ job, reload }: { job: Job; reload: () => void }) {
           // Only claim "working" when the SERVER says the runner should be advancing; otherwise say
           // plainly what it's waiting for — a ticking clock must never imply work that isn't happening.
           const working = !!job.expecting_progress;
-          // Both human gates park the bake until the owner acts — say so plainly, and point at the
-          // button that unblocks it, rather than an unexplained "Waiting…".
+          // All three human gates park the bake until the owner acts — say so plainly, and point at
+          // the button that unblocks it, rather than an unexplained "Waiting…".
+          const awaitingCast = job.state === "cast_done";
           const awaitingPrompts = job.state === "prompts_draft" || job.state === "in_review";
           const awaitingPortraits = job.state === "portraits_review";
-          const awaitingApproval = awaitingPrompts || awaitingPortraits;
+          const awaitingApproval = awaitingCast || awaitingPrompts || awaitingPortraits;
           const waitingLabel =
             job.state === "published" || job.state === "waiting_gpu" || job.state === "failed"
               ? null
@@ -276,6 +284,7 @@ function BookDetailBody({ job, reload }: { job: Job; reload: () => void }) {
               {!working && waitingLabel && (
                 <p className="muted" style={{ marginTop: 0, marginBottom: 10, fontWeight: 600 }}>
                   ⏸ {waitingLabel}
+                  {awaitingCast && " — use Review cast below."}
                   {awaitingPrompts && " — use Open Review below."}
                   {awaitingPortraits && " — use Review portraits below."}
                 </p>
@@ -340,6 +349,14 @@ function BookDetailBody({ job, reload }: { job: Job; reload: () => void }) {
           <button onClick={reload} disabled={busy}>
             Refresh
           </button>
+          {canCastReview && (
+            <button
+              className={job.state === "cast_done" ? "primary" : undefined}
+              onClick={() => navigate({ name: "castreview", id: job.book_id })}
+            >
+              {job.state === "cast_done" ? "Review cast" : "Cast…"}
+            </button>
+          )}
           {canReview && (
             <button className="primary" onClick={() => navigate({ name: "review", id: job.book_id })}>
               Open Review

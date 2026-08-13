@@ -32,7 +32,7 @@ import httpx
 
 from ..config import Config
 from . import job as jobmod
-from .approve import ApprovalBlocked, approve_job
+from .approve import ApprovalBlocked, CastApprovalBlocked, approve_cast, approve_job
 from .job import Job, JobState
 from .phases.base import GpuUnavailable, Phase, UnitFailed
 
@@ -226,6 +226,16 @@ class Runner:
                         continue  # parked for the human portrait gate
                     job.transition(JobState.RENDERING)
                     job.save(self.cfg)
+                elif job.state == JobState.CAST_DONE:
+                    # Cast-review gate (ADR-0032): always on, so rest for the human unless
+                    # AUTO_APPROVE. ``approve_cast`` runs the same missing-description guard as the
+                    # endpoint; a blank major raises and the job stays parked for a human.
+                    if not self.cfg.auto_approve:
+                        continue  # parked for the human cast gate
+                    try:
+                        approve_cast(self.cfg, job)
+                    except (CastApprovalBlocked, ValueError):
+                        continue  # cannot auto-approve → leave parked for the human gate
                 elif not (self.cfg.auto_approve
                           and job.state in (JobState.PROMPTS_DRAFT, JobState.IN_REVIEW)):
                     continue

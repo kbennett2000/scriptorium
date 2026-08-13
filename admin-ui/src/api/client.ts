@@ -6,6 +6,7 @@
 import type {
   ApproveError,
   Cast,
+  CastApproveError,
   CreateBookBody,
   CreateBookResponse,
   DensityPreset,
@@ -120,6 +121,11 @@ export const editCast = (
 
 export const approve = (id: string) => request<Job>("POST", `/books/${id}/approve`);
 
+// Approve the cast-review gate (ADR-0032): advance cast_done -> cast_approved so the scene prompts
+// derive from the approved descriptions. A 422 names any major still missing a description.
+export const approveCast = (id: string) =>
+  request<Job>("POST", `/books/${id}/approve-cast`);
+
 // Approve the optional portrait gate (ADR-0025): advance portraits_review -> rendering so the page
 // plates draw, seeded by the now-approved portraits.
 export const approvePortraits = (id: string) =>
@@ -168,12 +174,21 @@ export const plateImageUrl = (id: string, pageId: string) =>
   `${BASE}/books/${id}/plate-image/${pageId}.png`;
 
 // Re-export ApproveError type guard helper for the approve flow.
-export type { ApproveError };
+export type { ApproveError, CastApproveError };
 export function isApproveError(detail: unknown): detail is ApproveError {
   return (
     !!detail &&
     typeof detail === "object" &&
     "page_ids" in detail &&
     Array.isArray((detail as ApproveError).page_ids)
+  );
+}
+
+export function isCastApproveError(detail: unknown): detail is CastApproveError {
+  return (
+    !!detail &&
+    typeof detail === "object" &&
+    "slugs" in detail &&
+    Array.isArray((detail as CastApproveError).slugs)
   );
 }

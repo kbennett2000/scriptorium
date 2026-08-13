@@ -130,10 +130,14 @@ def _prior_ledger(cfg: Any, job: Job, page_id: str, page_ids: list[str]) -> dict
 
 
 class LedgerEnter:
-    """Zero-unit CPU transition ``cast_done → ledger_running`` (the enter-running pattern)."""
+    """Zero-unit CPU transition ``cast_approved → ledger_running`` (the enter-running pattern).
+
+    Starts from ``cast_approved`` (not ``cast_done``) so the ledger — and everything downstream
+    that reads the cast — runs only after the cast-review gate has been approved (ADR-0032).
+    """
 
     name = "ledger_enter"
-    from_state = JobState.CAST_DONE
+    from_state = JobState.CAST_APPROVED
     to_state = JobState.LEDGER_RUNNING
     is_gpu = False
 

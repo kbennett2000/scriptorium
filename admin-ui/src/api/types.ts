@@ -17,6 +17,7 @@ export type JobStateName =
   | "mentions_done"
   | "cast_running"
   | "cast_done"
+  | "cast_approved"
   | "ledger_running"
   | "ledger_done"
   | "selected"
@@ -157,6 +158,13 @@ export interface CreateBookResponse {
 export interface ApproveError {
   error: string;
   page_ids: string[];
+}
+
+// The 422 body from POST /api/admin/books/{id}/approve-cast when a major has no description yet
+// (ADR-0032 cast-review gate).
+export interface CastApproveError {
+  error: string;
+  slugs: string[];
 }
 
 export type DensityPreset = "lavish" | "classic" | "sparse";
