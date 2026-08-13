@@ -65,6 +65,7 @@ class ImagegenClient(Protocol):
         reference_start: float | None = None,
         init_image: bytes | None = None,
         denoise: float | None = None,
+        quality: str | None = None,
     ) -> bytes:
         """Render ``prompt`` to PNG bytes at ``width``×``height``, optionally under ``style``.
 
@@ -83,6 +84,10 @@ class ImagegenClient(Protocol):
         the prompt instead of starting from noise. ``denoise`` (0, 1] is the change amount (lower =
         closer to the starting image). Both ``None`` (the default) keeps the txt2img,
         byte-identical behaviour (the post-publish picture editor uses these; §post-publish edits).
+
+        ``quality`` is the service's quality tier (``"fast"``/``"standard"``/``"high"``); ``None``
+        (the default) leaves the service on its configured default, byte-identical to the pre-edit
+        request. Exposed to the post-publish picture editor for full imagegen-harness parity.
         """
         ...
 
@@ -122,6 +127,7 @@ class RealImagegenClient:
         reference_start: float | None = None,
         init_image: bytes | None = None,
         denoise: float | None = None,
+        quality: str | None = None,
     ) -> bytes:
         """``POST /generate`` → PNG bytes. Maps 503/conn → GpuUnavailable, 422 → UnitFailed."""
         if self._base is None:
@@ -134,6 +140,10 @@ class RealImagegenClient:
         }
         if seed is not None:
             body["seed"] = seed
+        # Only forward `quality` when set, so a default-tier request stays byte-identical to the
+        # pre-edit client (the service falls back to its configured default tier).
+        if quality is not None:
+            body["quality"] = quality
         # Only forward `style` when set, so prompt-only styles produce byte-identical requests
         # to the pre-ADR-0013 client (the service applies the named preset's LoRA; ADR-0011).
         if style is not None:
@@ -210,6 +220,32 @@ class RealImagegenClient:
         except Exception:
             return empty
 
+    async def styles(self) -> dict[str, Any]:
+        """GET /styles → the installed LoRA style presets for a picker (ADR-0013), best-effort.
+
+        Returns ``{"styles": [{"name": str, "hasLora": bool}, …], "reachable": bool}``. Any failure
+        yields an empty, unreachable result (never raises), so the editor's Style picker degrades to
+        the local styles catalog instead of 500ing. The styles-catalog (``data/styles.json``) is
+        the authority on which ids the pipeline wraps; this only surfaces what the service loaded.
+        """
+        empty = {"styles": [], "reachable": False}
+        if self._base is None:
+            return empty
+        try:
+            async with httpx.AsyncClient(timeout=_HEALTH_TIMEOUT_S) as client:
+                resp = await client.get(f"{self._base}/styles")
+            if not resp.is_success:
+                return empty
+            data = resp.json()
+            styles = [
+                {"name": str(s.get("name", "")), "hasLora": bool(s.get("hasLora", False))}
+                for s in (data.get("styles") or [])
+                if s.get("name")
+            ]
+            return {"styles": styles, "reachable": True}
+        except Exception:
+            return empty
+
 
 def _map_error(resp: httpx.Response) -> Exception:
     """Translate a non-2xx /generate response into a phase-control exception (ADR-0011).
@@ -247,6 +283,7 @@ def _digest(
     reference_start: float | None = None,
     init_image: bytes | None = None,
     denoise: float | None = None,
+    quality: str | None = None,
 ) -> str:
     """A stable hex digest of the full render request (drives both color and burned-in text).
 
@@ -277,6 +314,10 @@ def _digest(
         payload += b"\x00init=" + hashlib.sha256(init_image).digest()
         if denoise is not None:
             payload += f"\x00d={denoise}".encode()
+    # A different quality tier produces different pixels, so it must change the stand-in too;
+    # folded only when set, so an unset tier stays byte-identical to the pre-edit fake.
+    if quality is not None:
+        payload += f"\x00q={quality}".encode()
     return hashlib.sha256(payload).hexdigest()
 
 
@@ -301,6 +342,7 @@ class FakeImagegen:
         reference_start: float | None = None,
         init_image: bytes | None = None,
         denoise: float | None = None,
+        quality: str | None = None,
     ) -> bytes:
         return self.render(
             prompt,
@@ -314,10 +356,19 @@ class FakeImagegen:
             reference_start=reference_start,
             init_image=init_image,
             denoise=denoise,
+            quality=quality,
         )
 
     async def health(self) -> bool:
         return True
+
+    async def models(self) -> dict[str, Any]:
+        """No installed models offline — the editor's model picker degrades to the current one."""
+        return {"models": [], "default": None, "reachable": True}
+
+    async def styles(self) -> dict[str, Any]:
+        """No service style presets offline — the editor falls back to the local styles catalog."""
+        return {"styles": [], "reachable": True}
 
     def render(
         self,
@@ -333,12 +384,13 @@ class FakeImagegen:
         reference_start: float | None = None,
         init_image: bytes | None = None,
         denoise: float | None = None,
+        quality: str | None = None,
     ) -> bytes:
         """Synchronous core: deterministic placeholder PNG bytes for ``prompt``."""
         digest = _digest(
             prompt, width, height, seed, style, checkpoint,
             references, reference_strength, reference_start,
-            init_image, denoise,
+            init_image, denoise, quality,
         )
         # Background: a muted color from the digest so distinct prompts look distinct.
         bg = (int(digest[0:2], 16) // 2, int(digest[2:4], 16) // 2, int(digest[4:6], 16) // 2)

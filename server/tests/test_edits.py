@@ -90,17 +90,44 @@ def test_fake_digest_changes_with_init_image(tmp_path) -> None:
     assert plain != with_init  # img2img must produce a visibly distinct stand-in
 
 
+@respx.mock
+def test_client_sends_quality_only_when_set(tmp_path) -> None:
+    route = respx.post("http://ig.local/generate").mock(
+        return_value=httpx.Response(200, content=b"PNGBYTES")
+    )
+    from scriptorium.render.imagegen import RealImagegenClient
+
+    client = RealImagegenClient(_cfg(tmp_path, imagegen_url="http://ig.local"))
+    asyncio.run(client.txt2img("p", quality="high"))
+    assert json.loads(route.calls[-1].request.content)["quality"] == "high"
+
+    asyncio.run(client.txt2img("p"))  # default tier must not carry the field (byte-stable)
+    assert "quality" not in json.loads(route.calls[-1].request.content)
+
+
+def test_fake_bytes_stable_without_quality_but_change_with_it(tmp_path) -> None:
+    fake = FakeImagegen()
+    base = fake.render("p", width=64, height=64)
+    # Unset quality is byte-identical to the pre-edit fake (determinism/round-trip fixtures).
+    assert fake.render("p", width=64, height=64, quality=None) == base
+    # A set tier must produce a visibly distinct stand-in.
+    assert fake.render("p", width=64, height=64, quality="high") != base
+
+
 # --- service: context / candidate / commit ----------------------------------
 
 
 def test_plate_context_prefills_prompt_and_caption(tmp_path) -> None:
     cfg = _cfg(tmp_path)
     _publish_book(cfg)
-    ctx = edits_service.plate_context(cfg, _USER, _BOOK, "0001")
+    ctx = asyncio.run(edits_service.plate_context(cfg, _USER, _BOOK, "0001"))
     assert ctx["prompt"] == "a lamplit workshop"
     assert ctx["caption"] == "a lamp glows"
     assert ctx["denoise_default"] == edits_service.DENOISE_DEFAULT
     assert (ctx["width"], ctx["height"]) == (832, 1216)
+    # The pickers get the local style catalog even with no imagegen service reachable.
+    assert any(s["id"] == "comic-book" for s in ctx["styles"])
+    assert "quality_default" in ctx and "style_id" in ctx
 
 
 def _commit_one(cfg: Config, *, caption: str = "a brighter lamp") -> dict:
@@ -155,9 +182,121 @@ def test_reedit_starts_from_prior_overlay_image(tmp_path) -> None:
     overlay_png = (cfg.artsets_dir / _USER / _BOOK / "edits" / "images" / "plates" / "0001.png")
     first = overlay_png.read_bytes()
     # The context caption now reflects the committed override, not the page ledger.
-    assert edits_service.plate_context(cfg, _USER, _BOOK, "0001")["caption"] == "first"
+    ctx = asyncio.run(edits_service.plate_context(cfg, _USER, _BOOK, "0001"))
+    assert ctx["caption"] == "first"
     _commit_one(cfg, caption="second")
     assert overlay_png.read_bytes() != first  # overwritten in place (private, no -rN history)
+
+
+# --- fidelity: an edit reproduces the ACTIVE reader's style/model (ADR-0034) -----------------
+
+
+class _SpyImagegen:
+    """Records the txt2img request so the test can assert the render was style/model-matched."""
+
+    def __init__(self) -> None:
+        self.calls: list[dict] = []
+
+    async def txt2img(
+        self, prompt, negative="", width=832, height=1216, seed=None, *,
+        style=None, checkpoint=None, references=None, reference_strength=None,
+        reference_start=None, init_image=None, denoise=None, quality=None,
+    ) -> bytes:
+        self.calls.append({
+            "prompt": prompt, "style": style, "checkpoint": checkpoint,
+            "references": references, "quality": quality,
+        })
+        return FakeImagegen().render(prompt, width=width, height=height)
+
+    async def models(self) -> dict:
+        return {"models": ["juggernautXL_ragnarok.safetensors"], "default": None}
+
+    async def health(self) -> bool:
+        return True
+
+
+_SET_ID = "set-0123456789ab"
+_SET_MODEL = "juggernautXL_ragnarok.safetensors"
+
+
+def _add_comic_set(cfg: Config, *, book: str = _BOOK, plate: str = "0001") -> None:
+    """A ready 'Comic Book' style set over the published book: its own checkpoint + rendered plate +
+    portrait, plus the base book's cast + a depicted label that resolves to it."""
+    lib = cfg.library_dir / book
+    # Base book gains a cast + a depicted label so the plate has a character to pin likeness on.
+    (lib / "cast.json").write_text(json.dumps({
+        "characters": [{"slug": "hero", "name": "Hero", "aliases": []}],
+    }), encoding="utf-8")
+    doc = json.loads((lib / "prompts" / f"{plate}.json").read_text("utf-8"))
+    doc["derived"] = {"depicted": ["Hero"]}
+    (lib / "prompts" / f"{plate}.json").write_text(json.dumps(doc), encoding="utf-8")
+
+    set_dir = cfg.artsets_dir / _USER / book / _SET_ID
+    (set_dir / "images" / "plates").mkdir(parents=True, exist_ok=True)
+    (set_dir / "images" / "portraits").mkdir(parents=True, exist_ok=True)
+    (set_dir / "set.json").write_text(json.dumps({
+        "book_id": book, "user_id": _USER, "set_id": _SET_ID, "kind": "style",
+        "style_id": "comic-book", "custom_style": None, "model": _SET_MODEL,
+        "source_revision": 1, "status": "ready",
+    }), encoding="utf-8")
+    (set_dir / "manifest.json").write_text(json.dumps({"files": []}), encoding="utf-8")
+    (set_dir / "images" / "plates" / f"{plate}.png").write_bytes(
+        FakeImagegen().render("comic-plate", width=832, height=1216)
+    )
+    (set_dir / "images" / "portraits" / "hero.png").write_bytes(
+        FakeImagegen().render("hero-portrait", width=1024, height=1024)
+    )
+
+
+def test_edit_on_active_set_reproduces_its_style_and_model(tmp_path) -> None:
+    cfg = _cfg(tmp_path)
+    _publish_book(cfg)
+    _add_comic_set(cfg)
+    spy = _SpyImagegen()
+    asyncio.run(edits_service.generate_candidate(
+        cfg, _USER, _BOOK, "0001", prompt="a lamplit workshop",
+        set_id=_SET_ID, quality="high", client=spy,
+    ))
+    call = spy.calls[-1]
+    # The render is matched to the comic set: its checkpoint, its LoRA style preset, its quality —
+    # and the style wrapping is applied (wrapped prompt differs from the bare subject).
+    assert call["checkpoint"] == _SET_MODEL
+    assert call["style"] == "comic book"
+    assert call["quality"] == "high"
+    assert call["prompt"] != "a lamplit workshop"
+    # The plate's cast portrait is used to keep the character on-model.
+    assert call["references"] is not None
+
+
+def test_edit_records_style_and_model_in_edits_json(tmp_path) -> None:
+    cfg = _cfg(tmp_path)
+    _publish_book(cfg)
+    _add_comic_set(cfg)
+    token = asyncio.run(edits_service.generate_candidate(
+        cfg, _USER, _BOOK, "0001", prompt="a lamplit workshop",
+        set_id=_SET_ID, client=FakeImagegen(),
+    ))["token"]
+    edits_service.commit_edit(cfg, _USER, _BOOK, "0001", token=token, caption="c")
+    doc = json.loads(
+        (cfg.artsets_dir / _USER / _BOOK / "edits" / "edits.json").read_text("utf-8")
+    )
+    schemas.validate("artset-edits", doc)
+    entry = doc["plates"]["0001"]
+    assert entry["style_id"] == "comic-book"
+    assert entry["model"] == _SET_MODEL
+
+
+def test_edit_on_set_starts_from_set_plate_not_base(tmp_path) -> None:
+    cfg = _cfg(tmp_path)
+    _publish_book(cfg)
+    _add_comic_set(cfg)
+    base = (cfg.library_dir / _BOOK / "images" / "plates" / "0001.png").read_bytes()
+    set_plate = (
+        cfg.artsets_dir / _USER / _BOOK / _SET_ID / "images" / "plates" / "0001.png"
+    ).read_bytes()
+    assert base != set_plate  # precondition: the set re-illustrated the plate
+    got = edits_service._current_plate_png(cfg, _USER, _BOOK, "0001", _SET_ID)
+    assert got == set_plate  # img2img starts from what the reader is actually viewing
 
 
 # --- endpoints --------------------------------------------------------------

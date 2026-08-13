@@ -2585,3 +2585,50 @@ generated from the approved cast. See [ADR-0032](docs/adr/0032-cast-review-gate.
 
 **Gates.** ruff clean · eslint + tsc clean (reader, admin-ui) · non-gpu server tests green (536) ·
 admin vitest green · schemas ↔ types in sync (`gen-types` diff clean).
+
+---
+
+## M1 · edit-picture fidelity + full imagegen-harness parity (ADR-0034) (2026-08-13)
+
+**Why.** The post-publish Edit-picture screen (ADR-0033) shipped four controls and produced images
+that matched neither the prompt nor the book: editing a plate while reading the "Comic Book" set
+re-rendered it in the **base book's** photoreal look. Two root causes — the edit ignored the reader
+in view (always used the base book's checkpoint + no style) and it dropped the style wrapping
+entirely — plus it exposed almost none of the imagegen harness. Owner asked for full parity + a fix.
+See [ADR-0034](docs/adr/0034-edit-picture-fidelity-and-parity.md).
+
+**Shipped**
+- **Reader-aware edits (the fix).** `edits.plate_context`/`generate_candidate` take a `set_id`;
+  resolve the active reader's `{style_id, custom_style, model}` from `set.json` (a style set) or
+  `meta.json` (base book), then **reuse the art-set render assembly** — `resolve_style` →
+  `wrap_prompt` (style prefix/suffix + LoRA `imagegen_style`) → the reader's checkpoint →
+  `portrait_reference` cast conditioning. The img2img starting image is now the *set's* rendered
+  plate when a set is active. Default change-amount 0.65 → 0.45 so edits stay on-model.
+- **Full harness parity.** New controls in `EditPicture.tsx`: Negative prompt, Style (catalog),
+  Model (installed checkpoints), Quality, Seed, and a character-likeness section (keep the cast
+  portrait by default + optional uploaded reference photo + likeness-strength override). Each
+  defaults to the active reader's value.
+- **`quality` render param** added through the `ImagegenClient` (protocol, Real, Fake, `_digest`) —
+  forwarded only when set, so existing txt2img requests/fixtures stay byte-identical.
+  `RealImagegenClient.styles()` + `FakeImagegen.models()/styles()` added for the pickers.
+- **Schema.** `artset-edits` gains optional `negative`/`style_id`/`custom_style`/`model`/`quality`/
+  `reference_strength` per plate; regenerated `shared/types` (diff committed). `commit_edit` records
+  them so a re-edit resumes from the last render.
+- **Routes.** `edit_context` is async + passes the client for the model list; candidate body gains
+  `set_id`, the override fields, `use_cast_reference`, and a base64 `reference` upload (decoded +
+  validated server-side). Set ids are validated (`default`/`set-…` only). `GpuUnavailable → 503`.
+- Tests: `test_edits.py` — quality client-wiring + fake byte-stability; an edit on an active comic
+  set renders with the set's checkpoint + `comic book` LoRA + wrapped prompt + cast reference (spy
+  client, shape-only); `edits.json` records style/model; img2img starts from the set plate.
+
+**Decisions**
+- **Match the reader, then allow overrides** (owner: full parity). Defaults come from the active set;
+  every knob is adjustable — no dev-only bypass.
+- **Reference auto-fills from the cast portrait** (owner's call), still overridable by upload.
+- **Prompt field stays the style-neutral subject**; style is applied by `wrap_prompt`, exactly as the
+  bake/set render does — so the Style dropdown, not hand-edited text, drives the look.
+- **Picker lists come through the bakery** (`plate_context`), never a direct reader→imagegen call —
+  the zero-online read path / `shelf/` fence hold.
+
+**Gates.** ruff clean · eslint + tsc clean (reader) · non-gpu server tests green (563) · schemas ↔
+types in sync (`gen-types` diff clean).

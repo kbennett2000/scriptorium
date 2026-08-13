@@ -47,6 +47,30 @@
             "description": "The img2img change amount in (0, 1] used against the previous image, or null for a from-scratch render.",
             "type": ["number", "null"]
           },
+          "negative": {
+            "description": "The negative prompt used for the replacement render (empty ⇒ the style's default negative was used).",
+            "type": "string"
+          },
+          "style_id": {
+            "description": "The illustration style the replacement was rendered under (a styles-catalog id, or 'custom' for a free-text look). Defaults to the style of the reader the edit was made from, so a comic-set page re-renders as comic.",
+            "type": "string"
+          },
+          "custom_style": {
+            "description": "Free-text look when style_id is 'custom' (ADR-0031); null/absent for a catalog style.",
+            "type": ["string", "null"]
+          },
+          "model": {
+            "description": "The base checkpoint (ComfyUI ckpt_name) the replacement was rendered with, or null for the imagegen service's configured default.",
+            "type": ["string", "null"]
+          },
+          "quality": {
+            "description": "The imagegen quality tier ('fast' | 'standard' | 'high') used, or null for the service default.",
+            "type": ["string", "null"]
+          },
+          "reference_strength": {
+            "description": "IP-Adapter likeness strength applied to the character reference photo, or null when no reference was used or the service default was accepted.",
+            "type": ["number", "null"]
+          },
           "created": {
             "description": "ISO-8601 UTC timestamp this edit was committed.",
             "type": "string",

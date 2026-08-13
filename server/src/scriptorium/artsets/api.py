@@ -10,6 +10,8 @@ set-job id (``{book}#{set_id}``) is kept server-internal — ``#`` is a URL-frag
 
 from __future__ import annotations
 
+import base64
+import binascii
 import hashlib
 import json
 import re
@@ -178,6 +180,19 @@ class CandidateBody(BaseModel):
     negative: str | None = None
     seed: int | None = None
     denoise: float | None = None
+    # The reader (base book or a style set) the edit is made from — so the candidate reproduces the
+    # look the user sees. "default"/None ⇒ the base book; a "set-…" id ⇒ that style set.
+    set_id: str | None = None
+    # Full imagegen-harness override controls (ADR-0034); each None ⇒ inherit the active reader's.
+    style_id: str | None = None
+    custom_style: str | None = None
+    model: str | None = None
+    quality: str | None = None
+    # Character likeness: keep the cast portrait as the reference (default), and/or an uploaded
+    # base64 PNG override, with an optional IP-Adapter strength.
+    use_cast_reference: bool = True
+    reference: str | None = None  # base64-encoded PNG (uploaded reference photo)
+    reference_strength: float | None = None
 
 
 class CommitBody(BaseModel):
@@ -190,13 +205,39 @@ def _require_plate(plate_id: str) -> None:
         raise HTTPException(status_code=400, detail=f"bad plate id {plate_id!r}")
 
 
+def _norm_set_id(set_id: str | None) -> str | None:
+    """Validate the active-reader id: ``None``/``"default"`` ⇒ base book; else a ``set-…`` id (400
+    on anything else, so the reserved ``edits`` overlay or a traversal can't slip through)."""
+    if set_id in (None, "", edits_service.DEFAULT_SET_ID):
+        return None
+    if not _SET_RE.match(set_id or ""):
+        raise HTTPException(status_code=400, detail=f"bad set id {set_id!r}")
+    return set_id
+
+
+def _decode_reference(reference: str | None) -> bytes | None:
+    """Decode an uploaded base64 reference photo (400 on malformed base64)."""
+    if not reference:
+        return None
+    try:
+        return base64.b64decode(reference, validate=True)
+    except (binascii.Error, ValueError) as exc:
+        raise HTTPException(status_code=400, detail="bad reference image") from exc
+
+
 @router.get("/artsets/{user}/{book}/edits/{plate_id}/context")
-def edit_context(user: str, book: str, plate_id: str) -> dict[str, Any]:
-    """The editor pre-fill for a plate (prompt, seed, size, current caption)."""
+async def edit_context(
+    user: str, book: str, plate_id: str, set_id: str | None = None
+) -> dict[str, Any]:
+    """The editor pre-fill for a plate, matched to the reader (base book or ``set_id``) in view."""
     _require_path(user, book)
     _require_plate(plate_id)
+    cfg = load_config()
     try:
-        return edits_service.plate_context(load_config(), user, book, plate_id)
+        return await edits_service.plate_context(
+            cfg, user, book, plate_id,
+            set_id=_norm_set_id(set_id), client=_imagegen_client(cfg),
+        )
     except LookupError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
 
@@ -213,6 +254,12 @@ async def edit_candidate(
         return await edits_service.generate_candidate(
             cfg, user, book, plate_id,
             prompt=body.prompt, negative=body.negative, seed=body.seed, denoise=body.denoise,
+            set_id=_norm_set_id(body.set_id),
+            style_id=body.style_id, custom_style=body.custom_style, model=body.model,
+            quality=body.quality,
+            use_cast_reference=body.use_cast_reference,
+            reference_image=_decode_reference(body.reference),
+            reference_strength=body.reference_strength,
             client=_imagegen_client(cfg),
         )
     except LookupError as exc:

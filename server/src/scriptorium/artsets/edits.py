@@ -32,16 +32,30 @@ from pathlib import Path
 from typing import Any
 
 from .. import schemas
-from ..bake.phases.p7_render import _asset_spec
+from ..bake.phases.p7_render import (
+    _asset_spec,
+    _is_page_plate,
+    portrait_reference,
+    reference_conditioning,
+    wrap_prompt,
+)
 from ..bake.phases.p8_publish import build_manifest
 from ..config import Config
 from ..render.derivatives import make_derivatives
 from ..render.imagegen import ImagegenClient
+from ..styles import load_styles, resolve_style
 
 #: The reserved set id the overlay is served under (see artsets/api.py serving guard).
 EDITS_SET_ID = "edits"
-#: img2img "change amount" the editor defaults to (matches the imagegen harness).
-DENOISE_DEFAULT = 0.65
+#: The synthetic "base book" reader id (matches the reader's DEFAULT_SET_ID) — no set overlay.
+DEFAULT_SET_ID = "default"
+#: img2img "change amount" the editor defaults to. Kept low so an edit stays on-model (the whole
+#: point of img2img here is to fix one thing, not repaint the plate into a different look).
+DENOISE_DEFAULT = 0.45
+#: Fallback style when a book/set records none (older bundles) — the catalog's empty "No style".
+_FALLBACK_STYLE_ID = "none"
+#: Default imagegen quality tier the editor pre-selects (matches the harness).
+QUALITY_DEFAULT = "standard"
 
 
 class EditError(ValueError):
@@ -85,6 +99,62 @@ def _page_id_of(plate_id: str) -> str:
     return plate_id.split("-", 1)[0]
 
 
+# --- active reader (base book, or the style set being viewed) ----------------
+#
+# An edit must reproduce the look of the reader the user is *actually viewing* (ADR-0033 layers the
+# overlay over "whatever reader is active"). A style set re-illustrates the book under a different
+# style + checkpoint, so editing a comic-set page must re-render comic, not fall back to the book's
+# base look. These helpers resolve the active reader's style/model/init-image/portraits.
+
+
+def _is_set(set_id: str | None) -> bool:
+    """True iff ``set_id`` names a real style set (not the base book / the edits overlay)."""
+    return bool(set_id) and set_id not in (DEFAULT_SET_ID, EDITS_SET_ID)
+
+
+def _set_json(cfg: Config, user: str, book: str, set_id: str) -> dict | None:
+    p = cfg.artsets_dir / user / book / set_id / "set.json"
+    return _read_json(p) if p.is_file() else None
+
+
+def _set_dir_if_ready(cfg: Config, user: str, book: str, set_id: str | None) -> Path | None:
+    """The active set's directory if it is a rendered set, else ``None`` (⇒ use the base book)."""
+    if not _is_set(set_id):
+        return None
+    d = cfg.artsets_dir / user / book / set_id
+    return d if (d / "manifest.json").is_file() else None
+
+
+def _reader_bake_config(cfg: Config, meta: dict, user: str, book: str, set_id: str | None) -> dict:
+    """The ``{style_id, custom_style, model}`` the active reader was rendered with.
+
+    A style set carries its own style + checkpoint in ``set.json``; the base book carries them in
+    ``meta.json`` (``style_id``/``custom_style`` and the publish-pinned ``bake.models.imagegen``).
+    ``model == "unknown"`` (imagegen offline at publish) → ``None`` so the service default is used.
+    """
+    sj = _set_json(cfg, user, book, set_id) if _is_set(set_id) else None
+    if sj is not None:
+        style_id = sj.get("style_id")
+        custom_style = sj.get("custom_style")
+        model = sj.get("model")
+    else:
+        style_id = meta.get("style_id")
+        custom_style = meta.get("custom_style")
+        model = ((meta.get("bake") or {}).get("models") or {}).get("imagegen")
+    model = model if model and model != "unknown" else None
+    return {
+        "style_id": style_id or _FALLBACK_STYLE_ID,
+        "custom_style": custom_style,
+        "model": model,
+    }
+
+
+def _cast_characters(cfg: Config, book: str) -> list[dict]:
+    """The book's full cast (for depicted→slug reference resolution), or [] if it has none."""
+    p = _library(cfg, book) / "cast.json"
+    return (_read_json(p) or {}).get("characters", []) if p.is_file() else []
+
+
 # --- lookups ----------------------------------------------------------------
 
 
@@ -118,12 +188,26 @@ def _rev_of(stem: str, plate_id: str) -> int:
     return 0
 
 
-def _current_plate_png(cfg: Config, user: str, book: str, plate_id: str) -> bytes:
-    """The image the editor starts from: the profile's prior overlay edit if any, else the book's
-    current (highest ``-rN``) archival plate. Raises :class:`EditError` if none exists."""
+def _current_plate_png(
+    cfg: Config, user: str, book: str, plate_id: str, set_id: str | None = None
+) -> bytes:
+    """The image the editor starts from (the img2img starting image), in priority order:
+
+    1. the profile's prior overlay edit for this plate (so re-edits chain from the last result),
+    2. the **active set's** rendered plate, when a style set is being viewed — so an edit repaints
+       the comic image the reader sees, not the book's base plate,
+    3. the book's current (highest ``-rN``) archival plate.
+
+    Raises :class:`EditError` if none exists.
+    """
     overlay = _edits_dir(cfg, user, book) / "images" / "plates" / f"{plate_id}.png"
     if overlay.is_file():
         return overlay.read_bytes()
+    set_dir = _set_dir_if_ready(cfg, user, book, set_id)
+    if set_dir is not None:
+        set_plate = set_dir / "images" / "plates" / f"{plate_id}.png"
+        if set_plate.is_file():
+            return set_plate.read_bytes()
     plates = _library(cfg, book) / "images" / "plates"
     best_path: Path | None = None
     best_rev = 0
@@ -155,22 +239,62 @@ def _current_caption(cfg: Config, user: str, book: str, plate_id: str) -> str:
 # --- public API -------------------------------------------------------------
 
 
-def plate_context(cfg: Config, user: str, book: str, plate_id: str) -> dict:
-    """The editor pre-fill for one plate: subject prompt, negative, seed, size, current caption."""
-    _require_meta(cfg, book)
+def _style_catalog() -> list[dict]:
+    """The pickable illustration styles ``[{id, name}]`` (the styles-catalog is the authority)."""
+    return [{"id": s["id"], "name": s["name"]} for s in load_styles().get("styles", [])]
+
+
+async def plate_context(
+    cfg: Config,
+    user: str,
+    book: str,
+    plate_id: str,
+    *,
+    set_id: str | None = None,
+    client: ImagegenClient | None = None,
+) -> dict:
+    """The editor pre-fill for one plate, matched to the reader (base book or active set) in view.
+
+    Returns the subject prompt + the active reader's style/model/negative so the editor opens
+    already set to reproduce the look the user sees, plus the style catalog and installed-model list
+    for the override pickers. A prior overlay edit takes precedence, so re-opening resumes it.
+    """
+    meta = _require_meta(cfg, book)
     doc = _prompt_doc(cfg, book, plate_id)
     spec = _asset_spec(_edits_dir(cfg, user, book), plate_id)
     params = (doc.get("render") or {}).get("params_echo") or {}
-    prompt = doc.get("final_subject_prompt") or ((doc.get("derived") or {}).get("prompt") or "")
+    subject = doc.get("final_subject_prompt") or ((doc.get("derived") or {}).get("prompt") or "")
+
+    reader_cfg = _reader_bake_config(cfg, meta, user, book, set_id)
+    style = resolve_style(reader_cfg)
+    _, wrapped_negative = wrap_prompt(style, plate_id, doc, meta.get("era"))
+
+    prior = _load_edits(cfg, user, book).get("plates", {}).get(plate_id) or {}
+
+    def _prefer(key: str, fallback: Any) -> Any:
+        return prior[key] if key in prior and prior[key] is not None else fallback
+
+    depicted = (doc.get("derived") or {}).get("depicted") or []
+    models = await client.models() if client is not None else {"models": [], "default": None}
     return {
         "plate_id": plate_id,
-        "prompt": prompt,
-        "negative": doc.get("negative_prompt", ""),
-        "seed": params.get("seed"),
+        "prompt": _prefer("prompt", subject),
+        "negative": _prefer("negative", wrapped_negative),
+        "seed": prior.get("seed", params.get("seed")),
         "width": int(params.get("width", spec.width)),
         "height": int(params.get("height", spec.height)),
-        "denoise_default": DENOISE_DEFAULT,
+        "denoise_default": _prefer("denoise", DENOISE_DEFAULT),
         "caption": _current_caption(cfg, user, book, plate_id),
+        # Style / model of the active reader (or the prior edit), + the override lists.
+        "style_id": _prefer("style_id", reader_cfg["style_id"]),
+        "custom_style": _prefer("custom_style", reader_cfg["custom_style"]),
+        "model": _prefer("model", reader_cfg["model"]),
+        "quality_default": _prefer("quality", QUALITY_DEFAULT),
+        "styles": _style_catalog(),
+        "models": models.get("models", []),
+        "default_model": models.get("default"),
+        # Whether this plate has a cast portrait to pin the character's likeness against.
+        "has_cast_reference": _is_page_plate(plate_id) and bool(depicted),
     }
 
 
@@ -185,40 +309,98 @@ async def generate_candidate(
     negative: str | None = None,
     seed: int | None = None,
     denoise: float | None = None,
+    set_id: str | None = None,
+    style_id: str | None = None,
+    custom_style: str | None = None,
+    model: str | None = None,
+    quality: str | None = None,
+    use_cast_reference: bool = True,
+    reference_image: bytes | None = None,
+    reference_strength: float | None = None,
 ) -> dict:
-    """img2img-render a candidate from the current plate image; store in scratch; return its token.
+    """img2img-render a candidate matched to the active reader; store in scratch; return its token.
+
+    Reproduces the bake/art-set render assembly (:mod:`scriptorium.artsets.phase`): the subject
+    prompt is style-wrapped with the resolved style (prefix/suffix + LoRA preset), rendered on the
+    reader's checkpoint, and conditioned on the plate's character portrait so the edit stays on the
+    book's look and on-model — the fix for edits reverting to the base checkpoint's raw style.
 
     The candidate is NOT visible in the book until :func:`commit_edit`. Raises ``LookupError`` if
     the book/plate is unknown, :class:`EditError` if there is no image to start from, and propagates
     ``GpuUnavailable`` from the client.
     """
     meta = _require_meta(cfg, book)
-    _prompt_doc(cfg, book, plate_id)  # 404 on an unknown plate
+    base_doc = _prompt_doc(cfg, book, plate_id)  # 404 on an unknown plate; subject + derived
     spec = _asset_spec(_edits_dir(cfg, user, book), plate_id)
-    init_png = _current_plate_png(cfg, user, book, plate_id)
-    checkpoint = ((meta.get("bake") or {}).get("models") or {}).get("imagegen")
-    checkpoint = checkpoint if checkpoint and checkpoint != "unknown" else None
+    init_png = _current_plate_png(cfg, user, book, plate_id, set_id)
+
+    # Resolve style/model: an explicit picker choice overrides the active reader's own values.
+    reader_cfg = _reader_bake_config(cfg, meta, user, book, set_id)
+    bake_config = {
+        "style_id": style_id or reader_cfg["style_id"],
+        "custom_style": custom_style if custom_style is not None else reader_cfg["custom_style"],
+        "model": model if model is not None else reader_cfg["model"],
+    }
+    style = resolve_style(bake_config)
+    # Wrap the (possibly edited) subject with the active style, exactly as P7/the set render does.
+    doc = {"final_subject_prompt": prompt, "derived": base_doc.get("derived") or {}}
+    wrapped, wrapped_neg = wrap_prompt(style, plate_id, doc, meta.get("era"))
+    neg = negative if negative is not None else wrapped_neg
+
+    # Character likeness: an uploaded photo overrides; else the plate's cast portrait (ADR-0023).
+    depicted = (base_doc.get("derived") or {}).get("depicted") or []
+    references: list[bytes] | None = None
+    if reference_image is not None:
+        references = [reference_image]
+    elif use_cast_reference and _is_page_plate(plate_id):
+        set_dir = _set_dir_if_ready(cfg, user, book, set_id)
+        portraits_dir = (
+            (set_dir / "images" / "portraits")
+            if set_dir is not None
+            else _library(cfg, book) / "images" / "portraits"
+        )
+        references, _ = portrait_reference(depicted, _cast_characters(cfg, book), portraits_dir)
+    default_strength, ref_start = reference_conditioning(depicted)
+    strength = reference_strength if reference_strength is not None else default_strength
+
     dz = DENOISE_DEFAULT if denoise is None else float(denoise)
+    q = quality or None
 
     png = await client.txt2img(
-        prompt,
-        negative or "",
+        wrapped,
+        neg,
         spec.width,
         spec.height,
         seed,
-        checkpoint=checkpoint,
+        style=style.get("imagegen_style"),
+        checkpoint=bake_config["model"],
+        references=references,
+        reference_strength=strength if references else None,
+        reference_start=ref_start if references else None,
         init_image=init_png,
         denoise=dz,
+        quality=q,
     )
 
     token = secrets.token_hex(8)
     cand = _candidates_dir(cfg, user, book) / f"{token}.png"
     cand.parent.mkdir(parents=True, exist_ok=True)
     cand.write_bytes(png)
-    # Record the params the candidate was made with, so commit records them in edits.json.
+    # Record the params the candidate was made with, so commit records them in edits.json. The
+    # subject prompt (not the wrapped string) is stored so a re-edit pre-fills the editable field.
     _write_json(
         cand.with_suffix(".json"),
-        {"prompt": prompt, "seed": seed, "denoise": dz},
+        {
+            "prompt": prompt,
+            "seed": seed,
+            "denoise": dz,
+            "negative": neg,
+            "style_id": bake_config["style_id"],
+            "custom_style": bake_config["custom_style"],
+            "model": bake_config["model"],
+            "quality": q,
+            "reference_strength": strength if references else None,
+        },
     )
     return {"token": token, "width": spec.width, "height": spec.height}
 
@@ -254,13 +436,19 @@ def commit_edit(
     edits["user_id"] = user
     edits["source_revision"] = source_rev
     plates = edits.setdefault("plates", {})
-    plates[plate_id] = {
+    entry = {
         "caption": caption,
         "prompt": str(cand_meta.get("prompt", "")),
         "seed": cand_meta.get("seed"),
         "denoise": cand_meta.get("denoise"),
         "created": _now_iso(),
     }
+    # Record the style/model/negative/quality the replacement was rendered with, so a later re-edit
+    # resumes from them and the edit is self-describing (only when the candidate captured them).
+    for key in ("negative", "style_id", "custom_style", "model", "quality", "reference_strength"):
+        if cand_meta.get(key) is not None:
+            entry[key] = cand_meta[key]
+    plates[plate_id] = entry
     schemas.validate("artset-edits", edits)
     _write_json(_edits_json_path(cfg, user, book), edits)
 

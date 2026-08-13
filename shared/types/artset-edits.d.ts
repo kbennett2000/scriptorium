@@ -42,6 +42,30 @@ export interface ArtsetEdits {
        */
       denoise?: number | null;
       /**
+       * The negative prompt used for the replacement render (empty ⇒ the style's default negative was used).
+       */
+      negative?: string;
+      /**
+       * The illustration style the replacement was rendered under (a styles-catalog id, or 'custom' for a free-text look). Defaults to the style of the reader the edit was made from, so a comic-set page re-renders as comic.
+       */
+      style_id?: string;
+      /**
+       * Free-text look when style_id is 'custom' (ADR-0031); null/absent for a catalog style.
+       */
+      custom_style?: string | null;
+      /**
+       * The base checkpoint (ComfyUI ckpt_name) the replacement was rendered with, or null for the imagegen service's configured default.
+       */
+      model?: string | null;
+      /**
+       * The imagegen quality tier ('fast' | 'standard' | 'high') used, or null for the service default.
+       */
+      quality?: string | null;
+      /**
+       * IP-Adapter likeness strength applied to the character reference photo, or null when no reference was used or the service default was accepted.
+       */
+      reference_strength?: number | null;
+      /**
        * ISO-8601 UTC timestamp this edit was committed.
        */
       created: string;

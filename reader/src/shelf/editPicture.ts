@@ -10,6 +10,12 @@ import { ApiError } from "./client";
 const BASE = import.meta.env.VITE_SERVER_URL ?? "";
 const EDITS_SET = "edits";
 
+/** A pickable illustration style (styles catalog, from the server). */
+export interface StyleOption {
+  id: string;
+  name: string;
+}
+
 /** The editor pre-fill for one plate (mirrors the server's edits.plate_context). */
 export interface EditContext {
   plate_id: string;
@@ -20,6 +26,17 @@ export interface EditContext {
   height: number;
   denoise_default: number;
   caption: string;
+  /** Style/model of the reader (base book or active set) this edit derives from — picker defaults. */
+  style_id: string;
+  custom_style: string | null;
+  model: string | null;
+  quality_default: string;
+  /** Override lists for the pickers. */
+  styles: StyleOption[];
+  models: string[];
+  default_model: string | null;
+  /** True iff this plate has a cast portrait to pin the character's likeness against. */
+  has_cast_reference: boolean;
 }
 
 /** A generated-but-uncommitted candidate. */
@@ -34,6 +51,17 @@ export interface GenerateBody {
   negative?: string;
   seed?: number | null;
   denoise?: number;
+  /** The reader the edit is made from ("default" ⇒ base book, or a "set-…" id). */
+  set_id?: string;
+  /** Full harness override controls (each omitted ⇒ inherit the active reader's). */
+  style_id?: string;
+  custom_style?: string | null;
+  model?: string | null;
+  quality?: string;
+  /** Character likeness: keep the cast portrait (default) and/or an uploaded base64 PNG override. */
+  use_cast_reference?: boolean;
+  reference?: string | null;
+  reference_strength?: number | null;
 }
 
 function seg(s: string): string {
@@ -48,8 +76,10 @@ export async function fetchEditContext(
   user: string,
   book: string,
   plateId: string,
+  setId?: string,
 ): Promise<EditContext> {
-  const resp = await fetch(`${BASE}${plateBase(user, book, plateId)}/context`);
+  const q = setId ? `?set_id=${seg(setId)}` : "";
+  const resp = await fetch(`${BASE}${plateBase(user, book, plateId)}/context${q}`);
   if (!resp.ok) throw new ApiError(resp.status, `GET edit context → ${resp.status}`);
   return (await resp.json()) as EditContext;
 }

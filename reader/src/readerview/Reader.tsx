@@ -831,6 +831,7 @@ export function Reader({
           user={user}
           book={bookId}
           plateId={editTarget.plateId}
+          setId={activeSetId}
           storage={storage}
           currentSrc={editTarget.src}
           onDone={(changed) => {
