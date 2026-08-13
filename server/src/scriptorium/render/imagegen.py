@@ -16,7 +16,10 @@ The bake's render phase (P7) talks to an image-generation service only through t
 Style rides in ``prompt``/``negative`` *and*, optionally, in the imagegen-service ``style`` preset:
 passing ``style`` (an imagegen preset name like ``"oil painting"``) makes the service apply that
 style's LoRA (ADR-0013). ``style=None`` (the default) is the original prompt-only, byte-identical
-behaviour. Sizes come from the caller (P7): plate/cover 832×1216, portrait 1024×1024.
+behaviour. ``checkpoint`` (ADR-0030) is an orthogonal axis: the base SDXL model to render with (a
+ComfyUI ``ckpt_name`` from the service's ``/health`` ``checkpoints`` list); ``None`` leaves the
+service on its configured default, byte-identical to the pre-ADR-0030 client. Sizes come from the
+caller (P7): plate/cover 832×1216, portrait 1024×1024.
 imagegen-service honours ``width``/``height`` only once the S10a size PR (this cycle) is
 merged+deployed; older builds ignore them (fixed 1024²).
 """
@@ -56,11 +59,15 @@ class ImagegenClient(Protocol):
         height: int = PLATE_SIZE[1],
         seed: int | None = None,
         style: str | None = None,
+        checkpoint: str | None = None,
         references: list[bytes] | None = None,
         reference_strength: float | None = None,
         reference_start: float | None = None,
     ) -> bytes:
         """Render ``prompt`` to PNG bytes at ``width``×``height``, optionally under ``style``.
+
+        ``checkpoint`` selects the base SDXL model (a ComfyUI ``ckpt_name``); ``None`` uses the
+        service's configured default (ADR-0030).
 
         ``references`` is an optional list of reference-image PNG bytes (a character's portrait) fed
         to the service as image-prompt conditioning for character consistency (ADR-0023). ``None``
@@ -102,6 +109,7 @@ class RealImagegenClient:
         height: int = PLATE_SIZE[1],
         seed: int | None = None,
         style: str | None = None,
+        checkpoint: str | None = None,
         references: list[bytes] | None = None,
         reference_strength: float | None = None,
         reference_start: float | None = None,
@@ -121,6 +129,11 @@ class RealImagegenClient:
         # to the pre-ADR-0013 client (the service applies the named preset's LoRA; ADR-0011).
         if style is not None:
             body["style"] = style
+        # Only forward `checkpoint` when set: the service falls back to its configured default
+        # (precedence request > config > workflow), so an unset model is byte-identical to the
+        # pre-ADR-0030 request. The service/ComfyUI is the authority on which names exist.
+        if checkpoint is not None:
+            body["checkpoint"] = checkpoint
         # Only forward `references` when set: the service switches to the IP-Adapter workflow and
         # conditions on these portrait images (ADR-0023). Absent → prompt-only, byte-identical.
         if references:
@@ -155,6 +168,33 @@ class RealImagegenClient:
         except Exception:
             return False
 
+    async def models(self) -> dict[str, Any]:
+        """GET /health → the installed base models for a picker (ADR-0030), best-effort.
+
+        Returns ``{"models": [ckpt_name, …], "default": ckpt_name | None, "reachable": bool}``.
+        The service already exposes the full ComfyUI checkpoint list under ``checkpoints`` and the
+        effective default under ``checkpoint``. Any failure yields an empty, unreachable result
+        (never raises) so the admin picker degrades gracefully instead of 500ing.
+        """
+        empty = {"models": [], "default": None, "reachable": False}
+        if self._base is None:
+            return empty
+        try:
+            async with httpx.AsyncClient(timeout=_HEALTH_TIMEOUT_S) as client:
+                resp = await client.get(f"{self._base}/health")
+            if not resp.is_success:
+                return empty
+            data = resp.json()
+            models = [str(m) for m in (data.get("checkpoints") or [])]
+            default = data.get("checkpoint")
+            return {
+                "models": models,
+                "default": str(default) if default else None,
+                "reachable": bool(data.get("comfyuiReachable", False)),
+            }
+        except Exception:
+            return empty
+
 
 def _map_error(resp: httpx.Response) -> Exception:
     """Translate a non-2xx /generate response into a phase-control exception (ADR-0011).
@@ -186,6 +226,7 @@ def _digest(
     height: int,
     seed: int | None,
     style: str | None = None,
+    checkpoint: str | None = None,
     references: list[bytes] | None = None,
     reference_strength: float | None = None,
     reference_start: float | None = None,
@@ -194,11 +235,15 @@ def _digest(
 
     Every optional argument is folded in only when set, so the default (``None``) yields
     byte-identical placeholders to the pre-existing fake (determinism/round-trip fixtures stay
-    green), while distinct styles/references/conditioning produce visibly distinct stand-ins.
+    green), while distinct styles/models/references/conditioning produce visibly distinct stand-ins.
     """
     payload = f"{prompt}\x00{width}x{height}\x00{seed}".encode()
     if style is not None:
         payload += f"\x00{style}".encode()
+    # A different base model produces different pixels, so it must change the stand-in too;
+    # folded only when set, so an unset model stays byte-identical to the pre-ADR-0030 fake.
+    if checkpoint is not None:
+        payload += f"\x00ckpt={checkpoint}".encode()
     if references:
         # Fold a hash of each reference's bytes (not the raw bytes) to keep the payload small.
         for ref in references:
@@ -227,6 +272,7 @@ class FakeImagegen:
         height: int = PLATE_SIZE[1],
         seed: int | None = None,
         style: str | None = None,
+        checkpoint: str | None = None,
         references: list[bytes] | None = None,
         reference_strength: float | None = None,
         reference_start: float | None = None,
@@ -237,6 +283,7 @@ class FakeImagegen:
             height=height,
             seed=seed,
             style=style,
+            checkpoint=checkpoint,
             references=references,
             reference_strength=reference_strength,
             reference_start=reference_start,
@@ -253,13 +300,15 @@ class FakeImagegen:
         height: int = PLATE_SIZE[1],
         seed: int | None = None,
         style: str | None = None,
+        checkpoint: str | None = None,
         references: list[bytes] | None = None,
         reference_strength: float | None = None,
         reference_start: float | None = None,
     ) -> bytes:
         """Synchronous core: deterministic placeholder PNG bytes for ``prompt``."""
         digest = _digest(
-            prompt, width, height, seed, style, references, reference_strength, reference_start
+            prompt, width, height, seed, style, checkpoint,
+            references, reference_strength, reference_start,
         )
         # Background: a muted color from the digest so distinct prompts look distinct.
         bg = (int(digest[0:2], 16) // 2, int(digest[2:4], 16) // 2, int(digest[4:6], 16) // 2)

@@ -28,6 +28,8 @@ export type SetRow = Summary & {
 export interface Artsets {
   sets: SetRow[];
   styles: StyleOption[];
+  /** Installed base models a new set may render with (ADR-0030); empty when imagegen is unreachable. */
+  models: string[];
   online: boolean;
   busy: boolean;
   error: string | null;
@@ -35,7 +37,7 @@ export interface Artsets {
   /** Switch to a set (downloading it first if it's ready but not yet on this device). */
   choose: (setId: string) => Promise<void>;
   /** Make a new set — a chosen style, or a re-roll of the book's style. Auto-downloads + switches. */
-  create: (kind: "style" | "reroll", styleId?: string) => Promise<void>;
+  create: (kind: "style" | "reroll", styleId?: string, model?: string | null) => Promise<void>;
   /** Delete a personal set (server + this device); reverts to Default if it was active. */
   remove: (setId: string) => Promise<void>;
   /** Retry a failed set: delete it, then make a fresh one with the same style. */
@@ -66,6 +68,7 @@ export function useArtsets(
   const { activeSetId, chooseSet } = useActiveSet(storage, user, book);
   const [sets, setSets] = useState<SetRow[]>([DEFAULT_ROW]);
   const [styles, setStyles] = useState<StyleOption[]>([]);
+  const [models, setModels] = useState<string[]>([]);
   const [online, setOnline] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -182,6 +185,24 @@ export function useArtsets(
     };
   }, [open, online, styles.length, api]);
 
+  // Load the installed base-model list once per open (ADR-0030). Best-effort: a failure leaves the
+  // list empty, so the picker just omits the model chooser and the server uses its default.
+  useEffect(() => {
+    if (!open || !online || models.length > 0) return;
+    let live = true;
+    void api
+      .fetchModels()
+      .then((m) => {
+        if (live) setModels(m.models);
+      })
+      .catch(() => {
+        /* models are optional advanced chrome; sets render fine on the service default */
+      });
+    return () => {
+      live = false;
+    };
+  }, [open, online, models.length, api]);
+
   // Poll while any set is still generating (or a create is pending), until it settles.
   useEffect(() => {
     if (!open || !online) return;
@@ -204,11 +225,11 @@ export function useArtsets(
   );
 
   const create = useCallback(
-    async (kind: "style" | "reroll", styleId?: string): Promise<void> => {
+    async (kind: "style" | "reroll", styleId?: string, model?: string | null): Promise<void> => {
       setBusy(true);
       setError(null);
       try {
-        const made = await api.createSet(user, book, { kind, style_id: styleId });
+        const made = await api.createSet(user, book, { kind, style_id: styleId, model });
         pendingRef.current = made.set_id;
         await refresh();
       } catch (e) {
@@ -250,5 +271,5 @@ export function useArtsets(
     [sets, remove, create],
   );
 
-  return { sets, styles, online, busy, error, activeSetId, choose, create, remove, retry };
+  return { sets, styles, models, online, busy, error, activeSetId, choose, create, remove, retry };
 }

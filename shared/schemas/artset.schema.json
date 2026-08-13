@@ -37,6 +37,10 @@
       "type": "string",
       "minLength": 1
     },
+    "model": {
+      "description": "Base SDXL model / checkpoint this set was rendered with (a ComfyUI ckpt_name; ADR-0030), or null to have used the imagegen service's configured default. Absent on sets created before ADR-0030.",
+      "type": ["string", "null"]
+    },
     "source_revision": {
       "description": "The book revision whose frozen selection/prompts this set derived from.",
       "type": "integer",

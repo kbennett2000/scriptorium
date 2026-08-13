@@ -62,3 +62,61 @@ def test_fake_distinct_styles_differ() -> None:
     anime = asyncio.run(FakeImagegen().txt2img("p", seed=1, style="anime"))
     assert base != oil
     assert oil != anime
+
+
+# --- checkpoint / base-model selection (ADR-0030) ---------------------------
+
+
+@respx.mock
+def test_checkpoint_omitted_from_body_when_none() -> None:
+    respx.post(f"{_BASE}/generate").mock(return_value=httpx.Response(200, content=_PNG))
+    asyncio.run(_client().txt2img("a quiet room", "", 832, 1216, 5))
+    import json
+
+    assert "checkpoint" not in json.loads(respx.calls.last.request.read())
+
+
+@respx.mock
+def test_checkpoint_forwarded_when_set() -> None:
+    respx.post(f"{_BASE}/generate").mock(return_value=httpx.Response(200, content=_PNG))
+    asyncio.run(
+        _client().txt2img("a quiet room", "", 832, 1216, 5, checkpoint="dreamshaper.safetensors")
+    )
+    import json
+
+    assert json.loads(respx.calls.last.request.read())["checkpoint"] == "dreamshaper.safetensors"
+
+
+def test_fake_checkpoint_none_matches_no_checkpoint_arg() -> None:
+    # Byte-stability: an unset model must not change the placeholder vs. omitting it (ADR-0030).
+    a = asyncio.run(FakeImagegen().txt2img("p", seed=1))
+    b = asyncio.run(FakeImagegen().txt2img("p", seed=1, checkpoint=None))
+    assert a == b
+
+
+def test_fake_distinct_checkpoints_differ() -> None:
+    base = asyncio.run(FakeImagegen().txt2img("p", seed=1))
+    a = asyncio.run(FakeImagegen().txt2img("p", seed=1, checkpoint="a.safetensors"))
+    b = asyncio.run(FakeImagegen().txt2img("p", seed=1, checkpoint="b.safetensors"))
+    assert base != a
+    assert a != b
+
+
+@respx.mock
+def test_models_lists_installed_checkpoints() -> None:
+    respx.get(f"{_BASE}/health").mock(return_value=httpx.Response(200, json={
+        "comfyuiReachable": True,
+        "checkpoint": "sd_xl_base_1.0.safetensors",
+        "checkpoints": ["sd_xl_base_1.0.safetensors", "dreamshaper.safetensors"],
+    }))
+    out = asyncio.run(_client().models())
+    assert out == {
+        "models": ["sd_xl_base_1.0.safetensors", "dreamshaper.safetensors"],
+        "default": "sd_xl_base_1.0.safetensors",
+        "reachable": True,
+    }
+
+
+def test_models_empty_when_unconfigured() -> None:
+    unset = RealImagegenClient(SimpleNamespace(imagegen_url=None))  # type: ignore[arg-type]
+    assert asyncio.run(unset.models()) == {"models": [], "default": None, "reachable": False}

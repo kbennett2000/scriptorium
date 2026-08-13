@@ -450,6 +450,30 @@ def test_curated_render_does_not_override_owner_portrait(tmp_path) -> None:
 
 
 @respx.mock
+def test_bake_model_reaches_the_imagegen_client(tmp_path) -> None:
+    # ADR-0030: a book's chosen base model (bake_config["model"]) is forwarded as the txt2img
+    # `checkpoint` for every plate; unset → checkpoint stays None (service default).
+    cfg = _cfg(tmp_path)
+    _seed(cfg)
+    job = jobmod.load(cfg, "b")
+    job.bake_config["model"] = "dreamshaper.safetensors"
+    job.save(cfg)
+    respx.post(f"{TTS}/v1/models/unload").mock(return_value=httpx.Response(200, json={}))
+
+    seen: list[str | None] = []
+
+    class _RecordingImagegen(FakeImagegen):
+        async def txt2img(self, *args, checkpoint=None, **kwargs) -> bytes:
+            seen.append(checkpoint)
+            return await super().txt2img(*args, checkpoint=checkpoint, **kwargs)
+
+    job = _drive(cfg, _RecordingImagegen())
+    assert job.state == JobState.RENDERED
+    assert seen, "no plate rendered"
+    assert set(seen) == {"dreamshaper.safetensors"}  # every plate used the chosen model
+
+
+@respx.mock
 def test_off_flag_portrait_rendered_once_not_double(tmp_path) -> None:
     # Byte-stability guard: with the flag off, PortraitRender draws the portrait and Render's
     # portraits-first list skips it (existence-based), so it is rendered exactly once as before.

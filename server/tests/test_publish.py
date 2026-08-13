@@ -134,6 +134,21 @@ def test_publish_phase_transitions_rendered_to_published(tmp_path) -> None:
     assert phase.from_state == JobState.RENDERED and phase.to_state == JobState.PUBLISHED
 
 
+def test_chosen_model_is_pinned_in_meta_provenance(tmp_path) -> None:
+    # ADR-0030: a book's chosen base model overrides the service-reported imagegen tag in meta, so
+    # re-renders (post-publish -rN, art-set re-rolls) can reproduce this book's exact model.
+    from scriptorium.bake.phases.p8_publish import build_meta
+    cfg, book_id, library = _published(tmp_path)
+    job = jobmod.load(cfg, book_id)
+
+    default = build_meta(cfg, job, library, revision=1)["bake"]["models"]["imagegen"]
+    assert default == "unknown"  # no IMAGEGEN_URL in the offline harness → service-reported default
+
+    job.bake_config["model"] = "chosen.safetensors"
+    pinned = build_meta(cfg, job, library, revision=1)["bake"]["models"]["imagegen"]
+    assert pinned == "chosen.safetensors"
+
+
 @pytest.fixture
 def published_client(monkeypatch, tmp_path):
     """A TestClient over a data dir that already holds a published bundle + its job."""

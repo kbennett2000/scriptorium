@@ -102,6 +102,13 @@ export interface ReviewPayload {
   portrait_rendered: Record<string, boolean>;
 }
 
+// GET /api/admin/models (bake/api.py list_models) — installed base models for the picker (ADR-0030).
+export interface ModelList {
+  models: string[];
+  default: string | null;
+  reachable: boolean;
+}
+
 // GET /api/admin/gutendex?q= (one trimmed result).
 export interface GutendexResult {
   id: number | null;
@@ -130,6 +137,8 @@ export interface CreateBookBody {
     // Optional portrait-review gate (ADR-0025): pause after portraits render so the owner can
     // eyeball / edit / regenerate each one before the rest of the book draws.
     portrait_review: boolean;
+    // Optional base model / checkpoint (ADR-0030); null → the imagegen service's default.
+    model?: string | null;
     title?: string | null;
     author?: string | null;
   };

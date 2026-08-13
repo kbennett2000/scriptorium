@@ -220,6 +220,7 @@ class SetRender:
             spec,
             seed,
             style.get("imagegen_style"),
+            checkpoint=job.bake_config.get("model"),
             references=references,
             reference_strength=strength,
             reference_start=start,

@@ -56,6 +56,9 @@ class FakeApi implements ArtsetApi {
   async fetchStyles(): Promise<StyleOption[]> {
     return STYLES;
   }
+  async fetchModels(): Promise<{ models: string[]; default: string | null }> {
+    return { models: [], default: null };
+  }
   markReady(setId: string) {
     const s = this.sets.get(setId);
     if (s) s.status = "ready";
@@ -93,6 +96,7 @@ function Harness({ api, download, storage }: { api: ArtsetApi; download: ArtsetC
     <SetPicker
       sets={a.sets}
       styles={a.styles}
+      models={a.models}
       activeSetId={a.activeSetId}
       online={a.online}
       busy={a.busy}

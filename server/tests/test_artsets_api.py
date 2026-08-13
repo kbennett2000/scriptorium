@@ -95,6 +95,33 @@ def test_reroll_defaults_to_the_books_style(client, tmp_path) -> None:
     assert resp.json()["style_id"] == "engraving"
 
 
+def test_style_set_records_chosen_model(client, tmp_path) -> None:
+    # ADR-0030: a chosen base model is stored on set.json and on the set's render job's bake_config.
+    book = _publish(tmp_path)
+    resp = client.post(f"/api/artsets/kris/{book}", json={
+        "kind": "style", "style_id": "engraving", "model": "dreamshaper.safetensors"})
+    assert resp.status_code == 200
+    doc = resp.json()
+    schemas.validate("artset", doc)
+    assert doc["model"] == "dreamshaper.safetensors"
+    job = json.loads((tmp_path / "jobs" / f"{book}#{doc['set_id']}.json").read_text("utf-8"))
+    assert job["bake_config"]["model"] == "dreamshaper.safetensors"
+
+
+def test_reroll_defaults_model_from_the_books_pinned_model(client, tmp_path) -> None:
+    # A re-roll reproduces the book's own model, pinned at publish in meta.bake.models.imagegen.
+    book = "usr-abc123def456"
+    lib = tmp_path / "library" / book
+    lib.mkdir(parents=True, exist_ok=True)
+    (lib / "meta.json").write_text(json.dumps({
+        "book_id": book, "revision": 1, "title": "T", "author": "A", "style_id": "engraving",
+        "bake": {"models": {"imagegen": "chosen.safetensors"}},
+    }), encoding="utf-8")
+    resp = client.post(f"/api/artsets/kris/{book}", json={"kind": "reroll"})
+    assert resp.status_code == 200
+    assert resp.json()["model"] == "chosen.safetensors"
+
+
 def test_create_unknown_style_is_400(client, tmp_path) -> None:
     book = _publish(tmp_path)
     resp = client.post(f"/api/artsets/kris/{book}", json={"kind": "style", "style_id": "nope"})

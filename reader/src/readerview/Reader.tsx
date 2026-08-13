@@ -809,12 +809,13 @@ export function Reader({
         <SetPicker
           sets={artsets.sets}
           styles={artsets.styles}
+          models={artsets.models}
           activeSetId={activeSetId}
           online={artsets.online}
           busy={artsets.busy}
           error={artsets.error}
           onChoose={(id) => void artsets.choose(id)}
-          onCreate={(kind, styleId) => void artsets.create(kind, styleId)}
+          onCreate={(kind, styleId, model) => void artsets.create(kind, styleId, model)}
           onDelete={(id) => void artsets.remove(id)}
           onRetry={(id) => void artsets.retry(id)}
           onClose={() => setPicsOpen(false)}

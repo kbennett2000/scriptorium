@@ -244,6 +244,10 @@ def build_meta(cfg: Any, job: Job, bundle_dir: Path, revision: int) -> dict:
             "chapters": len(structure.get("chapters", [])),
         },
     }
+    # Pin the *chosen* base model (ADR-0030) as the imagegen provenance tag, overriding the
+    # service-reported default, so re-renders (-rN, re-rolls) reproduce this book's model.
+    if cfgd.get("model"):
+        meta["bake"]["models"]["imagegen"] = str(cfgd["model"])
     schemas.validate("meta", meta)
     return meta
 

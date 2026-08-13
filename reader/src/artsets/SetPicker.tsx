@@ -27,6 +27,7 @@ function primaryLabel(row: SetRow, active: boolean): string {
 export function SetPicker({
   sets,
   styles,
+  models,
   activeSetId,
   online,
   busy,
@@ -39,17 +40,21 @@ export function SetPicker({
 }: {
   sets: SetRow[];
   styles: StyleOption[];
+  models: string[];
   activeSetId: string;
   online: boolean;
   busy: boolean;
   error: string | null;
   onChoose: (setId: string) => void;
-  onCreate: (kind: "style" | "reroll", styleId?: string) => void;
+  onCreate: (kind: "style" | "reroll", styleId?: string, model?: string | null) => void;
   onDelete: (setId: string) => void;
   onRetry: (setId: string) => void;
   onClose: () => void;
 }) {
   const [adding, setAdding] = useState(false);
+  // "" → omit the model so the home server picks its default image engine (ADR-0030).
+  const [model, setModel] = useState<string>("");
+  const chosenModel = model || undefined;
 
   return (
     <section className="setpicker" role="dialog" aria-label="Pictures">
@@ -132,12 +137,25 @@ export function SetPicker({
         (adding ? (
           <div className="setpicker-new" role="group" aria-label="New picture set">
             <p className="setpicker-new-title">Pick a look for a new set:</p>
+            {models.length > 0 && (
+              <label className="setpicker-model">
+                Image engine
+                <select value={model} onChange={(e) => setModel(e.target.value)} disabled={busy}>
+                  <option value="">Automatic</option>
+                  {models.map((m) => (
+                    <option key={m} value={m}>
+                      {m}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            )}
             <button
               type="button"
               className="setpicker-style"
               disabled={busy}
               onClick={() => {
-                onCreate("reroll");
+                onCreate("reroll", undefined, chosenModel);
                 setAdding(false);
               }}
             >
@@ -150,7 +168,7 @@ export function SetPicker({
                 className="setpicker-style"
                 disabled={busy}
                 onClick={() => {
-                  onCreate("style", st.id);
+                  onCreate("style", st.id, chosenModel);
                   setAdding(false);
                 }}
               >

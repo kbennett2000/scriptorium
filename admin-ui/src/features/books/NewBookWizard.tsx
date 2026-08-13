@@ -1,6 +1,6 @@
 import { useState } from "react";
 
-import { createBook, getStyles, searchGutendex } from "../../api/client";
+import { createBook, getModels, getStyles, searchGutendex } from "../../api/client";
 import { StyleSwatch } from "../../components/StyleSwatch";
 import { ErrorNotice, useAsync } from "../../components/common";
 import type { CreateBookBody, DensityPreset, GutendexResult } from "../../api/types";
@@ -22,6 +22,10 @@ export function NewBookWizard() {
   const styleList = (styles.data?.styles ?? [])
     .slice()
     .sort((a, b) => Number(b.consistency_friendly) - Number(a.consistency_friendly));
+  // Installed base models for the optional picker (ADR-0030); best-effort — empty when the imagegen
+  // service is unreachable, in which case we simply don't show the picker and use the service default.
+  const models = useAsync(() => getModels(), []);
+  const modelList = models.data?.models ?? [];
 
   const [mode, setMode] = useState<SourceMode>("gutenberg");
   const [kind, setKind] = useState<"text" | "markdown">("markdown");
@@ -35,6 +39,8 @@ export function NewBookWizard() {
   const [era, setEra] = useState("");
 
   const [styleId, setStyleId] = useState<string | null>(null);
+  // null → let the imagegen service pick its default model (ADR-0030).
+  const [model, setModel] = useState<string | null>(null);
   const [density, setDensity] = useState<DensityPreset>("classic");
   const [imagesPerScene, setImagesPerScene] = useState(1);
   const [portraits, setPortraits] = useState(true);
@@ -85,6 +91,7 @@ export function NewBookWizard() {
         era: era || null,
         portraits_enabled: portraits,
         portrait_review: portraits && portraitReview,
+        model,
         title: title || null,
         author: author || null,
       },
@@ -251,6 +258,34 @@ export function NewBookWizard() {
             </button>
           ))}
         </div>
+
+        {/* Optional base model (ADR-0030). Only shown when the imagegen service lists installed
+            checkpoints; otherwise the bake uses the service's own default. */}
+        {modelList.length > 0 && (
+          <div style={{ marginTop: 10 }}>
+            <label className="portrait-label" htmlFor="model-select">
+              Base model (advanced)
+            </label>
+            <select
+              id="model-select"
+              value={model ?? ""}
+              onChange={(e) => setModel(e.target.value || null)}
+            >
+              <option value="">
+                Automatic{models.data?.default ? ` (${models.data.default})` : " (service default)"}
+              </option>
+              {modelList.map((m) => (
+                <option key={m} value={m}>
+                  {m}
+                </option>
+              ))}
+            </select>
+            <p className="muted" style={{ fontSize: 11, marginTop: 2 }}>
+              The style sets the look; the model is the underlying image engine. Leave on Automatic
+              unless you know you want a specific checkpoint — it applies to the whole book.
+            </p>
+          </div>
+        )}
       </div>
 
       {/* 4. How many pictures */}

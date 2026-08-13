@@ -33,6 +33,10 @@ export interface Artset {
    */
   style_id?: string;
   /**
+   * Base SDXL model / checkpoint this set was rendered with (a ComfyUI ckpt_name; ADR-0030), or null to have used the imagegen service's configured default. Absent on sets created before ADR-0030.
+   */
+  model?: string | null;
+  /**
    * The book revision whose frozen selection/prompts this set derived from.
    */
   source_revision?: number;

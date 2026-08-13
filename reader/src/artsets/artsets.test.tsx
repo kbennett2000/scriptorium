@@ -45,6 +45,7 @@ describe("SetPicker", () => {
   const noop = () => {};
   const base = {
     styles: [],
+    models: [],
     online: true,
     busy: false,
     error: null,

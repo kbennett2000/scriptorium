@@ -38,6 +38,10 @@ class CreateSetBody(BaseModel):
     kind: str = "style"
     style_id: str | None = None
     label: str | None = None
+    # Optional base model / checkpoint (ADR-0030). A "style" set may pick any installed model; a
+    # "reroll" defaults to the book's own model so it reproduces the book's look with new seeds.
+    # None → the imagegen service's configured default.
+    model: str | None = None
 
 
 def _require_path(user: str, book: str) -> None:
@@ -60,7 +64,9 @@ def create_set(user: str, book: str, body: CreateSetBody) -> dict[str, Any]:
     """Create a personal set + enqueue its render (the create action is the approval, ADR-0014)."""
     _require_path(user, book)
     try:
-        return service.create_set(load_config(), user, book, body.kind, body.style_id, body.label)
+        return service.create_set(
+            load_config(), user, book, body.kind, body.style_id, body.label, body.model
+        )
     except LookupError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except ValueError as exc:

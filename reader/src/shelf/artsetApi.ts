@@ -19,10 +19,18 @@ export interface StyleOption {
   consistency_friendly: boolean;
 }
 
+/** The installed base models a set may render with (ADR-0030); empty when imagegen is unreachable. */
+export interface ModelOptions {
+  models: string[];
+  default: string | null;
+}
+
 export interface CreateSetBody {
   kind: "style" | "reroll";
   style_id?: string;
   label?: string;
+  // Optional base model / checkpoint (ADR-0030); omitted → the imagegen service's default.
+  model?: string | null;
 }
 
 export interface ArtsetApi {
@@ -30,6 +38,7 @@ export interface ArtsetApi {
   createSet(user: string, book: string, body: CreateSetBody): Promise<Artset>;
   deleteSet(user: string, book: string, setId: string): Promise<void>;
   fetchStyles(): Promise<StyleOption[]>;
+  fetchModels(): Promise<ModelOptions>;
 }
 
 function seg(s: string): string {
@@ -62,6 +71,17 @@ export class HttpArtsetApi implements ArtsetApi {
     // The shipped style catalog (data/styles.json), served unauthenticated on the LAN.
     const doc = await this.getJson<{ styles: StyleOption[] }>("/api/admin/styles");
     return doc.styles ?? [];
+  }
+
+  async fetchModels(): Promise<ModelOptions> {
+    // Installed base models from the imagegen service (ADR-0030), best-effort. Any failure yields an
+    // empty list so the "New set" panel simply omits the model picker and uses the service default.
+    try {
+      const doc = await this.getJson<ModelOptions>("/api/admin/models");
+      return { models: doc.models ?? [], default: doc.default ?? null };
+    } catch {
+      return { models: [], default: null };
+    }
   }
 
   private async getJson<T>(path: string): Promise<T> {

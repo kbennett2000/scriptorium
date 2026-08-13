@@ -44,6 +44,28 @@ def _create(client: TestClient) -> dict:
     return resp.json()
 
 
+def test_models_endpoint_degrades_when_imagegen_unset(client) -> None:
+    # ADR-0030: GET /api/admin/models never 500s; with no IMAGEGEN_URL it reports an empty,
+    # unreachable list so the picker falls back to the service default.
+    resp = client.get("/api/admin/models")
+    assert resp.status_code == 200
+    assert resp.json() == {"models": [], "default": None, "reachable": False}
+
+
+def test_create_book_persists_chosen_model(client) -> None:
+    # ADR-0030: a chosen base model round-trips into the job's bake_config.
+    resp = client.post(
+        "/api/admin/books",
+        json={
+            "source": {"kind": "markdown", "text": MD, "filename": "frontmatter.md"},
+            "bake": {"style_id": "engraving", "model": "dreamshaper.safetensors"},
+        },
+    )
+    assert resp.status_code == 200, resp.text
+    book = client.get(f"/api/admin/books/{resp.json()['book_id']}").json()
+    assert book["bake_config"]["model"] == "dreamshaper.safetensors"
+
+
 def test_create_book_runs_p0_and_persists_schema_valid_work(client, tmp_path) -> None:
     body = _create(client)
     assert body["book_id"].startswith("usr-")

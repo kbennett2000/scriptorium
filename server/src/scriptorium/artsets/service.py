@@ -53,7 +53,8 @@ def _style_ids() -> set[str]:
 
 
 def create_set(
-    cfg: Config, user: str, book: str, kind: str, style_id: str | None, label: str | None
+    cfg: Config, user: str, book: str, kind: str, style_id: str | None, label: str | None,
+    model: str | None = None,
 ) -> dict:
     """Create a set + enqueue its render job. Returns the ``set.json`` doc (status generating).
 
@@ -71,6 +72,12 @@ def create_set(
         style_id = meta.get("style_id")
     if not style_id or style_id not in _style_ids():
         raise ValueError(f"unknown style_id {style_id!r}")
+    # Base model (ADR-0030). A re-roll with no explicit model reproduces the book's own model,
+    # pinned at publish in ``meta.bake.models.imagegen``; "unknown" (imagegen offline at publish)
+    # falls back to the service default. A style set uses the caller's choice (None → default).
+    if kind == "reroll" and not model:
+        pinned = ((meta.get("bake") or {}).get("models") or {}).get("imagegen")
+        model = pinned if pinned and pinned != "unknown" else None
 
     set_id = "set-" + secrets.token_hex(6)
     style_name = get_style(style_id)["name"]
@@ -84,6 +91,7 @@ def create_set(
         "kind": kind,
         "label": label,
         "style_id": style_id,
+        "model": model,
         "source_revision": source_revision,
         "status": "generating",
         "created": _now_iso(),
@@ -96,7 +104,7 @@ def create_set(
         book_id=book,
         state=JobState.SET_RENDERING,
         source={"user": user, "set_id": set_id, "kind": kind},
-        bake_config={"style_id": style_id, "source_revision": source_revision},
+        bake_config={"style_id": style_id, "model": model, "source_revision": source_revision},
         started=True,
     ).save(cfg)
     return set_doc

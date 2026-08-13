@@ -28,6 +28,7 @@ from ..ingest.base import (
 )
 from ..library.purge import purge_book
 from ..paginate import PaginatedBook, paginate
+from ..render.imagegen import RealImagegenClient
 from . import job as jobmod
 from .job import GPU_STATES, Job, JobState
 from .progress import status_extras
@@ -71,6 +72,11 @@ class BakeBody(BaseModel):
     # after the portraits render so a human can eyeball / edit / regenerate each one before the rest
     # of the book draws. Overrides unattended AUTO_APPROVE for that single stop. Off by default.
     portrait_review: bool = False
+    # Optional base SDXL model / checkpoint to render with (a ComfyUI ``ckpt_name`` from the
+    # imagegen service's installed list, GET /api/admin/models; ADR-0030). None → the service's
+    # configured default, byte-identical to pre-ADR-0030 bakes. Book-wide so every plate (and the
+    # portraits pages condition on) share one model for character consistency.
+    model: str | None = None
     title: str | None = None
     author: str | None = None
 
@@ -164,6 +170,17 @@ def create_book(body: CreateBookBody) -> dict:
 def gpu_status() -> dict:
     """Best-effort GPU/CPU status for the admin UI's live indicator (never 500s; see gpu_probe)."""
     return probe_gpu()
+
+
+@router.get("/models")
+async def list_models() -> dict:
+    """Installed base models for the bake/art-set picker (ADR-0030), best-effort.
+
+    Proxies imagegen-service ``/health`` → ``{"models": [ckpt_name, …], "default", "reachable"}``.
+    Never 500s: an unset/unreachable service yields an empty, unreachable result so the picker just
+    falls back to "service default".
+    """
+    return await RealImagegenClient(load_config()).models()
 
 
 @router.get("/books")

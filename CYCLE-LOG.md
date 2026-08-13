@@ -2482,3 +2482,35 @@ every page it appears on. See [ADR-0029](docs/adr/0029-deferred-portrait-generat
 
 **Gates.** ruff clean · eslint + tsc clean (admin-ui) · non-gpu server tests green · schemas ↔ types
 in sync (`gen-types` diff clean).
+
+---
+
+## M1 · Cycle 21 — selectable base model (checkpoint) per book and per art set (2026-08-13)
+
+**Why.** Style rode entirely in the prompt/LoRA on one service-side base checkpoint. The owner wanted
+to choose *which installed model* a new book — or a new art set — renders with. imagegen-service
+already exposed the installed list (`/health.checkpoints`) and accepted a per-request `checkpoint`
+(its ADR-0004); scriptorium just never sent it. See
+[ADR-0030](docs/adr/0030-selectable-base-model.md).
+
+**Shipped**
+- `txt2img` gains `checkpoint` (omitted when None → byte-identical request); `FakeImagegen` folds it
+  into its digest (distinct model → distinct stand-in, None → byte-stable). `RealImagegenClient.models()`
+  reads `/health` → `{models, default, reachable}`.
+- `GET /api/admin/models` (best-effort, never 500s; unauthenticated LAN like `/styles`).
+- Bake: `BakeBody.model` → `bake_config` → `render_plate` → `checkpoint`. Book-wide (character
+  consistency: pages condition on the portraits).
+- Art sets: `CreateSetBody.model` on `set.json` + set job; `SetRender` forwards it; a `reroll` with no
+  model reproduces the book's own model. `artset.model` schema field added.
+- Publish: a chosen model overrides `meta.bake.models.imagegen`, so `-rN` and re-rolls reproduce it.
+- UI: "Base model (advanced)" picker in the admin New-Book wizard; "Image engine" selector in the
+  reader's New-set panel — both default to Automatic, shown only when the service lists models.
+
+**Decisions**
+- Default = service default (send nothing) → every existing book byte-identical; golden path untouched.
+- Model is a per-book axis, not per-plate; a reroll inherits the book's pinned model.
+- Light validation: pickers only offer installed names; an unknown checkpoint fails at render
+  (503 → `waiting_gpu`), so create-book/create-set stay decoupled from a live imagegen probe.
+
+**Gates.** ruff clean · eslint + tsc clean (reader, admin-ui) · non-gpu server tests green · reader +
+admin vitest green · schemas ↔ types in sync (`gen-types` diff clean).

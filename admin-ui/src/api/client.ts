@@ -12,6 +12,7 @@ import type {
   GpuStatus,
   GutendexResult,
   Job,
+  ModelList,
   Prompt,
   ReviewPayload,
   Selection,
@@ -67,6 +68,10 @@ export const getBook = (id: string) => request<Job>("GET", `/books/${id}`);
 
 // Best-effort GPU/CPU status for the live indicator (never 500s server-side).
 export const getGpuStatus = () => request<GpuStatus>("GET", "/gpu");
+
+// Installed base models for the bake picker (ADR-0030). Best-effort: an unreachable imagegen
+// service yields {models: [], default: null, reachable: false} so the wizard falls back to default.
+export const getModels = () => request<ModelList>("GET", "/models");
 
 export const createBook = (body: CreateBookBody) =>
   request<CreateBookResponse>("POST", "/books", body);
