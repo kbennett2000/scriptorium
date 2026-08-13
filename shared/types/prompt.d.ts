@@ -52,5 +52,9 @@ export interface Prompt {
      * Slug of the cast character whose portrait conditioned this render as an IP-Adapter reference (ADR-0023, primary-only per ADR-0026), or null when the plate rendered prompt-only. Page plates only; absent on records written before ADR-0026.
      */
     reference_slug?: string | null;
+    /**
+     * How this plate's pixels were produced: 'render' (the imagegen pipeline, the default and the value for all page plates) or 'upload' (an owner-supplied portrait image accepted at the review gate, ADR-0029). Absent on records written before ADR-0029; treat absent as 'render'.
+     */
+    source?: "render" | "upload";
   };
 }

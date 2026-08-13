@@ -21,7 +21,12 @@ from PIL import Image
 
 from scriptorium.bake import job as jobmod
 from scriptorium.bake.job import Job, JobState
-from scriptorium.bake.phases.p7_render import PortraitRender, PortraitRenderEnter, Render
+from scriptorium.bake.phases.p7_render import (
+    PortraitRender,
+    PortraitRenderEnter,
+    Render,
+    render_plate,
+)
 from scriptorium.bake.runner import Runner
 from scriptorium.config import Config
 from scriptorium.render.imagegen import FakeImagegen
@@ -369,9 +374,9 @@ def test_portrait_review_off_auto_advances_through_the_gate(tmp_path) -> None:
 
 
 @respx.mock
-def test_portrait_review_on_parks_with_portraits_but_no_pages(tmp_path) -> None:
-    # With the per-book flag set, the bake stops at portraits_review: the portrait is rendered but
-    # NO page plate has drawn yet (they wait behind the human gate).
+def test_portrait_review_on_parks_blank_no_portraits_or_pages(tmp_path) -> None:
+    # Curated gate (ADR-0029): with the per-book flag set the bake stops at portraits_review with
+    # NOTHING drawn — no portrait, no page plate. The owner generates/uploads each portrait there.
     cfg = _cfg(tmp_path)
     _seed(cfg)
     job = jobmod.load(cfg, "b")
@@ -383,14 +388,14 @@ def test_portrait_review_on_parks_with_portraits_but_no_pages(tmp_path) -> None:
                  until=(JobState.PORTRAITS_REVIEW, JobState.RENDERED, JobState.FAILED))
     assert job.state == JobState.PORTRAITS_REVIEW, f"expected gate, got {job.state}"
     book = cfg.work_dir / "b"
-    assert (book / "images" / "portraits" / "the-clockmaker.png").is_file()  # portrait rendered
+    assert not (book / "images" / "portraits" / "the-clockmaker.png").is_file()  # blank gate
     assert not (book / "images" / "plates" / "0001.png").is_file()  # page plate NOT yet drawn
 
 
 @respx.mock
-def test_portrait_gate_approval_advances_to_render_and_finishes(tmp_path) -> None:
-    # After the gate, transitioning portraits_review -> rendering (what approve_portraits does) lets
-    # the page plates draw and the book reach `rendered`.
+def test_curated_blanks_fill_from_default_at_render(tmp_path) -> None:
+    # Approving with a blank portrait draws it from its default prompt during the page render (so
+    # the outcome matches the no-gate default), then the page plates draw.
     cfg = _cfg(tmp_path)
     _seed(cfg)
     job = jobmod.load(cfg, "b")
@@ -403,8 +408,57 @@ def test_portrait_gate_approval_advances_to_render_and_finishes(tmp_path) -> Non
     assert job.state == JobState.PORTRAITS_REVIEW
 
     from scriptorium.bake.approve import approve_portraits
-    approve_portraits(cfg, jobmod.load(cfg, "b"))
+    approve_portraits(cfg, jobmod.load(cfg, "b"))  # portraits_review -> rendering
 
     job = _drive(cfg, FakeImagegen())
     assert job.state == JobState.RENDERED
-    assert (cfg.work_dir / "b" / "images" / "plates" / "0001.png").is_file()
+    book = cfg.work_dir / "b"
+    # The blank portrait was filled (at the §10 portrait size), then the page plate drew.
+    assert _png_size(book / "images" / "portraits" / "the-clockmaker.png") == (1024, 1024)
+    assert (book / "images" / "plates" / "0001.png").is_file()
+    portrait = json.loads((book / "prompts" / "portrait-the-clockmaker.json").read_text("utf-8"))
+    assert portrait["render"]["attempts"] == 1  # drawn exactly once
+
+
+@respx.mock
+def test_curated_render_does_not_override_owner_portrait(tmp_path) -> None:
+    # A portrait the owner already made at the gate is left untouched by the page-render blank-fill
+    # (existence-based skip), so their choice survives.
+    cfg = _cfg(tmp_path)
+    _seed(cfg)
+    job = jobmod.load(cfg, "b")
+    job.bake_config["portrait_review"] = True
+    job.save(cfg)
+    respx.post(f"{TTS}/v1/models/unload").mock(return_value=httpx.Response(200, json={}))
+
+    _drive(cfg, FakeImagegen(),
+           until=(JobState.PORTRAITS_REVIEW, JobState.RENDERED, JobState.FAILED))
+    book = cfg.work_dir / "b"
+    portrait_png = book / "images" / "portraits" / "the-clockmaker.png"
+
+    # Owner clicks "Generate" for this one portrait (what regen_plate does at the gate).
+    asyncio.run(render_plate(cfg, jobmod.load(cfg, "b"), "portrait-the-clockmaker", FakeImagegen()))
+    before = portrait_png.read_bytes()
+
+    from scriptorium.bake.approve import approve_portraits
+    approve_portraits(cfg, jobmod.load(cfg, "b"))
+    job = _drive(cfg, FakeImagegen())
+    assert job.state == JobState.RENDERED
+    assert portrait_png.read_bytes() == before  # not re-rendered
+    portrait = json.loads((book / "prompts" / "portrait-the-clockmaker.json").read_text("utf-8"))
+    assert portrait["render"]["attempts"] == 1
+
+
+@respx.mock
+def test_off_flag_portrait_rendered_once_not_double(tmp_path) -> None:
+    # Byte-stability guard: with the flag off, PortraitRender draws the portrait and Render's
+    # portraits-first list skips it (existence-based), so it is rendered exactly once as before.
+    cfg = _cfg(tmp_path)
+    _seed(cfg)
+    respx.post(f"{TTS}/v1/models/unload").mock(return_value=httpx.Response(200, json={}))
+
+    job = _drive(cfg, FakeImagegen())
+    assert job.state == JobState.RENDERED
+    portrait = json.loads(
+        (cfg.work_dir / "b" / "prompts" / "portrait-the-clockmaker.json").read_text("utf-8"))
+    assert portrait["render"]["attempts"] == 1

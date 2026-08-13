@@ -7,6 +7,7 @@ import {
   getReview,
   plateImageUrl,
   regenPlate,
+  uploadPortrait,
 } from "../../api/client";
 import { ErrorNotice, errorText, Loading, Notice, useAsync } from "../../components/common";
 import type { Cast, Prompt, ReviewPayload } from "../../api/types";
@@ -71,8 +72,34 @@ function PortraitReviewBody({
   const atGate = review.state === "portraits_review";
   const stillRendering = review.state === "portraits_rendering";
 
+  // With the curated gate (ADR-0029) portraits start blank and are made on demand. `blanks` are the
+  // ones with no image on disk yet — the batch helper fills exactly these, and approving with any
+  // left warns that they will be drawn from the stock description (the no-gate default).
+  const rendered = review.portrait_rendered ?? {};
+  const blanks = portraits.filter((p) => !rendered[p.page_id]);
+
   const [approving, setApproving] = useState(false);
   const [approveError, setApproveError] = useState<unknown>(null);
+  const [batch, setBatch] = useState<null | { done: number; total: number }>(null);
+  const [batchError, setBatchError] = useState<unknown>(null);
+
+  // Generate every still-blank portrait from its current (default or edited) prompt, one at a time.
+  // Only blanks are touched, so nothing the owner already generated or uploaded is overwritten.
+  async function generateBlanks() {
+    setBatchError(null);
+    setBatch({ done: 0, total: blanks.length });
+    try {
+      for (let i = 0; i < blanks.length; i++) {
+        await regenPlate(id, blanks[i].page_id);
+        setBatch({ done: i + 1, total: blanks.length });
+      }
+      reload();
+    } catch (err) {
+      setBatchError(err);
+    } finally {
+      setBatch(null);
+    }
+  }
 
   async function approveAll() {
     setApproving(true);
@@ -129,18 +156,38 @@ function PortraitReviewBody({
             character={castBySlug.get(prompt.page_id.slice(PORTRAIT_PREFIX.length)) ?? null}
             anchors={anchorsFor(prompt.page_id)}
             editable={atGate}
+            rendered={rendered[prompt.page_id] ?? false}
             reload={reload}
           />
         ))}
       </div>
 
+      {atGate && blanks.length > 0 && (
+        <Notice kind="warn">
+          <strong>{blanks.length}</strong> {blanks.length === 1 ? "character has" : "characters have"}{" "}
+          no portrait yet. Generate or upload them below, or use <em>Generate all remaining</em> — if
+          you approve with any still blank, they will be drawn from their stock description (the
+          default).
+        </Notice>
+      )}
+
       {atGate && (
         <div className="row" style={{ marginTop: 16 }}>
-          <button className="primary" disabled={approving} onClick={approveAll}>
+          <button className="primary" disabled={approving || batch !== null} onClick={approveAll}>
             {approving ? "Approving…" : "Approve portraits & draw the book"}
           </button>
+          {blanks.length > 0 && (
+            <button disabled={batch !== null || approving} onClick={generateBlanks}>
+              {batch
+                ? `Generating ${batch.done}/${batch.total}…`
+                : `Generate all remaining (${blanks.length})`}
+            </button>
+          )}
           {approveError != null && (
             <Notice kind="error">Approve failed: {errorText(approveError)}</Notice>
+          )}
+          {batchError != null && (
+            <Notice kind="error">Generate failed: {errorText(batchError)}</Notice>
           )}
         </div>
       )}
@@ -154,6 +201,7 @@ function PortraitCard({
   character,
   anchors,
   editable,
+  rendered,
   reload,
 }: {
   id: string;
@@ -161,17 +209,19 @@ function PortraitCard({
   character: Cast["characters"][number] | null;
   anchors: number;
   editable: boolean;
+  rendered: boolean;
   reload: () => void;
 }) {
   const [promptDraft, setPromptDraft] = useState(prompt.final_subject_prompt);
   const [descDraft, setDescDraft] = useState(character?.visual_description ?? "");
-  const [busy, setBusy] = useState<null | "prompt" | "revert" | "desc" | "regen">(null);
+  const [busy, setBusy] = useState<null | "prompt" | "revert" | "desc" | "regen" | "upload">(null);
   const [error, setError] = useState<unknown>(null);
-  // Cache-bust the image after a regenerate (same URL, new bytes).
+  // Cache-bust the image after a regenerate/upload (same URL, new bytes).
   const [bump, setBump] = useState(0);
   // Click-to-zoom lightbox for this portrait (the tile is small).
   const [zoomed, setZoomed] = useState(false);
 
+  const slug = prompt.page_id.slice(PORTRAIT_PREFIX.length);
   const src = `${plateImageUrl(id, prompt.page_id)}?v=${bump}`;
   const label = character?.name ?? prompt.page_id;
 
@@ -196,7 +246,10 @@ function PortraitCard({
     [character?.visual_description],
   );
 
-  async function run(kind: "prompt" | "revert" | "desc" | "regen", fn: () => Promise<unknown>) {
+  async function run(
+    kind: "prompt" | "revert" | "desc" | "regen" | "upload",
+    fn: () => Promise<unknown>,
+  ) {
     setBusy(kind);
     setError(null);
     try {
@@ -211,15 +264,21 @@ function PortraitCard({
 
   return (
     <div className="portrait-card">
-      <img
-        className="portrait-img"
-        src={src}
-        alt={label}
-        loading="lazy"
-        title="Click to enlarge"
-        onClick={() => setZoomed(true)}
-      />
-      {zoomed && (
+      {rendered ? (
+        <img
+          className="portrait-img"
+          src={src}
+          alt={label}
+          loading="lazy"
+          title="Click to enlarge"
+          onClick={() => setZoomed(true)}
+        />
+      ) : (
+        <div className="portrait-img portrait-blank" role="img" aria-label={`${label} (no portrait yet)`}>
+          {busy === "regen" ? "Generating…" : busy === "upload" ? "Uploading…" : "No portrait yet"}
+        </div>
+      )}
+      {zoomed && rendered && (
         <div className="lightbox" onClick={() => setZoomed(false)} role="dialog" aria-label={label}>
           <img className="lightbox-img" src={src} alt={label} />
         </div>
@@ -306,7 +365,11 @@ function PortraitCard({
             <button
               className="primary"
               disabled={busy !== null}
-              title="Draw this portrait again with a fresh result"
+              title={
+                rendered
+                  ? "Draw this portrait again with a fresh result"
+                  : "Draw this portrait from its description"
+              }
               onClick={() =>
                 run("regen", async () => {
                   await regenPlate(id, prompt.page_id);
@@ -314,8 +377,35 @@ function PortraitCard({
                 })
               }
             >
-              {busy === "regen" ? "Regenerating…" : "Regenerate"}
+              {busy === "regen"
+                ? rendered
+                  ? "Regenerating…"
+                  : "Generating…"
+                : rendered
+                  ? "Regenerate"
+                  : "Generate"}
             </button>
+            <label
+              className="upload-portrait"
+              title="Upload your own image (center-cropped to a square portrait)"
+            >
+              {busy === "upload" ? "Uploading…" : rendered ? "Upload instead" : "Upload image"}
+              <input
+                type="file"
+                accept="image/*"
+                hidden
+                disabled={busy !== null}
+                onChange={(e) => {
+                  const f = e.target.files?.[0];
+                  e.target.value = ""; // let the same file be re-picked after an error
+                  if (f)
+                    run("upload", async () => {
+                      await uploadPortrait(id, slug, f);
+                      setBump((b) => b + 1);
+                    });
+                }}
+              />
+            </label>
           </div>
         )}
         <ErrorNotice error={error} />

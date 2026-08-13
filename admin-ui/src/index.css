@@ -385,6 +385,32 @@ tbody tr:hover {
   flex: 0 0 auto;
   cursor: zoom-in;
 }
+/* A not-yet-generated portrait (ADR-0029 curated gate): a dashed placeholder, not a broken image. */
+.portrait-blank {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: 8px;
+  font-size: 12px;
+  color: var(--muted, #555);
+  border-style: dashed;
+  cursor: default;
+}
+/* File-picker styled as a secondary button (the <input> inside is hidden). */
+.upload-portrait {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 10px;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  background: #f6f6f6;
+  font-size: 13px;
+  cursor: pointer;
+}
+.upload-portrait:hover {
+  background: #eee;
+}
 
 /* Click-to-zoom lightbox: full-viewport backdrop, click anywhere (or Esc) to close. */
 .lightbox {

@@ -534,14 +534,24 @@ class PortraitRender(_ImagegenPhase):
     to_state = JobState.PORTRAITS_REVIEW
 
     def _plate_ids_for(self, job: Job, cfg: Any) -> list[str]:
+        # When the owner asked to curate portraits (ADR-0025/0029), draw none up front — the review
+        # screen generates/uploads them on demand so the gate starts blank. The leading __unload__
+        # unit still runs (TTS-unload + imagegen health), so GPU sequencing is unchanged. Any left
+        # blank at approval are filled from their default prompt by :class:`Render` below.
+        if job.bake_config.get("portrait_review"):
+            return []
         return [p for p in _plate_ids(cfg, job) if p.startswith(PORTRAIT_PREFIX)]
 
 
 class Render(_ImagegenPhase):
-    """P7: render the cover + page plates (rendering -> rendered).
+    """P7: render any still-blank portraits, then the cover + page plates (rendering -> rendered).
 
-    Portraits already rendered in :class:`PortraitRender`; existence-based ``unit_done`` skips any
-    that somehow reappear here, so this stays resumable and never double-renders a portrait.
+    Portraits are listed **first** so a page's IP-Adapter reference exists before the page draws.
+    In the normal flow they already rendered in :class:`PortraitRender`, so existence-based
+    ``unit_done`` skips them and the output is byte-identical. When the owner curated portraits
+    (ADR-0029) only the *blanks* they never generated/uploaded are drawn here — from each portrait's
+    current (possibly edited) default prompt — so approving with blanks matches the no-gate default
+    and never overrides a portrait the owner already set up.
     """
 
     name = "p7_render"
@@ -549,4 +559,7 @@ class Render(_ImagegenPhase):
     to_state = JobState.RENDERED
 
     def _plate_ids_for(self, job: Job, cfg: Any) -> list[str]:
-        return [p for p in _plate_ids(cfg, job) if not p.startswith(PORTRAIT_PREFIX)]
+        ids = _plate_ids(cfg, job)
+        portraits = [p for p in ids if p.startswith(PORTRAIT_PREFIX)]
+        rest = [p for p in ids if not p.startswith(PORTRAIT_PREFIX)]
+        return portraits + rest

@@ -2448,3 +2448,37 @@ the fixes in front of a real bake and photographed the result.
 
 **Inference.** Left pg-1952 and pg-41 parked rather than finishing them — they are what makes the two
 gate screenshots reproducible. Delete or approve them when done; `01`/`04`/`05` need re-taking after.
+
+---
+
+## M1 · Cycle 20 — deferred portrait generation & upload at the gate (2026-08-12)
+
+**Why.** The `portrait_review` gate (ADR-0025) still rendered every portrait before pausing, so the
+owner met the gate with the machine's default faces already chosen. The owner wanted to *author* each
+character: arrive with nothing drawn and, per character, generate the default, edit-then-generate, or
+upload their own image — so a character can look exactly how they want before that portrait seeds
+every page it appears on. See [ADR-0029](docs/adr/0029-deferred-portrait-generation-and-upload.md).
+
+**Shipped**
+- `PortraitRender._plate_ids_for` draws **no** portraits when `portrait_review` is set (keeps the
+  `__unload__` GPU handoff), so the gate starts blank.
+- `Render._plate_ids_for` lists portraits **first, then cover + pages**; existence-based `unit_done`
+  means only still-blank portraits draw — from their current default/edited prompt — and the off-flag
+  golden path stays byte-identical.
+- `get_review` returns `portrait_rendered: {page_id: bool}`; the `PortraitReview` screen shows a
+  dashed placeholder + **Generate**/**Upload image** per blank card, a **Generate all remaining (N)**
+  batch button (fills only blanks, never overrides), and a non-blocking warning that blanks approve to
+  the stock-description default.
+- **Upload path** (greenfield): `POST /books/{id}/portraits/{slug}/upload` (multipart) — center-crops
+  to the 1024×1024 portrait square, writes PNG + web/thumb derivatives, stamps `render.source='upload'`.
+  Added `python-multipart` (first multipart handler) and `client.uploadPortrait`.
+- Schema: `prompt.render.source` enum (`render`|`upload`), optional; regenerated shared types.
+
+**Decisions** (confirmed with the owner)
+- Uploads **center-crop** to square (fills the frame, trims overflow) rather than pad or reject.
+- Approval is **not blocked** by blanks; instead warn + offer the batch fill. "Generate all remaining"
+  and the render-phase fill both use each portrait's current prompt, so they never override an
+  already-made/uploaded portrait.
+
+**Gates.** ruff clean · eslint + tsc clean (admin-ui) · non-gpu server tests green · schemas ↔ types
+in sync (`gen-types` diff clean).

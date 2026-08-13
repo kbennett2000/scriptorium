@@ -306,14 +306,22 @@ export function NewBookWizard() {
           Draw a portrait of each main character
         </label>
         {portraits && (
-          <label className="wizard-suboption">
-            <input
-              type="checkbox"
-              checked={portraitReview}
-              onChange={(e) => setPortraitReview(e.target.checked)}
-            />
-            Pause and let me review the portraits before drawing the rest of the book
-          </label>
+          <>
+            <label className="wizard-suboption">
+              <input
+                type="checkbox"
+                checked={portraitReview}
+                onChange={(e) => setPortraitReview(e.target.checked)}
+              />
+              Pause and let me review the portraits before drawing the rest of the book
+            </label>
+            {portraitReview && (
+              <p className="muted" style={{ margin: "4px 0 0 24px", fontSize: 12 }}>
+                Nothing is drawn until you say so: for each character you can generate the default,
+                tweak the description or prompt first, or upload your own image.
+              </p>
+            )}
+          </>
         )}
       </div>
 

@@ -129,6 +129,35 @@ export const reselect = (id: string, densityPreset: DensityPreset) =>
 export const regenPlate = (id: string, pageId: string) =>
   request<Prompt>("POST", `/books/${id}/plates/${pageId}/regen`);
 
+// Upload an owner-supplied portrait image at the gate (ADR-0029): the server center-crops it to the
+// 1024×1024 portrait square and stamps render.source='upload'. Multipart, so we bypass the JSON
+// `request` helper and let the browser set the multipart boundary (never set Content-Type here).
+export async function uploadPortrait(id: string, slug: string, file: File): Promise<Prompt> {
+  const form = new FormData();
+  form.append("file", file);
+  const resp = await fetch(`${BASE}/books/${id}/portraits/${slug}/upload`, {
+    method: "POST",
+    body: form,
+  });
+  const text = await resp.text();
+  let payload: unknown = null;
+  if (text) {
+    try {
+      payload = JSON.parse(text);
+    } catch {
+      payload = text;
+    }
+  }
+  if (!resp.ok) {
+    const detail =
+      payload && typeof payload === "object" && "detail" in payload
+        ? (payload as { detail: unknown }).detail
+        : payload;
+    throw new ApiError(resp.status, detail);
+  }
+  return payload as Prompt;
+}
+
 // The post-render thumb URL (served by GET /books/{id}/plate-image/{page_id}.png).
 export const plateImageUrl = (id: string, pageId: string) =>
   `${BASE}/books/${id}/plate-image/${pageId}.png`;

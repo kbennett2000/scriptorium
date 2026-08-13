@@ -9,16 +9,32 @@ only — never LLM/image content.
 
 from __future__ import annotations
 
+import io
 import json
 from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
+from PIL import Image
 
 from scriptorium.app import app
 from scriptorium.bake import job as jobmod
 from scriptorium.bake.review_api import portrait_anchor_counts
 from scriptorium.config import load_config
+
+
+def _png_bytes(size: tuple[int, int], color=(200, 10, 10)) -> bytes:
+    buf = io.BytesIO()
+    Image.new("RGB", size, color).save(buf, format="PNG")
+    return buf.getvalue()
+
+
+def _at_portrait_gate(book_id: str) -> None:
+    """Move a hand-seeded review book to the portrait gate (portraits_review)."""
+    cfg = load_config()
+    job = jobmod.load(cfg, book_id)
+    job.state = "portraits_review"
+    job.save(cfg)
 
 MD = (Path(__file__).parent / "fixtures" / "sources" / "frontmatter.md").read_text("utf-8")
 
@@ -345,3 +361,71 @@ def test_portrait_anchor_counts_uses_the_render_resolver() -> None:
 
 def test_portrait_anchor_counts_is_empty_without_a_cast() -> None:
     assert portrait_anchor_counts([{"page_id": "0001", "derived": {"depicted": ["X"]}}], []) == {}
+
+
+# --- curated gate: portrait_rendered flag + upload (ADR-0029) ----------------
+
+
+def test_portrait_rendered_flags_blank_then_present(client, tmp_path) -> None:
+    book_id = _seed_review(client, tmp_path)
+    _at_portrait_gate(book_id)
+
+    body = client.get(f"/api/admin/books/{book_id}/review").json()
+    # The curated gate starts blank: the only portrait has no PNG yet.
+    assert body["portrait_rendered"] == {"portrait-the-keeper": False}
+
+    portraits = tmp_path / "work" / book_id / "images" / "portraits"
+    portraits.mkdir(parents=True, exist_ok=True)
+    (portraits / "the-keeper.png").write_bytes(_png_bytes((1024, 1024)))
+
+    body2 = client.get(f"/api/admin/books/{book_id}/review").json()
+    assert body2["portrait_rendered"]["portrait-the-keeper"] is True
+
+
+def test_upload_portrait_center_crops_to_square_and_stamps_source(client, tmp_path) -> None:
+    book_id = _seed_review(client, tmp_path)
+    _at_portrait_gate(book_id)
+
+    # A deliberately non-square upload (2:1) — the server center-crops it to the portrait square.
+    r = client.post(
+        f"/api/admin/books/{book_id}/portraits/the-keeper/upload",
+        files={"file": ("me.png", _png_bytes((2000, 1000)), "image/png")},
+    )
+    assert r.status_code == 200, r.text
+    assert r.json()["render"]["source"] == "upload"
+
+    images = tmp_path / "work" / book_id / "images"
+    assert Image.open(images / "portraits" / "the-keeper.png").size == (1024, 1024)
+    assert (images / "web" / "portraits" / "the-keeper.webp").is_file()
+    assert (images / "thumbs" / "portraits" / "the-keeper.webp").is_file()
+
+    # The review payload now marks the portrait present.
+    body = client.get(f"/api/admin/books/{book_id}/review").json()
+    assert body["portrait_rendered"]["portrait-the-keeper"] is True
+
+
+def test_upload_portrait_rejects_wrong_state_and_unknown_slug(client, tmp_path) -> None:
+    book_id = _seed_review(client, tmp_path)  # still at prompts_draft
+
+    r = client.post(
+        f"/api/admin/books/{book_id}/portraits/the-keeper/upload",
+        files={"file": ("me.png", _png_bytes((512, 512)), "image/png")},
+    )
+    assert r.status_code == 409  # not at the portrait gate
+
+    _at_portrait_gate(book_id)
+    r2 = client.post(
+        f"/api/admin/books/{book_id}/portraits/nobody/upload",
+        files={"file": ("me.png", _png_bytes((512, 512)), "image/png")},
+    )
+    assert r2.status_code == 404  # no portrait prompt for that slug
+
+
+def test_upload_portrait_rejects_non_image(client, tmp_path) -> None:
+    book_id = _seed_review(client, tmp_path)
+    _at_portrait_gate(book_id)
+    r = client.post(
+        f"/api/admin/books/{book_id}/portraits/the-keeper/upload",
+        files={"file": ("note.txt", b"not an image", "text/plain")},
+    )
+    assert r.status_code == 400

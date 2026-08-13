@@ -12,17 +12,20 @@ before persisting. Nothing here renders, publishes, or wraps prompts with style 
 
 from __future__ import annotations
 
+import io
 import json
 import secrets
 from pathlib import Path
 
 import httpx
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Query, UploadFile
 from fastapi.responses import FileResponse
+from PIL import Image
 from pydantic import BaseModel
 
 from .. import schemas
 from ..config import Config, load_config
+from ..render.derivatives import make_derivatives
 from ..render.imagegen import ImagegenClient, RealImagegenClient
 from ..selection.engine import PRESETS, PageScore, effective_params, select
 from ..selection.reselect import reselect
@@ -33,7 +36,13 @@ from .approve import ApprovalBlocked, approve_job, approve_portraits
 from .job import Job, JobState
 from .phases.base import GpuUnavailable
 from .phases.p5_prompts import PORTRAIT_PREFIX, rederive_portrait_prompt
-from .phases.p7_render import build_cast_index, render_plate, resolve_character
+from .phases.p7_render import (
+    _asset_spec,
+    _now_iso,
+    build_cast_index,
+    render_plate,
+    resolve_character,
+)
 from .phases.p8_publish import regen_published_plate
 
 router = APIRouter(prefix="/api/admin")
@@ -210,6 +219,14 @@ def get_review(book_id: str) -> dict:
         # off the post-render "placeholder" banner (S10b).
         "render_stub": job.render_stub,
         "portrait_anchor_counts": portrait_anchor_counts(prompts, cast.get("characters", [])),
+        # {portrait-{slug}: whether its PNG exists yet}. With the curated gate (ADR-0029) portraits
+        # start blank and are generated/uploaded on demand, so the screen needs to know which cards
+        # still have no image (show "Generate" instead of a broken <img>).
+        "portrait_rendered": {
+            str(doc["page_id"]): _asset_spec(book, str(doc["page_id"])).src.is_file()
+            for doc in prompts
+            if str(doc.get("page_id", "")).startswith(PORTRAIT_PREFIX)
+        },
     }
 
 
@@ -481,3 +498,71 @@ def approve_portraits_endpoint(book_id: str) -> dict:
     except ValueError as exc:  # not parked at the portrait gate
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     return job.to_dict()
+
+
+def _center_crop_square(img: Image.Image, width: int, height: int) -> Image.Image:
+    """Center-crop ``img`` to the ``width:height`` aspect (ADR-0029: 1024×1024), then resize.
+
+    Fills the frame edge-to-edge with no bars, trimming the overflowing dimension symmetrically —
+    the right default for a headshot portrait, at the cost of clipping a very wide/tall upload.
+    """
+    img = img.convert("RGB")
+    w, h = img.size
+    target = width / height
+    if w / h > target:  # too wide → trim the sides
+        new_w = round(h * target)
+        left = (w - new_w) // 2
+        img = img.crop((left, 0, left + new_w, h))
+    else:  # too tall (or exact) → trim top and bottom
+        new_h = round(w / target)
+        top = (h - new_h) // 2
+        img = img.crop((0, top, w, top + new_h))
+    return img.resize((width, height), Image.Resampling.LANCZOS)
+
+
+@router.post("/books/{book_id}/portraits/{slug}/upload")
+async def upload_portrait(book_id: str, slug: str, file: UploadFile) -> dict:
+    """Accept an owner-supplied portrait image at the review gate (ADR-0029).
+
+    The owner can hand-pick exactly how a character looks instead of accepting the generated
+    default: the upload is center-cropped to the 1024×1024 portrait square, written as the archival
+    PNG + its web/thumb derivatives (the same three files a render makes), and the prompt's
+    ``render`` provenance is stamped ``source='upload'``. Pre-publish and work-tree only — the same
+    overwrite a portrait regen already performs (ADR-0025), so no published bytes are touched.
+    """
+    cfg = load_config()
+    job = _require(book_id)
+    if job.state != JobState.PORTRAITS_REVIEW:
+        raise HTTPException(
+            status_code=409,
+            detail=f"portraits uploadable only at the portrait gate (state={job.state})",
+        )
+    plate_id = f"{PORTRAIT_PREFIX}{slug}"
+    prompt_path = cfg.work_dir / book_id / "prompts" / f"{plate_id}.json"
+    if not prompt_path.is_file():
+        raise HTTPException(status_code=404, detail=f"no portrait for {slug!r}")
+
+    raw = await file.read()
+    try:
+        img = Image.open(io.BytesIO(raw))
+        img.load()
+    except Exception as exc:  # not a decodable image
+        raise HTTPException(status_code=400, detail="not a readable image") from exc
+
+    spec = _asset_spec(cfg.work_dir / book_id, plate_id)
+    spec.src.parent.mkdir(parents=True, exist_ok=True)
+    _center_crop_square(img, spec.width, spec.height).save(spec.src, format="PNG")
+    make_derivatives(spec.src, spec.web, spec.thumb, web_max_width=spec.web_max)
+
+    doc = _read_json(prompt_path)
+    prev_attempts = int((doc.get("render") or {}).get("attempts", 0))
+    doc["render"] = {
+        "at": _now_iso(),
+        "params_echo": {"width": spec.width, "height": spec.height},
+        "attempts": prev_attempts + 1,
+        "reference_slug": None,
+        "source": "upload",
+    }
+    schemas.validate("prompt", doc)
+    _write_json(prompt_path, doc)
+    return doc

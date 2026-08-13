@@ -96,6 +96,10 @@ export interface ReviewPayload {
   // {slug: page plates this character's portrait will condition} — computed server-side with P7's
   // own resolver (ADR-0028). Drives the portrait gate's review order.
   portrait_anchor_counts: Record<string, number>;
+  // {portrait-{slug}: whether that portrait's PNG exists on disk yet}. With the curated gate
+  // (ADR-0029) portraits start blank and are generated/uploaded on demand, so the screen shows a
+  // "Generate" affordance for the false entries instead of a broken image.
+  portrait_rendered: Record<string, boolean>;
 }
 
 // GET /api/admin/gutendex?q= (one trimmed result).
