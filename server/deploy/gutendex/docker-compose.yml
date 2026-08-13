@@ -1,0 +1,40 @@
+# Self-hosted Gutendex for scriptorium's "Search free classic books" path.
+# Bring up:   docker compose up -d --build
+# Import:     docker compose exec gutendex python manage.py updatecatalog   # slow; see README
+# The bakery points at this via GUTENDEX_URL=http://localhost:8721 (host port 8721 -> app 8000).
+#
+# Interpolated values (${...}) and the gutendex container env both come from ./.env
+# (copy .env.example -> .env first). Keep DATABASE_* in .env matching the db service below.
+
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: ${DATABASE_NAME:-gutendex}
+      POSTGRES_USER: ${DATABASE_USER:-gutendex}
+      POSTGRES_PASSWORD: ${DATABASE_PASSWORD:?set DATABASE_PASSWORD in .env}
+    volumes:
+      - gutendex-pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DATABASE_USER:-gutendex} -d ${DATABASE_NAME:-gutendex}"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+
+  gutendex:
+    build:
+      context: .
+      args:
+        GUTENDEX_REF: ${GUTENDEX_REF:-c3f75a8bd783ca91d9cd37d133028ff994e7ba4b}
+    env_file: .env
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      # host 8721 (8712 TTS / 8189 imagegen / 8720 bakery are taken) -> app 8000
+      - "8721:8000"
+    restart: unless-stopped
+
+volumes:
+  gutendex-pgdata:

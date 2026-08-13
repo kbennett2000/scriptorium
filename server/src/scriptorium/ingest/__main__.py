@@ -16,6 +16,7 @@ from pathlib import Path
 
 import httpx
 
+from ..config import load_config
 from . import gutenberg
 from .base import KIND_GUTENBERG, KIND_MARKDOWN, KIND_TEXT, SourceSpec, load
 
@@ -37,8 +38,9 @@ def _print_book(spec: SourceSpec) -> None:
 
 
 def _print_search(query: str) -> None:
+    bases = gutenberg.gutendex_bases(load_config().gutendex_url)
     with httpx.Client(timeout=30.0, follow_redirects=True) as client:
-        for hit in gutenberg.search(query, client=client):
+        for hit in gutenberg.search(query, client=client, bases=bases):
             print(f"  pg-{hit['gutenberg_id']:<7} {hit['title']} — {hit['author']}")
 
 

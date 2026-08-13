@@ -326,6 +326,65 @@ def test_search_mocked():
     assert hits[0]["text_url"] == _TEXT_URL
 
 
+# --- prefer-local-then-public fallback -------------------------------------
+
+_LOCAL = "http://gutendex.local:8721"
+_BASES = ["http://gutendex.local:8721", "https://gutendex.com"]
+
+
+def test_gutendex_bases_dedupes_and_orders():
+    assert gutenberg.gutendex_bases("http://gutendex.local:8721/") == _BASES
+    # Unset / already-public collapses to a single public base (unchanged behavior).
+    assert gutenberg.gutendex_bases(None) == ["https://gutendex.com"]
+    assert gutenberg.gutendex_bases("https://gutendex.com") == ["https://gutendex.com"]
+
+
+@respx.mock
+def test_search_falls_back_to_public_when_local_empty():
+    respx.get(f"{_LOCAL}/books/").mock(return_value=httpx.Response(200, json={"results": []}))
+    respx.get("https://gutendex.com/books/").mock(
+        return_value=httpx.Response(200, json={"results": [_BOOK_JSON]})
+    )
+    with httpx.Client() as client:
+        hits = gutenberg.search("time machine", client=client, bases=_BASES)
+    assert hits[0]["gutenberg_id"] == 35
+
+
+@respx.mock
+def test_search_falls_back_to_public_on_error():
+    respx.get(f"{_LOCAL}/books/").mock(side_effect=httpx.ConnectError("down"))
+    respx.get("https://gutendex.com/books/").mock(
+        return_value=httpx.Response(200, json={"results": [_BOOK_JSON]})
+    )
+    with httpx.Client() as client:
+        hits = gutenberg.search("time machine", client=client, bases=_BASES)
+    assert hits[0]["gutenberg_id"] == 35
+
+
+@respx.mock
+def test_fetch_text_falls_back_to_public_on_error():
+    respx.get(f"{_LOCAL}/books/35").mock(side_effect=httpx.ConnectError("down"))
+    respx.get("https://gutendex.com/books/35").mock(
+        return_value=httpx.Response(200, json=_BOOK_JSON)
+    )
+    respx.get(_TEXT_URL).mock(return_value=httpx.Response(200, text=_MINI_PG))
+    with httpx.Client() as client:
+        text, meta = gutenberg.fetch_text(35, client=client, bases=_BASES)
+    assert meta["gutenberg_id"] == 35
+    assert "CHAPTER I" in text
+
+
+@respx.mock
+def test_load_gutenberg_uses_configured_local(monkeypatch):
+    """load() resolves GUTENDEX_URL, so a self-hosted instance serves the metadata."""
+    monkeypatch.setenv("GUTENDEX_URL", _LOCAL)
+    respx.get(f"{_LOCAL}/books/35").mock(return_value=httpx.Response(200, json=_BOOK_JSON))
+    respx.get(_TEXT_URL).mock(return_value=httpx.Response(200, text=_MINI_PG))
+    book = gutenberg.load(SourceSpec(kind="gutenberg", gutenberg_id=35))
+    assert book.book_id == "pg-35"
+    assert [c.title for c in book.chapters] == ["CHAPTER I", "CHAPTER II"]
+
+
 # --- live network (skipped by default) -------------------------------------
 
 @pytest.mark.network

@@ -1,0 +1,3 @@
+# The image never COPYs secrets; keep .env out of the build context regardless.
+.env
+README.md

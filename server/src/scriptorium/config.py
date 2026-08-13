@@ -52,6 +52,10 @@ class Config:
     # window and every test; the single-user LAN dev box opts in via ``AUTO_START=1``. Pairs with
     # ``AUTO_APPROVE`` for a full unattended "kick off → wake to a done book" run.
     auto_start: bool = False
+    # Base URL of the Gutendex catalog API (book search + Gutenberg metadata). Defaults to the
+    # public instance; set ``GUTENDEX_URL`` to a self-hosted LAN instance. Both call sites still
+    # fall back to public ``gutendex.com`` when the primary errors or returns no match.
+    gutendex_url: str = "https://gutendex.com"
     # Built SPA dirs for the two static mounts (S11). Defaulted so tests that
     # construct Config directly need not supply them; load_config sets them from env.
     reader_dist: Path = field(default_factory=lambda: _REPO_ROOT / "reader" / "dist")
@@ -120,6 +124,7 @@ def load_config() -> Config:
         runner_tick_s=_env_int("RUNNER_TICK_S", 5),
         auto_approve=_env_bool("AUTO_APPROVE", False),
         auto_start=_env_bool("AUTO_START", False),
+        gutendex_url=os.environ.get("GUTENDEX_URL") or "https://gutendex.com",
         shared_dir=shared_dir,
         reader_dist=reader_dist,
         admin_dist=admin_dist,

@@ -25,6 +25,7 @@ from pydantic import BaseModel
 
 from .. import schemas
 from ..config import Config, load_config
+from ..ingest.gutenberg import gutendex_bases
 from ..render.derivatives import make_derivatives
 from ..render.imagegen import ImagegenClient, RealImagegenClient
 from ..selection.engine import PRESETS, PageScore, effective_params, select
@@ -69,8 +70,9 @@ _READABLE_STATES = (
     JobState.PORTRAITS_RENDERING, JobState.PORTRAITS_REVIEW, JobState.RENDERING,
 )
 # Trailing slash matters: gutendex.com 301-redirects /books?... -> /books/?..., so we hit the
-# canonical URL directly (and the client below follows redirects as a belt-and-braces guard).
-_GUTENDEX = "https://gutendex.com/books/"
+# canonical ``/books/`` path directly (and the client below follows redirects as a belt-and-braces
+# guard). The base(s) come from :func:`gutendex_bases` — prefer the configured LAN instance, fall
+# back to public gutendex.com.
 
 
 # --- request bodies ---------------------------------------------------------
@@ -163,19 +165,8 @@ def _text_download_url(formats: dict) -> str | None:
 # --- endpoints --------------------------------------------------------------
 
 
-@router.get("/gutendex")
-def gutendex(q: str = Query("")) -> dict:
-    """Proxy a Gutendex search for the wizard (§11.1). Degrades to 502; never 500."""
-    if not q.strip():
-        return {"results": []}
-    try:
-        with httpx.Client(timeout=10.0, follow_redirects=True) as client:
-            resp = client.get(_GUTENDEX, params={"search": q})
-        resp.raise_for_status()
-        data = resp.json()
-    except Exception as exc:
-        raise HTTPException(status_code=502, detail=f"gutendex unreachable: {exc}") from exc
-    results = [
+def _map_gutendex_results(data: dict) -> list[dict]:
+    return [
         {
             "id": b.get("id"),
             "title": b.get("title"),
@@ -184,7 +175,36 @@ def gutendex(q: str = Query("")) -> dict:
         }
         for b in data.get("results", [])[:20]
     ]
-    return {"results": results}
+
+
+@router.get("/gutendex")
+def gutendex(q: str = Query("")) -> dict:
+    """Proxy a Gutendex search for the wizard (§11.1). Degrades to 502; never 500.
+
+    Prefers the configured instance (``GUTENDEX_URL``) and falls back to public gutendex.com when
+    it errors *or* returns no match — the public instance has been unreliable (search hangs).
+    """
+    if not q.strip():
+        return {"results": []}
+    last_exc: Exception | None = None
+    responded = False
+    for base_url in gutendex_bases(load_config().gutendex_url):
+        try:
+            with httpx.Client(timeout=10.0, follow_redirects=True) as client:
+                resp = client.get(f"{base_url}/books/", params={"search": q})
+            resp.raise_for_status()
+            results = _map_gutendex_results(resp.json())
+        except Exception as exc:  # noqa: BLE001 - try the next base
+            last_exc = exc
+            continue
+        responded = True
+        if results:
+            return {"results": results}
+    if responded:
+        return {"results": []}  # a real no-match from a reachable instance
+    raise HTTPException(
+        status_code=502, detail=f"gutendex unreachable: {last_exc}"
+    ) from last_exc
 
 
 @router.get("/styles")

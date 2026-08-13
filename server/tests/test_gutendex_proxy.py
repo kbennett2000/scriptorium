@@ -14,6 +14,7 @@ from fastapi.testclient import TestClient
 from scriptorium.app import app
 
 _GUTENDEX = "https://gutendex.com/books/"
+_LOCAL = "http://gutendex.local:8721/books/"
 
 _UPSTREAM = {
     "count": 1,
@@ -78,3 +79,61 @@ def test_proxy_follows_redirects(client) -> None:
     r = client.get("/api/admin/gutendex", params={"q": "time machine"})
     assert r.status_code == 200, r.text
     assert r.json()["results"][0]["id"] == 35
+
+
+# --- prefer-local-then-public fallback (GUTENDEX_URL) ------------------------
+
+
+@respx.mock
+def test_prefers_local_and_never_calls_public(client, monkeypatch) -> None:
+    """With GUTENDEX_URL set and answering, the proxy uses local and never touches public."""
+    monkeypatch.setenv("GUTENDEX_URL", "http://gutendex.local:8721")
+    local = respx.get(_LOCAL).mock(return_value=httpx.Response(200, json=_UPSTREAM))
+    public = respx.get(_GUTENDEX).mock(return_value=httpx.Response(200, json=_UPSTREAM))
+    r = client.get("/api/admin/gutendex", params={"q": "time machine"})
+    assert r.status_code == 200, r.text
+    assert r.json()["results"][0]["id"] == 35
+    assert local.called
+    assert not public.called
+
+
+@respx.mock
+def test_local_error_falls_back_to_public(client, monkeypatch) -> None:
+    monkeypatch.setenv("GUTENDEX_URL", "http://gutendex.local:8721")
+    respx.get(_LOCAL).mock(side_effect=httpx.ConnectError("down"))
+    respx.get(_GUTENDEX).mock(return_value=httpx.Response(200, json=_UPSTREAM))
+    r = client.get("/api/admin/gutendex", params={"q": "time machine"})
+    assert r.status_code == 200, r.text
+    assert r.json()["results"][0]["id"] == 35
+
+
+@respx.mock
+def test_local_empty_falls_back_to_public(client, monkeypatch) -> None:
+    """An empty local result set (e.g. catalog not yet imported) retries against public."""
+    monkeypatch.setenv("GUTENDEX_URL", "http://gutendex.local:8721")
+    respx.get(_LOCAL).mock(return_value=httpx.Response(200, json={"count": 0, "results": []}))
+    respx.get(_GUTENDEX).mock(return_value=httpx.Response(200, json=_UPSTREAM))
+    r = client.get("/api/admin/gutendex", params={"q": "time machine"})
+    assert r.status_code == 200, r.text
+    assert r.json()["results"][0]["id"] == 35
+
+
+@respx.mock
+def test_both_down_degrades_to_502(client, monkeypatch) -> None:
+    monkeypatch.setenv("GUTENDEX_URL", "http://gutendex.local:8721")
+    respx.get(_LOCAL).mock(side_effect=httpx.ConnectError("down"))
+    respx.get(_GUTENDEX).mock(side_effect=httpx.ConnectError("down"))
+    r = client.get("/api/admin/gutendex", params={"q": "x"})
+    assert r.status_code == 502
+
+
+@respx.mock
+def test_both_empty_returns_empty_not_502(client, monkeypatch) -> None:
+    """A genuine no-match from reachable instances is [] with a 200, never an error."""
+    monkeypatch.setenv("GUTENDEX_URL", "http://gutendex.local:8721")
+    empty = httpx.Response(200, json={"count": 0, "results": []})
+    respx.get(_LOCAL).mock(return_value=empty)
+    respx.get(_GUTENDEX).mock(return_value=empty)
+    r = client.get("/api/admin/gutendex", params={"q": "zzzznomatch"})
+    assert r.status_code == 200, r.text
+    assert r.json() == {"results": []}

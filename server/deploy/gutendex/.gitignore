@@ -1,0 +1,2 @@
+# Real secrets — commit only .env.example.
+.env
