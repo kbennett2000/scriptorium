@@ -41,7 +41,7 @@ from ..bake.phases.p7_render import (
     reference_conditioning,
     wrap_prompt,
 )
-from ..bake.phases.p8_publish import build_manifest
+from ..bake.phases.p8_publish import _matches_any, build_manifest
 from ..config import Config
 from ..render.derivatives import make_derivatives
 from ..render.imagegen import ImagegenClient
@@ -131,6 +131,36 @@ def _scoped_spec(edits_dir: Path, plate_id: str, scope: str) -> _AssetSpec:
         return p.parent / scope / p.name
 
     return replace(spec, src=scoped(spec.src), web=scoped(spec.web), thumb=scoped(spec.thumb))
+
+
+def _finalize_overlay_manifest(edits_dir: Path, book: str, source_rev: int) -> dict:
+    """Build + write the overlay ``manifest.json``, tagging the overlay-only reader-required files.
+
+    An overlay delivers two things a published BOOK never has, so they aren't in the shared
+    ``READER_REQUIRED`` globs (each of which the bundle verifier requires to match a file): the
+    captions (``edits.json``) and any accepted clips (``images/video/**``). We add those globs
+    here — the video glob only when a clip exists — then recompute the reader byte total."""
+    manifest = build_manifest(edits_dir, book, source_rev)
+    extra = ["edits.json"]
+    if any(f["path"].startswith("images/video/") for f in manifest["files"]):
+        extra.append("images/video/**")
+    for glob in extra:
+        if glob not in manifest["reader_required"]:
+            manifest["reader_required"].append(glob)
+    required = tuple(manifest["reader_required"])
+    manifest["total_bytes_reader"] = sum(
+        f["bytes"] for f in manifest["files"] if _matches_any(f["path"], required)
+    )
+    schemas.validate("manifest", manifest)
+    _write_json(edits_dir / "manifest.json", manifest)
+    return manifest
+
+
+def _video_path(edits_dir: Path, plate_id: str, scope: str) -> Path:
+    """The overlay path for a plate's accepted clip within a scope (ADR-0037):
+    ``images/video/plates/{scope}/{plate_id}.mp4`` — a `images/video/**` sibling of the image
+    derivatives, delivered offline by the same manifest glob and served as ``video/mp4``."""
+    return edits_dir / "images" / "video" / "plates" / scope / f"{plate_id}.mp4"
 
 
 def _plate_scopes(edits: dict, plate_id: str) -> dict:
@@ -316,6 +346,12 @@ async def plate_context(
 
     depicted = (doc.get("derived") or {}).get("depicted") or []
     models = await client.models() if client is not None else {"models": [], "default": None}
+    # Video (ADR-0037): which animate models the service reports ready, and any clip already
+    # accepted for this scope (so the editor can pre-fill the motion prompt / show "has a clip").
+    video = (
+        await client.video_health() if client is not None else {"models": [], "reachable": False}
+    )
+    prior_video = prior.get("video") or None
     return {
         "plate_id": plate_id,
         "prompt": _prefer("prompt", subject),
@@ -335,6 +371,10 @@ async def plate_context(
         "default_model": models.get("default"),
         # Whether this plate has a cast portrait to pin the character's likeness against.
         "has_cast_reference": _is_page_plate(plate_id) and bool(depicted),
+        # Video: gate the editor's "Bring to life" section + its model picker; echo any prior clip.
+        "video_available": bool(video.get("models")),
+        "animate_models": video.get("models", []),
+        "video": prior_video,
     }
 
 
@@ -498,13 +538,135 @@ def commit_edit(
     schemas.validate("artset-edits", edits)
     _write_json(_edits_json_path(cfg, user, book), edits)
 
-    # Rebuild the overlay manifest so the reader can check it out. edits.json is not a book
-    # reader-required file, so add it explicitly (captions must reach the device for offline).
-    manifest = build_manifest(edits_dir, book, source_rev)
-    if "edits.json" not in manifest["reader_required"]:
-        extra = next((f["bytes"] for f in manifest["files"] if f["path"] == "edits.json"), 0)
-        manifest["reader_required"].append("edits.json")
-        manifest["total_bytes_reader"] += extra
-    schemas.validate("manifest", manifest)
-    _write_json(edits_dir / "manifest.json", manifest)
+    # Rebuild the overlay manifest so the reader checks it out (captions + any clips reach offline).
+    _finalize_overlay_manifest(edits_dir, book, source_rev)
     return {"plate_id": plate_id, "caption": caption, "source_revision": source_rev}
+
+
+# --- video (ADR-0037): animate a plate's current picture into a short clip -----
+#
+# Mirrors the image edit flow: an animate render → a scratch candidate mp4 (+ sidecar) → accept
+# promotes it into the overlay at images/video/plates/{scope}/{plate_id}.mp4 and records a `video`
+# descriptor on the scoped edit entry. The clip animates the plate's CURRENT committed picture (the
+# same `_current_plate_png` the img2img start frame uses): to animate an edit, accept the picture
+# edit first. A video is additive and independent of the image edit — it never changes the picture.
+
+
+def video_candidate_path(cfg: Config, user: str, book: str, token: str) -> Path:
+    return _candidates_dir(cfg, user, book) / f"{token}.mp4"
+
+
+async def generate_video_candidate(
+    cfg: Config,
+    user: str,
+    book: str,
+    plate_id: str,
+    *,
+    motion_prompt: str,
+    client: ImagegenClient,
+    set_id: str | None = None,
+    model: str | None = None,
+    negative: str | None = None,
+    seed: int | None = None,
+    frames: int | None = None,
+    fps: int | None = None,
+) -> dict:
+    """Animate the plate's current picture into a scratch candidate clip; return its token.
+
+    The start frame is :func:`_current_plate_png` for the active scope (prior edit → set plate →
+    book plate). The candidate is NOT visible until :func:`commit_video`. Raises ``LookupError`` for
+    an unknown book/plate, :class:`EditError` if there is no image to animate, and propagates
+    ``GpuUnavailable`` from the client (→ HTTP 503).
+    """
+    _require_meta(cfg, book)
+    _prompt_doc(cfg, book, plate_id)  # 404 on an unknown plate
+    init_png = _current_plate_png(cfg, user, book, plate_id, set_id)
+
+    mp4 = await client.animate(
+        init_png,
+        motion_prompt,
+        model=model,
+        negative=negative or "",
+        seed=seed,
+        frames=frames,
+        fps=fps,
+    )
+
+    token = secrets.token_hex(8)
+    cand = video_candidate_path(cfg, user, book, token)
+    cand.parent.mkdir(parents=True, exist_ok=True)
+    cand.write_bytes(mp4)
+    _write_json(
+        cand.with_suffix(".json"),
+        {
+            "kind": "video",
+            "motion_prompt": motion_prompt,
+            "model": model,
+            "frames": frames,
+            "fps": fps,
+            "seed": seed,
+            # The scope (base book or a style set) this clip belongs to, so commit files it there.
+            "set_id": _scope_of(set_id),
+        },
+    )
+    return {"token": token}
+
+
+def commit_video(cfg: Config, user: str, book: str, plate_id: str, *, token: str) -> dict:
+    """Promote a candidate clip into the overlay; record a ``video`` descriptor on the edit entry.
+
+    If the plate has no image edit for this scope yet, a minimal entry is seeded from the CURRENT
+    caption + subject prompt so only the video is added (the picture and caption stay unchanged).
+    Raises ``LookupError`` for an unknown book/plate, :class:`EditError` for a bad candidate.
+    """
+    meta = _require_meta(cfg, book)
+    doc = _prompt_doc(cfg, book, plate_id)  # 404 on an unknown plate
+    cand = video_candidate_path(cfg, user, book, token)
+    if not cand.is_file():
+        raise EditError(f"no such video candidate {token!r}")
+    cand_meta = _read_json(cand.with_suffix(".json")) if cand.with_suffix(".json").is_file() else {}
+    scope = cand_meta.get("set_id") or DEFAULT_SET_ID
+
+    edits_dir = _edits_dir(cfg, user, book)
+    dst = _video_path(edits_dir, plate_id, scope)
+    dst.parent.mkdir(parents=True, exist_ok=True)
+    shutil.move(str(cand), dst)
+    cand.with_suffix(".json").unlink(missing_ok=True)
+
+    source_rev = int(meta.get("revision", 1))
+    edits = _load_edits(cfg, user, book)
+    edits["book_id"] = book
+    edits["user_id"] = user
+    edits["source_revision"] = source_rev
+    plates = _normalized_plates(edits)
+    edits["plates"] = plates
+
+    # Preserve an existing image edit for this scope; otherwise seed a minimal, invisible entry
+    # (current caption + subject prompt) so the required fields exist and nothing else changes.
+    existing = plates.get(plate_id, {}).get(scope)
+    if existing is not None:
+        entry = dict(existing)
+    else:
+        derived = doc.get("derived") or {}
+        subject = doc.get("final_subject_prompt") or derived.get("prompt") or ""
+        entry = {
+            "caption": _current_caption(cfg, user, book, plate_id, scope),
+            "prompt": str(subject),
+            "set_id": scope,
+            "created": _now_iso(),
+        }
+    entry["video"] = {
+        "motion_prompt": str(cand_meta.get("motion_prompt", "")),
+        "model": cand_meta.get("model"),
+        "frames": cand_meta.get("frames"),
+        "fps": cand_meta.get("fps"),
+        "seed": cand_meta.get("seed"),
+        "created": _now_iso(),
+    }
+    plates.setdefault(plate_id, {})[scope] = entry
+    schemas.validate("artset-edits", edits)
+    _write_json(_edits_json_path(cfg, user, book), edits)
+
+    # Rebuild the overlay manifest so the mp4 (images/video/**) + edits.json reach the device.
+    _finalize_overlay_manifest(edits_dir, book, source_rev)
+    return {"plate_id": plate_id, "source_revision": source_rev}

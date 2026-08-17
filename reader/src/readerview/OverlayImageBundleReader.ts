@@ -27,6 +27,8 @@ export class OverlayImageBundleReader implements BundleReader {
   private readonly captions = new Map<string, string>();
   /** plate_ids the profile has an edit for IN THE ACTIVE SCOPE (so we know when to look at all). */
   private readonly edited = new Set<string>();
+  /** plate_ids that have an accepted video clip in the active scope (ADR-0037). */
+  private readonly videos = new Set<string>();
 
   constructor(
     private readonly base: BundleReader,
@@ -39,10 +41,15 @@ export class OverlayImageBundleReader implements BundleReader {
     for (const [plateId, byScope] of Object.entries(edits?.plates ?? {})) {
       // ADR-0035 shape is plates[plate_id][scope]; a pre-0035 flat entry has no scope key, so
       // `[scope]` is undefined and it is ignored (it can't be attributed to a reader).
-      const entry = (byScope as Record<string, { caption?: string }> | null)?.[scope];
+      const entry = (byScope as Record<string, { caption?: string; video?: unknown }> | null)?.[
+        scope
+      ];
       if (!entry || typeof entry.caption !== "string") continue;
       this.edited.add(plateId);
       this.captions.set(plateId, entry.caption);
+      // ADR-0037: a `video` descriptor on the entry means an accepted clip is filed under
+      // images/video/plates/{scope}/{plate_id}.mp4 — surface a play icon for it.
+      if (entry.video) this.videos.add(plateId);
     }
   }
 
@@ -78,6 +85,27 @@ export class OverlayImageBundleReader implements BundleReader {
   /** The profile's caption for this base plate in the active scope, or `undefined` if none. */
   captionFor(pageId: string): string | undefined {
     return this.captions.get(pageId);
+  }
+
+  /** True iff the profile accepted a clip for this plate in the active scope (ADR-0037). */
+  hasVideo(plateId: string): boolean {
+    return this.videos.has(plateId);
+  }
+
+  /** An offline blob URL for the plate's accepted clip, or null if there is none / not resident. */
+  async videoUrl(plateId: string): Promise<string | null> {
+    if (!this.videos.has(plateId)) return null;
+    const key = `video:${plateId}`;
+    const cached = this.urls.get(key);
+    if (cached) return cached;
+    const abs = `${this.imageRoot}/images/video/plates/${this.scope}/${plateId}.mp4`;
+    if (!(await this.storage.exists(abs))) return null;
+    const bytes = await this.storage.readBytes(abs);
+    const buf = new ArrayBuffer(bytes.byteLength);
+    new Uint8Array(buf).set(bytes);
+    const url = URL.createObjectURL(new Blob([buf], { type: "video/mp4" }));
+    this.urls.set(key, url);
+    return url;
   }
 
   dispose(): void {

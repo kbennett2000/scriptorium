@@ -95,11 +95,48 @@ class ImagegenClient(Protocol):
         """True iff the service is reachable."""
         ...
 
+    async def animate(
+        self,
+        image: bytes,
+        prompt: str,
+        *,
+        model: str | None = None,
+        negative: str = "",
+        seed: int | None = None,
+        frames: int | None = None,
+        fps: int | None = None,
+        width: int | None = None,
+        height: int | None = None,
+    ) -> bytes:
+        """Animate a still into a short clip: ``POST /animate`` → raw mp4 bytes (WAN 2.2, ADR-0037).
+
+        ``image`` is the PNG start-frame bytes; ``prompt`` is the motion prompt ("how it should
+        move"). ``model`` is the service's animate model wire id (``"wan-5b"`` / ``"remix-14b"``);
+        ``None`` uses the service default. ``frames``/``fps``/``width``/``height``/``seed`` are
+        forwarded only when set, so an unset field uses the service default. Renders take minutes —
+        the caller must allow a generous read timeout. Maps 503/conn → ``GpuUnavailable`` (the same
+        gate txt2img uses), so a busy/unready GPU parks rather than crashing.
+        """
+        ...
+
+    async def video_health(self) -> dict[str, Any]:
+        """The installed animate models for the editor's picker + readiness gate (ADR-0037).
+
+        Returns ``{"models": [wire_id, …], "reachable": bool}`` — a subset of ``{"wan-5b",
+        "remix-14b"}`` per the service's ``/health`` ``wan.ready``/``remix.ready`` flags. Any
+        failure yields an empty, unreachable result (never raises), so the editor hides the video
+        section rather than offering a call that would 503.
+        """
+        ...
+
 
 # imagegen-service is a ComfyUI proxy: /generate can load an SDXL model on the first call, so the
 # generate timeout is generous (the service's own tier budget tops out at 300s); health is quick.
+# /animate renders a multi-second clip and, on the first job after an image job, pauses to swap the
+# GPU model set — minutes — so its budget mirrors the service's own 20-minute animate poll budget.
 _GENERATE_TIMEOUT_S = 300.0
 _HEALTH_TIMEOUT_S = 15.0
+_ANIMATE_TIMEOUT_S = 1200.0
 
 
 class RealImagegenClient:
@@ -246,6 +283,72 @@ class RealImagegenClient:
         except Exception:
             return empty
 
+    async def animate(
+        self,
+        image: bytes,
+        prompt: str,
+        *,
+        model: str | None = None,
+        negative: str = "",
+        seed: int | None = None,
+        frames: int | None = None,
+        fps: int | None = None,
+        width: int | None = None,
+        height: int | None = None,
+    ) -> bytes:
+        """``POST /animate`` → mp4 bytes. Maps 503/conn → GpuUnavailable, 422 → UnitFailed."""
+        if self._base is None:
+            raise GpuUnavailable("IMAGEGEN_URL is not configured")
+        body: dict[str, Any] = {
+            "image": base64.b64encode(image).decode("ascii"),
+            "prompt": prompt,
+        }
+        # Forward every optional field only when set, so an unspecified knob uses the service
+        # default (the service is the authority on default model/size/frames/fps).
+        if negative:
+            body["negativePrompt"] = negative
+        if model is not None:
+            body["model"] = model
+        if seed is not None:
+            body["seed"] = seed
+        if frames is not None:
+            body["frames"] = frames
+        if fps is not None:
+            body["fps"] = fps
+        if width is not None:
+            body["width"] = width
+        if height is not None:
+            body["height"] = height
+        url = f"{self._base}/animate"
+        try:
+            async with httpx.AsyncClient(timeout=_ANIMATE_TIMEOUT_S) as client:
+                resp = await client.post(url, json=body)
+        except httpx.HTTPError as exc:  # connect error, timeout, read error, …
+            raise GpuUnavailable(f"imagegen unreachable: {exc}") from exc
+        if resp.is_success:
+            return resp.content
+        raise _map_error(resp)
+
+    async def video_health(self) -> dict[str, Any]:
+        """GET /health → installed animate models (``wan.ready``/``remix.ready``); best-effort."""
+        empty = {"models": [], "reachable": False}
+        if self._base is None:
+            return empty
+        try:
+            async with httpx.AsyncClient(timeout=_HEALTH_TIMEOUT_S) as client:
+                resp = await client.get(f"{self._base}/health")
+            if not resp.is_success:
+                return empty
+            data = resp.json()
+            models: list[str] = []
+            if (data.get("wan") or {}).get("ready"):
+                models.append("wan-5b")
+            if (data.get("remix") or {}).get("ready"):
+                models.append("remix-14b")
+            return {"models": models, "reachable": bool(data.get("comfyuiReachable", False))}
+        except Exception:
+            return empty
+
 
 def _map_error(resp: httpx.Response) -> Exception:
     """Translate a non-2xx /generate response into a phase-control exception (ADR-0011).
@@ -369,6 +472,36 @@ class FakeImagegen:
     async def styles(self) -> dict[str, Any]:
         """No service style presets offline — the editor falls back to the local styles catalog."""
         return {"styles": [], "reachable": True}
+
+    async def animate(
+        self,
+        image: bytes,
+        prompt: str,
+        *,
+        model: str | None = None,
+        negative: str = "",
+        seed: int | None = None,
+        frames: int | None = None,
+        fps: int | None = None,
+        width: int | None = None,
+        height: int | None = None,
+    ) -> bytes:
+        """Deterministic placeholder mp4-shaped bytes (no GPU). Same request in → same bytes out.
+
+        Not a playable video — tests assert the request params/shape and the commit plumbing, never
+        the clip content (CLAUDE.md). The start-frame bytes and every set param fold into the digest
+        so distinct requests yield distinct stand-ins.
+        """
+        payload = f"{prompt}\x00{model}\x00{negative}\x00{seed}\x00{frames}\x00{fps}".encode()
+        payload += f"\x00{width}x{height}".encode() + b"\x00" + hashlib.sha256(image).digest()
+        digest = hashlib.sha256(payload).digest()
+        # A minimal ISO-BMFF ftyp box header so contentTypeFor/callers see mp4-ish bytes, then the
+        # request digest as the deterministic payload.
+        return b"\x00\x00\x00\x18ftypmp42\x00\x00\x00\x00mp42isom" + digest
+
+    async def video_health(self) -> dict[str, Any]:
+        """The fake reports the fast Wan model ready, so tests exercise the video path offline."""
+        return {"models": ["wan-5b"], "reachable": True}
 
     def render(
         self,

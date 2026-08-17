@@ -77,6 +77,35 @@ export interface ArtsetEdits {
          * ISO-8601 UTC timestamp this edit was committed.
          */
         created: string;
+        /**
+         * An accepted short video (WAN 2.2, ADR-0037) that animates this plate's current picture, stored beside this file at images/video/plates/{scope}/{plate_id}.mp4. The presence of this object is what makes the reader show a play icon on the plate; the reader derives the mp4 path from the scope + plate_id. Absent ⇒ no clip for this plate/scope. Additive and per (scope, plate_id), like the image edit itself.
+         */
+        video?: {
+          /**
+           * The motion prompt ('how it should move') the clip was rendered from; pre-fills the editor on a re-render.
+           */
+          motion_prompt: string;
+          /**
+           * The animate model wire id used ('wan-5b' | 'remix-14b'), or null for the service's default.
+           */
+          model?: string | null;
+          /**
+           * Frame count rendered, or null for the service default.
+           */
+          frames?: number | null;
+          /**
+           * Frames per second rendered, or null for the service default.
+           */
+          fps?: number | null;
+          /**
+           * The seed used, or null if the service randomized it.
+           */
+          seed?: number | null;
+          /**
+           * ISO-8601 UTC timestamp this video was accepted.
+           */
+          created: string;
+        };
       };
     };
   };

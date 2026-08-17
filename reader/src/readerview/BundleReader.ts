@@ -25,6 +25,18 @@ export interface BundleReader {
    * reader implements this; all others leave it absent.
    */
   captionFor?(pageId: string): string | undefined;
+  /**
+   * True iff this reader has an accepted video clip for `plateId` in the active scope (ADR-0037) —
+   * drives the play icon on the plate. Only the overlay reader implements this; others leave it
+   * absent (⇒ no video).
+   */
+  hasVideo?(plateId: string): boolean;
+  /**
+   * A usable (offline blob) URL for `plateId`'s accepted clip, or null if none is resident. Like
+   * `imageUrl`, the bytes become a local object URL — never a fetch. Only the overlay reader
+   * implements this.
+   */
+  videoUrl?(plateId: string): Promise<string | null>;
   /** Release any object URLs this reader minted. Call on unmount. No-op for data-URL readers. */
   dispose(): void;
 }

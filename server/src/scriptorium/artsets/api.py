@@ -43,8 +43,15 @@ def _imagegen_client(cfg: Config) -> ImagegenClient:
     """The imagegen client for on-demand picture edits. Indirected so tests inject a fake."""
     return RealImagegenClient(cfg)
 
-# Set images are the same asset kinds a book bundle serves (mirror library/api.py).
-_CONTENT_TYPES = {".json": "application/json", ".webp": "image/webp", ".png": "image/png"}
+# Set images are the same asset kinds a book bundle serves (mirror library/api.py). Video (ADR-0037)
+# adds mp4/webm for accepted per-plate clips in the edits overlay.
+_CONTENT_TYPES = {
+    ".json": "application/json",
+    ".webp": "image/webp",
+    ".png": "image/png",
+    ".mp4": "video/mp4",
+    ".webm": "video/webm",
+}
 
 
 class CreateSetBody(BaseModel):
@@ -293,6 +300,86 @@ def edit_commit(user: str, book: str, plate_id: str, body: CommitBody) -> dict[s
     try:
         return edits_service.commit_edit(
             load_config(), user, book, plate_id, token=body.token, caption=body.caption
+        )
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except edits_service.EditError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+# --- per-plate video clips (post-publish, private per user; ADR-0037) --------
+#
+# A reader animates a plate's CURRENT picture into a short clip. Same candidate → accept flow as an
+# image edit: a render lands in scratch, accept promotes it into the overlay and records a `video`
+# descriptor. Renders take minutes, so the candidate call holds the connection open (synchronous).
+
+
+class VideoCandidateBody(BaseModel):
+    motion_prompt: str
+    # The reader (base book or a style set) the clip is made from — files it under that scope.
+    set_id: str | None = None
+    model: str | None = None  # animate wire id ("wan-5b"/"remix-14b"); None ⇒ service default
+    negative: str | None = None
+    seed: int | None = None
+    frames: int | None = None
+    fps: int | None = None
+
+
+class VideoCommitBody(BaseModel):
+    token: str
+
+
+@router.post("/artsets/{user}/{book}/edits/{plate_id}/video-candidate")
+async def edit_video_candidate(
+    user: str, book: str, plate_id: str, body: VideoCandidateBody
+) -> dict[str, Any]:
+    """Animate the plate's current picture into a candidate clip; returns a token (not yet in book).
+
+    Synchronous: the render takes minutes and the first job after an image render pauses to swap the
+    GPU model set, so the caller must allow a generous read timeout.
+    """
+    _require_path(user, book)
+    _require_plate(plate_id)
+    cfg = load_config()
+    try:
+        return await edits_service.generate_video_candidate(
+            cfg, user, book, plate_id,
+            motion_prompt=body.motion_prompt, set_id=_norm_set_id(body.set_id),
+            model=body.model, negative=body.negative, seed=body.seed,
+            frames=body.frames, fps=body.fps,
+            client=_imagegen_client(cfg),
+        )
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except edits_service.EditError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except GpuUnavailable as exc:
+        raise HTTPException(status_code=503, detail=f"imagegen unavailable: {exc}") from exc
+
+
+@router.get("/artsets/{user}/{book}/edits/{plate_id}/video-candidate/{token}.mp4")
+def edit_video_candidate_file(user: str, book: str, plate_id: str, token: str) -> FileResponse:
+    """Preview a still-uncommitted candidate clip."""
+    _require_path(user, book)
+    _require_plate(plate_id)
+    if not _TOKEN_RE.match(token):
+        raise HTTPException(status_code=400, detail="bad token")
+    path = edits_service.video_candidate_path(load_config(), user, book, token)
+    if not path.is_file():
+        raise HTTPException(status_code=404, detail="no such video candidate")
+    return FileResponse(path, media_type="video/mp4")
+
+
+@router.post("/artsets/{user}/{book}/edits/{plate_id}/video-commit")
+def edit_video_commit(user: str, book: str, plate_id: str, body: VideoCommitBody) -> dict[str, Any]:
+    """Promote the chosen candidate clip into the overlay (shows a play icon in the reader)."""
+    _require_path(user, book)
+    _require_plate(plate_id)
+    if not _TOKEN_RE.match(body.token):
+        raise HTTPException(status_code=400, detail="bad token")
+    try:
+        return edits_service.commit_video(
+            load_config(), user, book, plate_id, token=body.token
         )
     except LookupError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc

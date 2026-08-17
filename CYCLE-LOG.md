@@ -2709,3 +2709,47 @@ tests green (185) · schemas ↔ types in sync (`gen-types` diff clean).
 
 **Gates.** ruff clean · eslint + tsc clean (admin-ui) · non-gpu server tests green (572) · admin
 tests green (9) · schemas ↔ types in sync (`gen-types` diff clean).
+
+---
+
+## M3 · "bring a picture to life" — per-plate video in the reader editor (ADR-0037) (2026-08-14)
+
+**Shipped**
+- **Feature.** imagegen-service gained `POST /animate` (WAN 2.2: base64 still → raw mp4). The reader's
+  Edit-picture screen now animates a plate's current picture into a short clip; **Accept video** files
+  it in the private edits overlay, and a **play icon** on the plate plays it offline.
+- **Depends on (ops):** `/animate` still lives on imagegen-service's unmerged `feat/animate-endpoint`
+  branch — must be merged + deployed with WAN models. Until then the feature is hidden by the
+  readiness gate (`plate_context.video_available`), never a crash.
+- **Client.** `/animate` is the same service as `/generate`, so reuse `cfg.imagegen_url` — added
+  `animate()` + `video_health()` to `RealImagegenClient`/`FakeImagegen` (no new config). Params
+  forwarded only when set; 503/conn → `GpuUnavailable`. 20-min timeout mirrors the service.
+- **Server (edits).** `generate_video_candidate` animates `_current_plate_png` (the current committed
+  picture) → scratch `.edit-candidates/{token}.mp4` + sidecar; `commit_video` moves it to
+  `images/video/plates/{scope}/{plate_id}.mp4` and adds a `video` descriptor to the scoped edit entry
+  (seeding a minimal invisible entry from the current caption + subject when there's no image edit).
+  New routes `video-candidate` / `video-candidate/{token}.mp4` / `video-commit`; `.mp4`/`.webm` added
+  to `_CONTENT_TYPES`. `plate_context` gains `video_available` / `animate_models` / prior `video`.
+- **Delivery.** `"images/video/**"` added to `READER_REQUIRED` (shared book/overlay glob) so the
+  overlay manifest delivers the mp4 offline via the existing `artsetCheckout`.
+- **Schema/types.** `artset-edits` entry gains an optional `video` object; regenerated `shared/types`
+  (regen deterministic, diff in sync).
+- **Reader.** New `shelf/editPicture.ts` video fns (behind the ESLint network fence);
+  `BundleReader.hasVideo?/videoUrl?` implemented in `OverlayImageBundleReader` (offline blob URL,
+  active scope only); `Plate.tsx` play-icon → inline `<video>` swap; `EditPicture.tsx` "Bring to
+  life" section (motion prompt + model + frames/fps/seed, Render → preview → Accept);
+  `Page.tsx` threads `plateId`.
+- Tests: server — video candidate animates the current plate with the right params, commit writes the
+  clip overlay + `video` entry + manifest delivery, video-only commit leaves the picture/caption
+  unchanged, an existing image edit is preserved, `video_available` surfaces, endpoints incl. 503.
+  reader — `OverlayImageBundleReader` `hasVideo`/`videoUrl` (scope-correct, resident-only);
+  `Plate` shows the play icon and swaps to `<video>` on click. Never asserts clip content.
+
+**Decisions (with user)**
+- **Synchronous render** (matches `/animate` + the image-candidate flow); minutes-long hold behind a
+  spinner. **Animate from the current committed picture** (accept an edit first to animate it) —
+  video stays an independent additive commit. **Fuller reader controls** (prompt + model +
+  frames/fps/seed). remix-14b appears only if the service reports it ready.
+
+**Gates.** ruff clean · eslint + tsc clean (reader) · non-gpu server tests green · reader tests green
+· schemas ↔ types in sync (`gen-types` diff clean).

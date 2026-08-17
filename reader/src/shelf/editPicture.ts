@@ -37,6 +37,22 @@ export interface EditContext {
   default_model: string | null;
   /** True iff this plate has a cast portrait to pin the character's likeness against. */
   has_cast_reference: boolean;
+  /** True iff the imagegen service reports an animate model ready (gates the "Bring to life" UI). */
+  video_available: boolean;
+  /** Animate model wire ids the service reports ready ("wan-5b" / "remix-14b"). */
+  animate_models: string[];
+  /** A clip already accepted for this plate+scope (pre-fills the motion prompt), or null. */
+  video: VideoInfo | null;
+}
+
+/** The provenance of an accepted clip (mirrors the artset-edits `video` descriptor, ADR-0037). */
+export interface VideoInfo {
+  motion_prompt: string;
+  model?: string | null;
+  frames?: number | null;
+  fps?: number | null;
+  seed?: number | null;
+  created?: string;
 }
 
 /** A generated-but-uncommitted candidate. */
@@ -122,5 +138,74 @@ export async function commitEdit(
     body: JSON.stringify({ token, caption }),
   });
   if (!resp.ok) throw new ApiError(resp.status, `POST commit → ${resp.status}`);
+  await artsetCheckout(new HttpArtsetClient(), storage, user, book, EDITS_SET);
+}
+
+// --- video (ADR-0037): animate a plate's current picture into a short clip ---
+
+/** A generated-but-uncommitted video candidate. */
+export interface VideoCandidate {
+  token: string;
+}
+
+export interface VideoBody {
+  motion_prompt: string;
+  /** The reader the clip is made from ("default" ⇒ base book, or a "set-…" id). */
+  set_id?: string;
+  /** Animate model wire id ("wan-5b"/"remix-14b"); omitted ⇒ the service default. */
+  model?: string | null;
+  negative?: string | null;
+  seed?: number | null;
+  frames?: number | null;
+  fps?: number | null;
+}
+
+/**
+ * Animate the plate's current picture into a candidate clip. NOTE: this render takes MINUTES (and
+ * the first one after an image job pauses to swap GPU models) — the request stays open the whole
+ * time. Callers must show a long-running spinner.
+ */
+export async function generateVideoCandidate(
+  user: string,
+  book: string,
+  plateId: string,
+  body: VideoBody,
+): Promise<VideoCandidate> {
+  const resp = await fetch(`${BASE}${plateBase(user, book, plateId)}/video-candidate`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!resp.ok) throw new ApiError(resp.status, `POST video-candidate → ${resp.status}`);
+  return (await resp.json()) as VideoCandidate;
+}
+
+/** The URL of an uncommitted candidate clip — used directly as a <video src> (online-only preview). */
+export function videoCandidateUrl(
+  user: string,
+  book: string,
+  plateId: string,
+  token: string,
+): string {
+  return `${BASE}${plateBase(user, book, plateId)}/video-candidate/${seg(token)}.mp4`;
+}
+
+/**
+ * Accept the chosen candidate clip into the private overlay, then download the overlay so the clip
+ * plays offline afterward (Resident) and the reader shows a play icon on the plate.
+ */
+export async function commitVideo(
+  storage: Storage,
+  user: string,
+  book: string,
+  plateId: string,
+  token: string,
+): Promise<void> {
+  const resp = await fetch(`${BASE}${plateBase(user, book, plateId)}/video-commit`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ token }),
+  });
+  if (!resp.ok) throw new ApiError(resp.status, `POST video-commit → ${resp.status}`);
   await artsetCheckout(new HttpArtsetClient(), storage, user, book, EDITS_SET);
 }
