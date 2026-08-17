@@ -43,6 +43,8 @@ export function NewBookWizard() {
   const [customStyle, setCustomStyle] = useState("");
   // null → let the imagegen service pick its default model (ADR-0030).
   const [model, setModel] = useState<string | null>(null);
+  // Optional book-wide negative prompt (ADR-0036), appended to every plate's derived negative.
+  const [negative, setNegative] = useState("");
   const [density, setDensity] = useState<DensityPreset>("classic");
   const [imagesPerScene, setImagesPerScene] = useState(1);
   const [portraits, setPortraits] = useState(true);
@@ -95,6 +97,7 @@ export function NewBookWizard() {
         portrait_review: portraits && portraitReview,
         model,
         custom_style: effectiveStyle === "custom" ? customStyle || null : null,
+        negative: negative.trim() || null,
         title: title || null,
         author: author || null,
       },
@@ -322,6 +325,26 @@ export function NewBookWizard() {
             </p>
           </div>
         )}
+
+        {/* Optional book-wide negative prompt (ADR-0036). Appended to the style's built-in negative
+            and the anatomy/period guardrails — a way to say "also avoid these", not replace them. */}
+        <div style={{ marginTop: 10 }}>
+          <label className="portrait-label" htmlFor="negative-prompt">
+            Negative prompt (optional)
+          </label>
+          <textarea
+            id="negative-prompt"
+            rows={2}
+            placeholder="blurry, extra text"
+            value={negative}
+            onChange={(e) => setNegative(e.target.value)}
+            style={{ width: "100%" }}
+          />
+          <p className="muted" style={{ fontSize: 11, marginTop: 2 }}>
+            Things to keep out of every picture, added on top of the style’s built-in avoids. Leave
+            blank for the defaults.
+          </p>
+        </div>
       </div>
 
       {/* 4. How many pictures */}

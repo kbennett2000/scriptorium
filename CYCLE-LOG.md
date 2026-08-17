@@ -2673,3 +2673,39 @@ types in sync (`gen-types` diff clean).
 
 **Gates.** ruff clean · eslint + tsc clean (reader) · non-gpu server tests green (566) · reader
 tests green (185) · schemas ↔ types in sync (`gen-types` diff clean).
+
+---
+
+## M2 · book-wide negative prompt at creation (ADR-0036) (2026-08-13)
+
+**Shipped**
+- **Gap.** The imagegen service takes a `negativePrompt` and the picture editor (ADR-0034) exposes a
+  per-plate negative, but **new book creation had no user negative at all** — every plate's negative
+  was machine-only (`style.negative` + `_GLOBAL_NEGATIVE` guard + `derived.avoid`). No way to say
+  "keep text/watermarks out of this whole book" up front.
+- **Fix — one optional owner-typed negative per book, applied to every plate.** Appended (not
+  substituted) so the anatomy/period guardrails stay armed book-wide; it means "*also* avoid these".
+- **Server.** `wrap_prompt` gains `user_negative=None`, folded **last** into `_dedupe_terms` in both
+  branches (page + cover/portrait pseudo-plates); `None`/`""` is a no-op → byte-identical to before.
+  `BakeBody.negative` flows into `job.bake_config` and P7 passes it. Persisted into the published
+  `meta.json` (`build_meta`) so style-set re-renders — whose job carries only `style_id` — read it
+  back via `_book_negative` (mirrors `_era`, ADR-0026) and honor the same terms.
+- **Schema/types.** `meta.schema.json` gains optional `negative`; regenerated `shared/types` (diff
+  committed, regen deterministic). No `artset-edits` change. No imagegen protocol change — the real
+  service already forwards `negativePrompt`; `_digest` left untouched to avoid churning fake fixtures.
+- **Admin UI.** `NewBookWizard.tsx` gets a "Negative prompt (optional)" textarea (placeholder
+  `blurry, extra text`), sent as `bake.negative` (blank → omitted); `CreateBookBody.bake.negative`
+  added.
+- Tests: server — `wrap_prompt` appends + de-dupes the owner's terms and keeps the guards (page +
+  pseudo-plate), `None`/`""` byte-identical; P7 render records the appended negative on every plate;
+  a set re-render inherits the book's `meta.json` negative. Shape/strings only, never image content.
+
+**Decisions**
+- **Append, not replace** (owner's call): book-wide replace would silently disarm the
+  anti-deformity/anachronism guardrails for the whole book; the per-plate editor still *replaces* for
+  a single fine-tuned image.
+- **Apply to sets too** (owner's call): pinned in `meta.json` and re-read by set jobs so a
+  Comic/Cyberpunk re-illustration can't reintroduce something the owner asked to avoid.
+
+**Gates.** ruff clean · eslint + tsc clean (admin-ui) · non-gpu server tests green (572) · admin
+tests green (9) · schemas ↔ types in sync (`gen-types` diff clean).

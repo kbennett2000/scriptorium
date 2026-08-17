@@ -196,7 +196,11 @@ def _dedupe_terms(*parts: str) -> str:
 
 
 def wrap_prompt(
-    style: dict, plate_id: str, prompt_doc: dict, era: str | None = None
+    style: dict,
+    plate_id: str,
+    prompt_doc: dict,
+    era: str | None = None,
+    user_negative: str | None = None,
 ) -> tuple[str, str]:
     """The §10 (wrapped, negative) strings for one plate.
 
@@ -209,11 +213,17 @@ def wrap_prompt(
     ``era`` is the book's free-text period/place ("Russia 1870s"). Before ADR-0026 it reached only
     the text transforms, so the image model had no period anchor at all and fell back to its own
     priors — a Russian Orthodox "monk in a red coarse coat" renders as a Buddhist one.
+
+    ``user_negative`` is the book-wide negative the creator typed at bake time (ADR-0036). It is
+    appended **last** so the style + global guardrails keep priority and ``_dedupe_terms`` drops any
+    overlap. None/empty is a no-op — byte-identical to a pre-ADR-0036 render.
     """
     final = prompt_doc["final_subject_prompt"]
     if not _is_page_plate(plate_id):
         extra = _PORTRAIT_NEGATIVE if _is_portrait_plate(plate_id) else ""
-        return final, _dedupe_terms(style["negative"], _GLOBAL_NEGATIVE, extra)
+        return final, _dedupe_terms(
+            style["negative"], _GLOBAL_NEGATIVE, extra, user_negative or ""
+        )
 
     derived = prompt_doc.get("derived") or {}
     # The subject is a sentence; drop its full stop so the style suffix reads as a continuation of
@@ -225,7 +235,9 @@ def wrap_prompt(
     shot = _SHOT_TERMS.get(str(derived.get("shot") or "").strip().casefold(), "")
     shot_seg = f", {shot}" if shot else ""
     wrapped = f"{style['prefix']}{era_seg}{subject}{shot_seg}{style['suffix']}"
-    negative = _dedupe_terms(style["negative"], _GLOBAL_NEGATIVE, _join_avoid(derived.get("avoid")))
+    negative = _dedupe_terms(
+        style["negative"], _GLOBAL_NEGATIVE, _join_avoid(derived.get("avoid")), user_negative or ""
+    )
     return wrapped, negative
 
 
@@ -419,7 +431,9 @@ async def render_plate(
     prompt_path = _prompts_dir(cfg, job) / f"{plate_id}.json"
     doc = _read_json(prompt_path)
     style = resolve_style(job.bake_config)
-    wrapped, negative = wrap_prompt(style, plate_id, doc, job.bake_config.get("era"))
+    wrapped, negative = wrap_prompt(
+        style, plate_id, doc, job.bake_config.get("era"), job.bake_config.get("negative")
+    )
     spec = _asset_spec(book, plate_id)
     if seed is None:
         seed = _default_seed(job.book_id, plate_id)

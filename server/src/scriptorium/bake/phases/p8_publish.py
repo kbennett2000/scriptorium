@@ -236,6 +236,9 @@ def build_meta(cfg: Any, job: Job, bundle_dir: Path, revision: int) -> dict:
         # The free-text look for the ``custom`` style (ADR-0031), or null for a catalog style.
         # Pinned so -rN regens and art-set re-rolls reproduce this book's exact custom prompt.
         "custom_style": cfgd.get("custom_style"),
+        # The owner's book-wide negative prompt (ADR-0036), or null. Pinned so art-set re-renders
+        # (which read only the published bundle) apply the same "also avoid these" terms.
+        "negative": cfgd.get("negative"),
         "density_preset": cfgd.get("density_preset", "classic"),
         "images_per_scene": int(cfgd.get("images_per_scene", 1)),
         "portraits_enabled": bool(cfgd.get("portraits_enabled", True)),

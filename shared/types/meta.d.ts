@@ -62,6 +62,10 @@ export interface Meta {
    */
   custom_style?: string | null;
   /**
+   * The book-wide negative prompt the owner typed at bake time (ADR-0036), or null/absent. Appended (de-duped) to every plate's machine-derived negative during render, and re-applied to art-set re-renders. Absent on bundles published before ADR-0036.
+   */
+  negative?: string | null;
+  /**
    * Plate-density preset used for selection (DESIGN §8). One of the three v1 presets.
    */
   density_preset: "lavish" | "classic" | "sparse";

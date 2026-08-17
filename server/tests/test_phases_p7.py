@@ -474,6 +474,26 @@ def test_bake_model_reaches_the_imagegen_client(tmp_path) -> None:
 
 
 @respx.mock
+def test_book_negative_is_appended_to_every_plate_negative(tmp_path) -> None:
+    # ADR-0036: the owner's book-wide negative (bake_config["negative"]) is appended to every
+    # plate's derived negative — the anatomy/period guards stay, the owner's terms are layered on.
+    cfg = _cfg(tmp_path)
+    _seed(cfg)
+    job = jobmod.load(cfg, "b")
+    job.bake_config["negative"] = "text, watermark"
+    job.save(cfg)
+    respx.post(f"{TTS}/v1/models/unload").mock(return_value=httpx.Response(200, json={}))
+
+    job = _drive(cfg, FakeImagegen())
+    assert job.state == JobState.RENDERED
+    p1 = json.loads((cfg.work_dir / "b" / "prompts" / "0001.json").read_text("utf-8"))
+    terms = [t.strip() for t in p1["negative_prompt"].split(",")]
+    assert "text" in terms and "watermark" in terms  # owner's terms present
+    assert "duplicate" in terms  # global guard still applied
+    assert len(terms) == len(set(terms))  # de-duped
+
+
+@respx.mock
 def test_custom_style_leads_the_wrapped_prompt(tmp_path) -> None:
     # ADR-0031: the `custom` style sentinel + bake_config["custom_style"] leads every page plate's
     # wrapped prompt (prompt-only, no LoRA), and passes through to the imagegen `style` as None.
