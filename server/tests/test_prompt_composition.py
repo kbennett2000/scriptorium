@@ -161,6 +161,52 @@ def test_negative_gains_the_global_guards_without_duplicates() -> None:
     assert len(terms) == len(set(terms)), f"duplicate negative terms: {negative}"
 
 
+# --- ADR-0036: the owner's book-wide negative is appended, not substituted ---
+
+
+def test_user_negative_is_appended_after_the_derived_guards() -> None:
+    style = get_style("engraving")
+    _, negative = wrap_prompt(
+        style, "0001", _doc("a scene", avoid=["fog"]), user_negative="text, watermark"
+    )
+    terms = [t.strip() for t in negative.split(",")]
+    # The safety net and derived avoids survive...
+    assert "duplicate" in terms and "bad anatomy" in terms and "fog" in terms
+    # ...and the owner's terms are layered on top.
+    assert "text" in terms and "watermark" in terms
+    assert len(terms) == len(set(terms)), f"duplicate negative terms: {negative}"
+
+
+def test_user_negative_is_deduped_against_the_existing_terms() -> None:
+    # "deformed" is already in the global guard; re-typing it must not double it.
+    style = get_style("engraving")
+    _, with_neg = wrap_prompt(style, "0001", _doc("a scene"), user_negative="deformed, cabbages")
+    terms = [t.strip() for t in with_neg.split(",")]
+    assert terms.count("deformed") == 1
+    assert "cabbages" in terms
+
+
+def test_absent_user_negative_is_byte_identical_to_before() -> None:
+    # None and "" must both be no-ops — existing books/fixtures render the same negative.
+    style = get_style("engraving")
+    baseline = wrap_prompt(style, "0001", _doc("a scene", avoid=["fog"]))[1]
+    for empty in (None, ""):
+        doc = _doc("a scene", avoid=["fog"])
+        _, negative = wrap_prompt(style, "0001", doc, user_negative=empty)
+        assert negative == baseline
+
+
+def test_user_negative_reaches_pseudo_plates_too() -> None:
+    # A portrait/cover pseudo-plate still gets the owner's book-wide avoids appended.
+    style = get_style("engraving")
+    _, negative = wrap_prompt(
+        style, "portrait-zossima", _doc("engraved bust"), user_negative="text, watermark"
+    )
+    terms = [t.strip() for t in negative.split(",")]
+    assert "two people" in terms  # portrait guard still there
+    assert "text" in terms and "watermark" in terms
+
+
 def test_pseudo_plates_pass_their_prompt_through_but_still_get_the_guards() -> None:
     # cover/portrait strings were fully assembled by P5 (style baked in) — P7 must not re-wrap them.
     style = get_style("engraving")

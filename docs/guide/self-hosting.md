@@ -108,6 +108,10 @@ server boots even with none set.
 | `AUTO_APPROVE` | Approve the review step automatically | `false` |
 | `GPU_WOL_ENABLED` / `GPU_MAC` | Wake a sleeping GPU box over the network | `false` / *(unset)* |
 | `RUNNER_TICK_S` | How often (seconds) the bakery checks for work | `5` |
+| `RENDER_BACKEND` | Where pictures are drawn: `local` (the picture service at `IMAGEGEN_URL`) or `runpod` (a Runpod serverless endpoint) | `local` |
+| `RUNPOD_ENDPOINT_ID` | The Runpod endpoint id to draw on. Required when `RENDER_BACKEND=runpod` | *(unset)* |
+| `RENDER_CONCURRENCY` | How many pictures to draw at once. **Ignored on `local`** — one GPU draws one picture at a time, so asking for more just makes them queue | `4` |
+| `RENDER_CARD` | The GPU model you expect to draw on, e.g. `NVIDIA GeForce RTX 4090`. If a picture comes back from a different card, the log says so | *(unset — no check)* |
 
 Set them before `start`, for example:
 
@@ -124,6 +128,28 @@ $env:TTS_URL = "http://192.168.1.20:8712"
 $env:IMAGEGEN_URL = "http://192.168.1.20:8189"
 .\scripts\start.ps1
 ```
+
+**Drawing on rented GPUs instead of your own.** Set `RENDER_BACKEND=runpod` and point
+`RUNPOD_ENDPOINT_ID` at a Runpod serverless endpoint running the render worker. Pictures are
+then drawn there, several at a time, while the text steps stay on your machine. Keep
+`IMAGEGEN_URL` set as well — it is still used to free your GPU's memory before each text step.
+
+```bash
+export IMAGEGEN_URL=http://192.168.1.20:8189   # still needed
+export RENDER_BACKEND=runpod
+export RUNPOD_ENDPOINT_ID=xxxxxxxxxxxxxx
+export RENDER_CONCURRENCY=4
+export RENDER_CARD="NVIDIA GeForce RTX 4090"
+```
+
+Credentials are read from `~/.runpod/config.toml`, the file `runpodctl` and `flash` already
+write. There is no environment variable for the key, deliberately: an API key in an
+environment variable has usually been typed into a shell history first.
+
+Two things to know before you use it. Rented GPUs cost money per second a worker is awake, so
+this is not free the way your own box is. And a picture drawn on a different model of GPU is
+**not** pixel-for-pixel the same picture — the same seed on different silicon produces a
+different, equally good image. Re-baking a book on a different card gives you a different book.
 
 You can check the server's view of the world at any time at **<http://localhost:8720/health>** — it
 reports whether the two GPU services are reachable.

@@ -110,6 +110,19 @@ def _era(cfg: Any, job: Job) -> str | None:
     return (_read_json(meta_path) or {}).get("era")
 
 
+def _book_negative(cfg: Any, job: Job) -> str | None:
+    """The book-wide negative prompt (ADR-0036), read from the published bundle.
+
+    Like the era (see :func:`_era`), a set job's own ``bake_config`` carries only ``style_id`` — the
+    owner's negative lives in the bundle's ``meta.json`` (written at publish) — so without this a
+    set re-render would drop the "also avoid these" terms the owner set on the base book.
+    """
+    meta_path = _lib_dir(cfg, job) / "meta.json"
+    if not meta_path.is_file():
+        return None
+    return (_read_json(meta_path) or {}).get("negative")
+
+
 def _set_seed(book_id: str, set_id: str, plate_id: str) -> int:
     """Deterministic per-(book, set, plate) seed. Folding set_id in makes a re-roll differ."""
     digest = hashlib.sha256(f"{book_id}\x00{set_id}\x00{plate_id}".encode()).hexdigest()
@@ -198,7 +211,9 @@ class SetRender:
         set_dir = _set_dir(cfg, job)
         style = resolve_style(job.bake_config)
         doc = self._prompt_doc(cfg, job, plate_id, style)
-        wrapped, negative = wrap_prompt(style, plate_id, doc, _era(cfg, job))
+        wrapped, negative = wrap_prompt(
+            style, plate_id, doc, _era(cfg, job), _book_negative(cfg, job)
+        )
         spec = _asset_spec(set_dir, plate_id)
         seed = _set_seed(job.book_id, job.source["set_id"], plate_id)
         # Condition on *this set's* portrait of the primary character (ADR-0023/0026). Before this

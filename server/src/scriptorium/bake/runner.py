@@ -94,6 +94,28 @@ async def free_imagegen_gpu(cfg: Config) -> None:
         return
 
 
+def _batches(units: list[Any], width: int) -> list[list[Any]]:
+    """Group units into runnable batches, preserving order.
+
+    A unit that is not ``parallel`` is always a batch of one, so it runs alone and
+    everything before it has finished — which is what keeps ``__unload__`` first and
+    exclusive (§7.4). Runs of parallel units are chunked ``width`` at a time.
+
+    ``width <= 1`` yields one unit per batch, which is the pre-fan-out behaviour
+    exactly. That is the property every local deployment relies on.
+    """
+    if width <= 1:
+        return [[u] for u in units]
+    out: list[list[Any]] = []
+    for unit in units:
+        if getattr(unit, "parallel", False) and out and len(out[-1]) < width \
+                and getattr(out[-1][-1], "parallel", False):
+            out[-1].append(unit)
+        else:
+            out.append([unit])
+    return out
+
+
 async def _maybe_await(value: Any) -> Any:
     """Await ``value`` if it is awaitable, else return it (phases may be sync or async)."""
     if inspect.isawaitable(value):
@@ -166,11 +188,30 @@ class Runner:
                 await self._free_image_gpu(self.cfg)
 
         try:
-            for unit in phase.units(job, self.cfg):
-                if phase.unit_done(job, self.cfg, unit):
-                    continue
+            pending = [
+                unit for unit in phase.units(job, self.cfg)
+                if not phase.unit_done(job, self.cfg, unit)
+            ]
+            for batch in _batches(pending, self.cfg.effective_render_concurrency):
                 try:
-                    await self._run_with_ladder(job, phase, unit)
+                    if len(batch) == 1:
+                        # The overwhelmingly common path, and byte-for-byte the
+                        # pre-fan-out one: no gather, no task, same call stack.
+                        await self._run_with_ladder(job, phase, batch[0])
+                    else:
+                        # Each unit keeps its OWN retry ladder — ``_run_with_ladder``
+                        # is per-unit, so one plate's 422 retries that plate and
+                        # never re-renders its neighbours. ``return_exceptions``
+                        # keeps a GpuUnavailable from cancelling siblings mid-render:
+                        # they are already paid for, and a cancelled render is a
+                        # wasted one. The exception is re-raised after they land.
+                        results = await asyncio.gather(
+                            *(self._run_with_ladder(job, phase, u) for u in batch),
+                            return_exceptions=True,
+                        )
+                        for result in results:
+                            if isinstance(result, BaseException):
+                                raise result
                 except GpuUnavailable:
                     job.transition(JobState.WAITING_GPU)
                     job.save(self.cfg)
@@ -180,6 +221,10 @@ class Runner:
                 # saving — if it no longer matches what we're advancing, stop and DON'T overwrite,
                 # so Pause takes effect within one unit instead of only between phases. The unit's
                 # artifact is already on disk (``unit_done`` will skip it on resume).
+                #
+                # With a batch this lands per batch rather than per unit, so Pause is
+                # honoured within one batch instead of one unit. At concurrency 1 —
+                # every local deployment — a batch IS a unit and nothing changed.
                 persisted = jobmod.load(self.cfg, job.id)
                 if persisted is None or persisted.state != job.state:
                     return

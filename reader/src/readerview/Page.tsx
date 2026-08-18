@@ -74,6 +74,7 @@ export function Page({
       key={p.plateId}
       reader={reader}
       relPath={p.relPath}
+      plateId={p.plateId}
       alt={altFor(p)}
       caption={cap}
       onOpen={(src) => onOpenLightbox(src, p.plateId)}

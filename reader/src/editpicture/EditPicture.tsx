@@ -4,10 +4,14 @@ import type { Storage } from "../shell";
 import {
   candidateUrl,
   commitEdit,
+  commitVideo,
   fetchEditContext,
   generateCandidate,
+  generateVideoCandidate,
+  videoCandidateUrl,
   type EditContext,
   type GenerateBody,
+  type VideoBody,
 } from "../shelf";
 
 // Post-publish "Edit picture" screen (ADR-0033/0034), reached from the plate lightbox. It mirrors
@@ -75,6 +79,15 @@ export function EditPicture({
   const [token, setToken] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // "Bring to life" (ADR-0037): animate the CURRENT committed picture into a short clip.
+  const [motionPrompt, setMotionPrompt] = useState("");
+  const [videoModel, setVideoModel] = useState("");
+  const [videoNegative, setVideoNegative] = useState("");
+  const [videoSeedText, setVideoSeedText] = useState("");
+  const [framesText, setFramesText] = useState("");
+  const [fpsText, setFpsText] = useState("");
+  const [videoToken, setVideoToken] = useState<string | null>(null);
+  const [videoBusy, setVideoBusy] = useState(false);
 
   useEffect(() => {
     let live = true;
@@ -93,6 +106,13 @@ export function EditPicture({
         setModel(c.model ?? SERVICE_DEFAULT_MODEL);
         setQuality(c.quality_default);
         setKeepLikeness(c.has_cast_reference);
+        // Video: pre-fill from a prior clip if any, else default the model to the first ready one.
+        setMotionPrompt(c.video?.motion_prompt ?? "");
+        setVideoModel(c.video?.model ?? c.animate_models[0] ?? "");
+        setVideoNegative("");
+        setVideoSeedText(c.video?.seed == null ? "" : String(c.video.seed));
+        setFramesText(c.video?.frames == null ? "" : String(c.video.frames));
+        setFpsText(c.video?.fps == null ? "" : String(c.video.fps));
       } catch (e) {
         if (live) setError(e instanceof Error ? e.message : String(e));
       }
@@ -149,6 +169,42 @@ export function EditPicture({
     } catch (e) {
       setError(friendlyError(e));
       setBusy(false);
+    }
+  };
+
+  const renderVideo = async () => {
+    setVideoBusy(true);
+    setError(null);
+    try {
+      const num = (s: string) => (s.trim() === "" ? null : Number(s));
+      const body: VideoBody = {
+        motion_prompt: motionPrompt,
+        set_id: setId,
+        model: videoModel || null,
+        negative: videoNegative.trim() || null,
+        seed: num(videoSeedText),
+        frames: num(framesText),
+        fps: num(fpsText),
+      };
+      const cand = await generateVideoCandidate(user, book, plateId, body);
+      setVideoToken(cand.token);
+    } catch (e) {
+      setError(friendlyError(e));
+    } finally {
+      setVideoBusy(false);
+    }
+  };
+
+  const acceptVideo = async () => {
+    if (!videoToken) return;
+    setVideoBusy(true);
+    setError(null);
+    try {
+      await commitVideo(storage, user, book, plateId, videoToken);
+      onDone(true);
+    } catch (e) {
+      setError(friendlyError(e));
+      setVideoBusy(false);
     }
   };
 
@@ -330,18 +386,125 @@ export function EditPicture({
           </label>
 
           <div className="editpic-actions">
-            <button type="button" disabled={busy || !prompt.trim()} onClick={() => void generate()}>
+            <button
+              type="button"
+              disabled={busy || videoBusy || !prompt.trim()}
+              onClick={() => void generate()}
+            >
               {busy ? "Working…" : token ? "Regenerate" : "Generate"}
             </button>
             <button
               type="button"
               className="editpic-replace"
-              disabled={busy || !token}
+              disabled={busy || videoBusy || !token}
               onClick={() => void replace()}
             >
               Replace picture
             </button>
           </div>
+
+          {ctx.video_available && (
+            <div className="editpic-video">
+              <h3 className="editpic-video-title">Bring to life</h3>
+              <p className="editpic-hint">
+                Animate the current picture into a short video. To animate an edit, use{" "}
+                <em>Replace picture</em> first. This takes a few minutes.
+              </p>
+
+              {videoToken && (
+                <video
+                  className="editpic-video-preview"
+                  src={videoCandidateUrl(user, book, plateId, videoToken)}
+                  controls
+                  autoPlay
+                  playsInline
+                />
+              )}
+
+              <label className="editpic-field">
+                <span>Motion prompt</span>
+                <textarea
+                  value={motionPrompt}
+                  onChange={(e) => setMotionPrompt(e.target.value)}
+                  rows={2}
+                  placeholder="how it should move, e.g. gentle camera push-in"
+                />
+              </label>
+
+              {ctx.animate_models.length > 0 && (
+                <label className="editpic-field">
+                  <span>Video model</span>
+                  <select value={videoModel} onChange={(e) => setVideoModel(e.target.value)}>
+                    {ctx.animate_models.map((m) => (
+                      <option key={m} value={m}>
+                        {m}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              )}
+
+              <label className="editpic-field">
+                <span>Negative prompt (optional)</span>
+                <input
+                  type="text"
+                  value={videoNegative}
+                  onChange={(e) => setVideoNegative(e.target.value)}
+                />
+              </label>
+
+              <div className="editpic-video-row">
+                <label className="editpic-field">
+                  <span>Frames</span>
+                  <input
+                    type="text"
+                    inputMode="numeric"
+                    value={framesText}
+                    onChange={(e) => setFramesText(e.target.value)}
+                    placeholder="default"
+                  />
+                </label>
+                <label className="editpic-field">
+                  <span>FPS</span>
+                  <input
+                    type="text"
+                    inputMode="numeric"
+                    value={fpsText}
+                    onChange={(e) => setFpsText(e.target.value)}
+                    placeholder="default"
+                  />
+                </label>
+                <label className="editpic-field">
+                  <span>Seed</span>
+                  <input
+                    type="text"
+                    inputMode="numeric"
+                    value={videoSeedText}
+                    onChange={(e) => setVideoSeedText(e.target.value)}
+                    placeholder="random"
+                  />
+                </label>
+              </div>
+
+              <div className="editpic-actions">
+                <button
+                  type="button"
+                  disabled={busy || videoBusy || !motionPrompt.trim()}
+                  onClick={() => void renderVideo()}
+                >
+                  {videoBusy ? "Rendering… (a few minutes)" : videoToken ? "Re-render video" : "Render video"}
+                </button>
+                <button
+                  type="button"
+                  className="editpic-replace"
+                  disabled={busy || videoBusy || !videoToken}
+                  onClick={() => void acceptVideo()}
+                >
+                  Accept video
+                </button>
+              </div>
+            </div>
+          )}
         </div>
       )}
     </div>

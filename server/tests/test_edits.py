@@ -22,6 +22,7 @@ from scriptorium import schemas
 from scriptorium.app import app
 from scriptorium.artsets import edits as edits_service
 from scriptorium.bake.phases.base import GpuUnavailable
+from scriptorium.bake.phases.p8_publish import _matches_any
 from scriptorium.config import Config, load_config
 from scriptorium.render.imagegen import FakeImagegen
 
@@ -441,3 +442,140 @@ def test_commit_unknown_candidate_is_400(client) -> None:
         json={"token": "0" * 16, "caption": "x"},
     )
     assert r.status_code == 400
+
+
+# --- video: "bring a picture to life" (ADR-0037) ----------------------------
+#
+# Same candidate → accept flow as an image edit, but the animate render produces an mp4 that lands
+# in the private overlay at images/video/plates/{scope}/{plate}.mp4. Video *content* is never
+# asserted — only request params, overlay paths, the edit entry, and manifest delivery (CLAUDE.md).
+
+
+def _commit_video(cfg: Config, *, motion: str = "gentle push-in", client=None) -> dict:
+    tok = asyncio.run(edits_service.generate_video_candidate(
+        cfg, _USER, _BOOK, "0001", motion_prompt=motion, model="wan-5b",
+        frames=49, fps=24, seed=11, client=client or FakeImagegen(),
+    ))["token"]
+    return edits_service.commit_video(cfg, _USER, _BOOK, "0001", token=tok)
+
+
+def test_video_commit_writes_clip_overlay_and_leaves_library_untouched(tmp_path) -> None:
+    cfg = _cfg(tmp_path)
+    _publish_book(cfg)
+    lib = cfg.library_dir / _BOOK
+    before = {p: hashlib.sha256(p.read_bytes()).hexdigest()
+              for p in sorted(lib.rglob("*")) if p.is_file()}
+
+    _commit_video(cfg)
+
+    after = {p: hashlib.sha256(p.read_bytes()).hexdigest()
+             for p in sorted(lib.rglob("*")) if p.is_file()}
+    assert after == before  # the published bundle is frozen (immutability §4.4)
+
+    overlay = cfg.artsets_dir / _USER / _BOOK / "edits"
+    assert (overlay / "images" / "video" / "plates" / "default" / "0001.mp4").is_file()
+    # No image edit was made, so the plate's picture (webp/png overlay) is untouched.
+    assert not (overlay / "images" / "web" / "plates" / "default" / "0001.webp").exists()
+    doc = json.loads((overlay / "edits.json").read_text("utf-8"))
+    schemas.validate("artset-edits", doc)
+    entry = doc["plates"]["0001"]["default"]
+    assert entry["video"]["motion_prompt"] == "gentle push-in"
+    assert entry["video"]["model"] == "wan-5b"
+    # A video-only entry keeps the CURRENT caption + subject prompt, so nothing visible changes.
+    assert entry["caption"] == "a lamp glows"
+    assert entry["prompt"] == "a lamplit workshop"
+
+
+def test_video_clip_is_reader_required_in_the_overlay_manifest(tmp_path) -> None:
+    cfg = _cfg(tmp_path)
+    _publish_book(cfg)
+    _commit_video(cfg)
+    manifest = json.loads(
+        (cfg.artsets_dir / _USER / _BOOK / "edits" / "manifest.json").read_text("utf-8")
+    )
+    rel = "images/video/plates/default/0001.mp4"
+    assert rel in {f["path"] for f in manifest["files"]}
+    # reader_required lists globs; the clip is delivered iff it matches images/video/**.
+    assert _matches_any(rel, tuple(manifest["reader_required"]))
+
+
+def test_video_candidate_animates_the_current_plate_with_params(tmp_path) -> None:
+    cfg = _cfg(tmp_path)
+    _publish_book(cfg)
+    seen: dict = {}
+
+    class _Spy:
+        async def animate(self, image, prompt, *, model=None, negative="", seed=None,
+                          frames=None, fps=None, width=None, height=None):
+            seen.update(image=image, prompt=prompt, model=model, seed=seed, frames=frames, fps=fps)
+            return b"\x00\x00\x00\x18ftypmp42MP4"
+
+    asyncio.run(edits_service.generate_video_candidate(
+        cfg, _USER, _BOOK, "0001", motion_prompt="pan left", model="wan-5b",
+        frames=33, fps=16, seed=5, client=_Spy(),
+    ))
+    # The start frame is the plate's current archival PNG (the same img2img source frame).
+    current = (cfg.library_dir / _BOOK / "images" / "plates" / "0001.png").read_bytes()
+    assert seen["image"] == current
+    assert seen["prompt"] == "pan left"
+    assert (seen["model"], seen["frames"], seen["fps"], seen["seed"]) == ("wan-5b", 33, 16, 5)
+
+
+def test_video_commit_preserves_an_existing_image_edit(tmp_path) -> None:
+    cfg = _cfg(tmp_path)
+    _publish_book(cfg)
+    _commit_one(cfg, caption="warmer lamp")  # an image edit on the base book first
+    _commit_video(cfg)
+    overlay = cfg.artsets_dir / _USER / _BOOK / "edits"
+    # The image override survives; the video is added onto the same entry.
+    assert (overlay / "images" / "web" / "plates" / "default" / "0001.webp").is_file()
+    entry = json.loads((overlay / "edits.json").read_text("utf-8"))["plates"]["0001"]["default"]
+    assert entry["caption"] == "warmer lamp"  # the image edit's caption is kept
+    assert entry["video"]["motion_prompt"] == "gentle push-in"
+
+
+def test_plate_context_surfaces_video_availability(tmp_path) -> None:
+    cfg = _cfg(tmp_path)
+    _publish_book(cfg)
+    ctx = asyncio.run(
+        edits_service.plate_context(cfg, _USER, _BOOK, "0001", client=FakeImagegen())
+    )
+    assert ctx["video_available"] is True
+    assert ctx["animate_models"] == ["wan-5b"]
+    assert ctx["video"] is None  # no clip accepted yet
+
+
+def test_video_endpoints_candidate_then_commit(client) -> None:
+    _publish_book(load_config())
+    cand = client.post(
+        f"/api/artsets/{_USER}/{_BOOK}/edits/0001/video-candidate",
+        json={"motion_prompt": "drift upward", "model": "wan-5b"},
+    )
+    assert cand.status_code == 200, cand.text
+    token = cand.json()["token"]
+
+    prev = client.get(f"/api/artsets/{_USER}/{_BOOK}/edits/0001/video-candidate/{token}.mp4")
+    assert prev.status_code == 200
+    assert prev.headers["content-type"] == "video/mp4"
+
+    done = client.post(
+        f"/api/artsets/{_USER}/{_BOOK}/edits/0001/video-commit", json={"token": token}
+    )
+    assert done.status_code == 200, done.text
+    man = client.get(f"/api/artsets/{_USER}/{_BOOK}/edits/manifest")
+    assert "images/video/plates/default/0001.mp4" in {f["path"] for f in man.json()["files"]}
+
+
+def test_video_candidate_gpu_unavailable_maps_to_503(client, monkeypatch) -> None:
+    _publish_book(load_config())
+
+    class _Down:
+        async def animate(self, *a, **k):
+            raise GpuUnavailable("gpu busy")
+
+    monkeypatch.setattr("scriptorium.artsets.api._imagegen_client", lambda _cfg: _Down())
+    r = client.post(
+        f"/api/artsets/{_USER}/{_BOOK}/edits/0001/video-candidate",
+        json={"motion_prompt": "x"},
+    )
+    assert r.status_code == 503

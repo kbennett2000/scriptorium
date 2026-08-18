@@ -80,6 +80,11 @@ class BakeBody(BaseModel):
     # configured default, byte-identical to pre-ADR-0030 bakes. Book-wide so every plate (and the
     # portraits pages condition on) share one model for character consistency.
     model: str | None = None
+    # Optional book-wide negative prompt (ADR-0036), free text like "blurry, extra text". Appended
+    # (de-duped) to every plate's machine-derived negative — style.negative + the global
+    # anti-deformity guardrail + per-scene ``derived.avoid`` — so it *adds* things to avoid rather
+    # than replacing the safety net. None/empty → byte-identical to pre-ADR-0036 bakes.
+    negative: str | None = None
     title: str | None = None
     author: str | None = None
 

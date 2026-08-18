@@ -29,10 +29,22 @@ from ..job import Job
 
 @dataclass(frozen=True)
 class Unit:
-    """One unit of work within a phase. ``payload`` is opaque to the runner."""
+    """One unit of work within a phase. ``payload`` is opaque to the runner.
+
+    ``parallel`` lets a phase say that a unit is safe to run at the same time as
+    its parallel neighbours. It is opt-in per unit rather than per phase because
+    the render phases mix the two: the ``__unload__`` unit must complete alone and
+    first (§7.4), and only the plates that follow it may overlap.
+
+    The runner still decides *whether* to overlap them, from
+    ``cfg.effective_render_concurrency`` — which is 1 unless the render backend is
+    a worker pool. At 1 the batches are single units and the behaviour is exactly
+    what it was before this flag existed.
+    """
 
     id: str
     payload: Any = None
+    parallel: bool = False
 
 
 class GpuUnavailable(Exception):

@@ -84,6 +84,39 @@
             "description": "ISO-8601 UTC timestamp this edit was committed.",
             "type": "string",
             "format": "date-time"
+          },
+          "video": {
+            "description": "An accepted short video (WAN 2.2, ADR-0037) that animates this plate's current picture, stored beside this file at images/video/plates/{scope}/{plate_id}.mp4. The presence of this object is what makes the reader show a play icon on the plate; the reader derives the mp4 path from the scope + plate_id. Absent ⇒ no clip for this plate/scope. Additive and per (scope, plate_id), like the image edit itself.",
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["motion_prompt", "created"],
+            "properties": {
+              "motion_prompt": {
+                "description": "The motion prompt ('how it should move') the clip was rendered from; pre-fills the editor on a re-render.",
+                "type": "string"
+              },
+              "model": {
+                "description": "The animate model wire id used ('wan-5b' | 'remix-14b'), or null for the service's default.",
+                "type": ["string", "null"]
+              },
+              "frames": {
+                "description": "Frame count rendered, or null for the service default.",
+                "type": ["integer", "null"]
+              },
+              "fps": {
+                "description": "Frames per second rendered, or null for the service default.",
+                "type": ["integer", "null"]
+              },
+              "seed": {
+                "description": "The seed used, or null if the service randomized it.",
+                "type": ["integer", "null"]
+              },
+              "created": {
+                "description": "ISO-8601 UTC timestamp this video was accepted.",
+                "type": "string",
+                "format": "date-time"
+              }
+            }
           }
         }
         }

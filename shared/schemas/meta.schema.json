@@ -86,6 +86,10 @@
       "description": "The owner's free-text look for the 'custom' style (e.g. 'photorealistic'; ADR-0031), or null for a catalog style. Pinned so re-renders and art-set re-rolls reproduce it. Absent on bundles published before ADR-0031.",
       "type": ["string", "null"]
     },
+    "negative": {
+      "description": "The book-wide negative prompt the owner typed at bake time (ADR-0036), or null/absent. Appended (de-duped) to every plate's machine-derived negative during render, and re-applied to art-set re-renders. Absent on bundles published before ADR-0036.",
+      "type": ["string", "null"]
+    },
     "density_preset": {
       "description": "Plate-density preset used for selection (DESIGN §8). One of the three v1 presets.",
       "type": "string",

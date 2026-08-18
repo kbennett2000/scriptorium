@@ -28,8 +28,23 @@ export {
 } from "./artsetCheckout";
 export type { ArtsetApi, CreateSetBody, ModelOptions, StyleOption } from "./artsetApi";
 export { HttpArtsetApi } from "./artsetApi";
-export type { Candidate, EditContext, GenerateBody } from "./editPicture";
-export { candidateUrl, commitEdit, fetchEditContext, generateCandidate } from "./editPicture";
+export type {
+  Candidate,
+  EditContext,
+  GenerateBody,
+  VideoBody,
+  VideoCandidate,
+  VideoInfo,
+} from "./editPicture";
+export {
+  candidateUrl,
+  commitEdit,
+  commitVideo,
+  fetchEditContext,
+  generateCandidate,
+  generateVideoCandidate,
+  videoCandidateUrl,
+} from "./editPicture";
 export {
   matchesAny,
   resolveReaderFiles,

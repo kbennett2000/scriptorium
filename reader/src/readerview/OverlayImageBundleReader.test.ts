@@ -132,6 +132,45 @@ describe("OverlayImageBundleReader", () => {
     expect(await reader.imageUrl("images/web/plates/0001.webp")).toBe("base-image-url");
   });
 
+  // ADR-0037: an accepted clip is signalled by a `video` descriptor on the scoped entry, and its
+  // bytes live at images/video/plates/{scope}/{plate_id}.mp4 (played offline as a blob URL).
+  const WITH_VIDEO = {
+    book_id: BOOK,
+    user_id: USER,
+    source_revision: 1,
+    plates: {
+      "0001": {
+        default: {
+          caption: "base caption",
+          prompt: "p",
+          created: "2026-08-14T00:00:00Z",
+          video: { motion_prompt: "push in", created: "2026-08-14T00:00:00Z" },
+        },
+        [COMIC]: { caption: "comic caption", prompt: "p", created: "2026-08-14T00:00:00Z" },
+      },
+    },
+  } as unknown as ArtsetEdits;
+
+  it("hasVideo is true only for a plate with a clip IN THE ACTIVE SCOPE", () => {
+    const onBase = new OverlayImageBundleReader(fakeBase(), storage, ROOT, WITH_VIDEO, "default");
+    expect(onBase.hasVideo("0001")).toBe(true);
+    expect(onBase.hasVideo("0009")).toBe(false);
+    // The comic scope's 0001 has no video descriptor → no play icon there.
+    const onComic = new OverlayImageBundleReader(fakeBase(), storage, ROOT, WITH_VIDEO, COMIC);
+    expect(onComic.hasVideo("0001")).toBe(false);
+  });
+
+  it("videoUrl returns a blob URL for a resident clip, null otherwise", async () => {
+    await storage.writeBytes(`${ROOT}/images/video/plates/default/0001.mp4`, new Uint8Array([9]));
+    const reader = new OverlayImageBundleReader(fakeBase(), storage, ROOT, WITH_VIDEO, "default");
+    expect(await reader.videoUrl("0001")).toBe("blob:overlay-image");
+    // A plate with no clip yields null...
+    expect(await reader.videoUrl("0009")).toBeNull();
+    // ...and a descriptor whose bytes aren't resident (nothing written) also yields null.
+    const r2 = new OverlayImageBundleReader(fakeBase(), new MemoryStorage(), ROOT, WITH_VIDEO, "default");
+    expect(await r2.videoUrl("0001")).toBeNull();
+  });
+
   it("dispose revokes its own URLs but not the base reader's", async () => {
     await storage.writeBytes(`${ROOT}/images/web/plates/default/0001.webp`, new Uint8Array([7]));
     const base = fakeBase();

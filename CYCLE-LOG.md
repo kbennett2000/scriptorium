@@ -4,6 +4,63 @@ One entry per executed cycle: what shipped, decisions made, and any inferences.
 
 ---
 
+## R6 — Selectable render backend + parallel plate fan-out (ADR-0038) (2026-08-18)
+
+**Shipped**
+- **Config.** `RENDER_BACKEND` (`local` | `runpod`), `RUNPOD_ENDPOINT_ID`, `RENDER_CONCURRENCY`
+  (default 4), `RENDER_CARD`. Follows the `GUTENDEX_URL` precedent: dataclass field + one
+  `load_config` line + a row in `docs/guide/self-hosting.md`. `Config.effective_render_concurrency`
+  clamps to **1** on the local backend.
+- **`RunpodImagegenClient`** (`render/imagegen.py`) implementing the existing `ImagegenClient`
+  protocol, so `render_to_spec` and both render phases are untouched. `POST /run` + poll
+  `/status` (never `/runsync` — 60 s is not enough for a cold start behind a 17.66 GB image
+  pull); PNG returns base64; the IP-Adapter reference travels base64 in the request, keeping
+  character artwork out of the container and the registry. Forwards ADR-0028's per-plate
+  `reference_strength`/`reference_start`. Refuses a non-default `checkpoint`, img2img, and a
+  missing seed rather than rendering something other than what was asked for. Bounded retry
+  (3 attempts, 2/5/10 s) on 429/5xx/connection errors, on top of — not instead of — the runner
+  ladder; 401/403 is never retried. API key read from `~/.runpod/config.toml` in-process, never
+  from an env var.
+- **`build_imagegen_client(cfg)`** used by the bake render phases **only**. The picture editor,
+  admin model picker, review-gate regen and style-set re-render keep `RealImagegenClient`: the
+  remote worker implements `txt2img` and nothing else.
+- **Fan-out.** `Unit.parallel` (default `False`); `_ImagegenPhase.units()` marks plate units
+  parallel and leaves `__unload__` sequential; `runner.advance_job` batches consecutive parallel
+  units `effective_render_concurrency` wide and gathers them, calling the **existing**
+  `_run_with_ladder` per unit. `gather(return_exceptions=True)` so a parking sibling is not
+  cancelled mid-render.
+- **Provenance.** P7 folds a client's `last_echo` into `render.params_echo` — the worker's own
+  `render_s`/`model_load_s`/`total_s`, the card, and the sampler settings from the built graph.
+  `params_echo` is schema-declared opaque, so **no schema change, no type regeneration**.
+- Tests: 33 new across `test_runpod_imagegen_client.py` (wire body, the ADR-0028 pair, refusals,
+  failure taxonomy, retry/no-retry, the card-substitution warning, the factory) and
+  `test_render_fanout.py` (batching rule; unload alone and first; every plate exactly once;
+  overlap observed via an in-flight counter, not timing; concurrency 1 call-for-call identical;
+  `unit_done` resume skip; per-plate ladder; `failed_units`; parking; siblings not cancelled).
+  Never asserts image content.
+
+**Decisions (with user)**
+- **Fan out at the runner, via a per-unit flag** rather than gathering inside `run_unit`. The
+  alternative is a smaller diff that never touches `runner.py`, but `_run_with_ladder` is per
+  unit: a batch-level retry would re-render plates that had already succeeded, one plate's 422
+  would poison its batch, `failed_units` would name a batch rather than a plate, and Pause could
+  not land until the batch drained.
+- **Default 4, clamped to 1 locally.** One ComfyUI on one card serialises regardless, so local
+  fan-out buys no speed, risks the 300 s generate budget on late plates, and breaks render-timing
+  attribution.
+- **`IMAGEGEN_URL` keeps its role** — it is still the §7.4 VRAM release, which is not a rendering
+  concern and must keep happening when plates render remotely.
+
+**Inferences**
+- **Determinism is now conditional on hardware.** SDXL at a fixed seed is deterministic on the
+  same silicon and kernels, not across architectures. Re-baking on a different card yields a
+  different, equally valid book. Documented in the ADR and the self-hosting guide.
+- Pause lands per batch rather than per unit during a fan-out. At concurrency 1 a batch is a
+  unit, so no local deployment sees a change.
+
+**Gates.** ruff clean · 612 server tests green with **no GPU services running** (579 pre-existing,
+all unchanged) · schemas untouched, so types trivially in sync.
+
 ## S1 — Monorepo scaffold, schemas, ADRs (2026-07-13)
 
 **Shipped**
@@ -2673,3 +2730,83 @@ types in sync (`gen-types` diff clean).
 
 **Gates.** ruff clean · eslint + tsc clean (reader) · non-gpu server tests green (566) · reader
 tests green (185) · schemas ↔ types in sync (`gen-types` diff clean).
+
+---
+
+## M2 · book-wide negative prompt at creation (ADR-0036) (2026-08-13)
+
+**Shipped**
+- **Gap.** The imagegen service takes a `negativePrompt` and the picture editor (ADR-0034) exposes a
+  per-plate negative, but **new book creation had no user negative at all** — every plate's negative
+  was machine-only (`style.negative` + `_GLOBAL_NEGATIVE` guard + `derived.avoid`). No way to say
+  "keep text/watermarks out of this whole book" up front.
+- **Fix — one optional owner-typed negative per book, applied to every plate.** Appended (not
+  substituted) so the anatomy/period guardrails stay armed book-wide; it means "*also* avoid these".
+- **Server.** `wrap_prompt` gains `user_negative=None`, folded **last** into `_dedupe_terms` in both
+  branches (page + cover/portrait pseudo-plates); `None`/`""` is a no-op → byte-identical to before.
+  `BakeBody.negative` flows into `job.bake_config` and P7 passes it. Persisted into the published
+  `meta.json` (`build_meta`) so style-set re-renders — whose job carries only `style_id` — read it
+  back via `_book_negative` (mirrors `_era`, ADR-0026) and honor the same terms.
+- **Schema/types.** `meta.schema.json` gains optional `negative`; regenerated `shared/types` (diff
+  committed, regen deterministic). No `artset-edits` change. No imagegen protocol change — the real
+  service already forwards `negativePrompt`; `_digest` left untouched to avoid churning fake fixtures.
+- **Admin UI.** `NewBookWizard.tsx` gets a "Negative prompt (optional)" textarea (placeholder
+  `blurry, extra text`), sent as `bake.negative` (blank → omitted); `CreateBookBody.bake.negative`
+  added.
+- Tests: server — `wrap_prompt` appends + de-dupes the owner's terms and keeps the guards (page +
+  pseudo-plate), `None`/`""` byte-identical; P7 render records the appended negative on every plate;
+  a set re-render inherits the book's `meta.json` negative. Shape/strings only, never image content.
+
+**Decisions**
+- **Append, not replace** (owner's call): book-wide replace would silently disarm the
+  anti-deformity/anachronism guardrails for the whole book; the per-plate editor still *replaces* for
+  a single fine-tuned image.
+- **Apply to sets too** (owner's call): pinned in `meta.json` and re-read by set jobs so a
+  Comic/Cyberpunk re-illustration can't reintroduce something the owner asked to avoid.
+
+**Gates.** ruff clean · eslint + tsc clean (admin-ui) · non-gpu server tests green (572) · admin
+tests green (9) · schemas ↔ types in sync (`gen-types` diff clean).
+
+---
+
+## M3 · "bring a picture to life" — per-plate video in the reader editor (ADR-0037) (2026-08-14)
+
+**Shipped**
+- **Feature.** imagegen-service gained `POST /animate` (WAN 2.2: base64 still → raw mp4). The reader's
+  Edit-picture screen now animates a plate's current picture into a short clip; **Accept video** files
+  it in the private edits overlay, and a **play icon** on the plate plays it offline.
+- **Depends on (ops):** `/animate` still lives on imagegen-service's unmerged `feat/animate-endpoint`
+  branch — must be merged + deployed with WAN models. Until then the feature is hidden by the
+  readiness gate (`plate_context.video_available`), never a crash.
+- **Client.** `/animate` is the same service as `/generate`, so reuse `cfg.imagegen_url` — added
+  `animate()` + `video_health()` to `RealImagegenClient`/`FakeImagegen` (no new config). Params
+  forwarded only when set; 503/conn → `GpuUnavailable`. 20-min timeout mirrors the service.
+- **Server (edits).** `generate_video_candidate` animates `_current_plate_png` (the current committed
+  picture) → scratch `.edit-candidates/{token}.mp4` + sidecar; `commit_video` moves it to
+  `images/video/plates/{scope}/{plate_id}.mp4` and adds a `video` descriptor to the scoped edit entry
+  (seeding a minimal invisible entry from the current caption + subject when there's no image edit).
+  New routes `video-candidate` / `video-candidate/{token}.mp4` / `video-commit`; `.mp4`/`.webm` added
+  to `_CONTENT_TYPES`. `plate_context` gains `video_available` / `animate_models` / prior `video`.
+- **Delivery.** `"images/video/**"` added to `READER_REQUIRED` (shared book/overlay glob) so the
+  overlay manifest delivers the mp4 offline via the existing `artsetCheckout`.
+- **Schema/types.** `artset-edits` entry gains an optional `video` object; regenerated `shared/types`
+  (regen deterministic, diff in sync).
+- **Reader.** New `shelf/editPicture.ts` video fns (behind the ESLint network fence);
+  `BundleReader.hasVideo?/videoUrl?` implemented in `OverlayImageBundleReader` (offline blob URL,
+  active scope only); `Plate.tsx` play-icon → inline `<video>` swap; `EditPicture.tsx` "Bring to
+  life" section (motion prompt + model + frames/fps/seed, Render → preview → Accept);
+  `Page.tsx` threads `plateId`.
+- Tests: server — video candidate animates the current plate with the right params, commit writes the
+  clip overlay + `video` entry + manifest delivery, video-only commit leaves the picture/caption
+  unchanged, an existing image edit is preserved, `video_available` surfaces, endpoints incl. 503.
+  reader — `OverlayImageBundleReader` `hasVideo`/`videoUrl` (scope-correct, resident-only);
+  `Plate` shows the play icon and swaps to `<video>` on click. Never asserts clip content.
+
+**Decisions (with user)**
+- **Synchronous render** (matches `/animate` + the image-candidate flow); minutes-long hold behind a
+  spinner. **Animate from the current committed picture** (accept an edit first to animate it) —
+  video stays an independent additive commit. **Fuller reader controls** (prompt + model +
+  frames/fps/seed). remix-14b appears only if the service reports it ready.
+
+**Gates.** ruff clean · eslint + tsc clean (reader) · non-gpu server tests green · reader tests green
+· schemas ↔ types in sync (`gen-types` diff clean).

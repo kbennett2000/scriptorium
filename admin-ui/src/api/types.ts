@@ -142,6 +142,8 @@ export interface CreateBookBody {
     model?: string | null;
     // Free-text look for the "custom" style_id (ADR-0031), e.g. "photorealistic"; null otherwise.
     custom_style?: string | null;
+    // Optional book-wide negative prompt (ADR-0036), appended to every plate's derived negative.
+    negative?: string | null;
     title?: string | null;
     author?: string | null;
   };

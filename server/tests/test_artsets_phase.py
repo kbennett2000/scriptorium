@@ -331,3 +331,26 @@ def test_set_conditions_page_plates_on_its_own_portraits_and_anchors_the_era(tmp
     recorded = json.loads((set_dir / "prompts" / "0001.json").read_text())
     assert recorded["reference_slug"] == "the-clockmaker"
     assert json.loads((set_dir / "prompts" / "0003.json").read_text())["reference_slug"] is None
+
+
+@respx.mock
+def test_set_render_inherits_the_books_negative(tmp_path) -> None:
+    # ADR-0036: the owner's book-wide negative lives in the published meta.json (a set job's own
+    # bake_config carries only style_id), so a set re-render must read it back and append it.
+    cfg = _cfg(tmp_path)
+    _seed_library(cfg)
+    lib = cfg.library_dir / BOOK
+    meta = json.loads((lib / "meta.json").read_text())
+    meta["negative"] = "text, watermark"
+    (lib / "meta.json").write_text(json.dumps(meta), encoding="utf-8")
+    respx.post(f"{TTS}/v1/models/unload").mock(return_value=httpx.Response(200, json={}))
+
+    set_id = service.create_set(cfg, "kris", BOOK, "style", "engraving", None)["set_id"]
+    job = _drive(cfg, FakeImagegen(), service.set_job_id(BOOK, set_id))
+    assert job.state == JobState.SET_DONE, f"stuck at {job.state}"
+
+    set_dir = _set_dir(cfg, "kris", BOOK, set_id)
+    recorded = json.loads((set_dir / "prompts" / "0001.json").read_text())
+    terms = [t.strip() for t in recorded["negative_prompt"].split(",")]
+    assert "text" in terms and "watermark" in terms  # owner's terms carried into the set
+    assert "duplicate" in terms  # global guard still applied
