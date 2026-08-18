@@ -26,9 +26,14 @@ merged+deployed; older builds ignore them (fixed 1024²).
 
 from __future__ import annotations
 
+import asyncio
 import base64
 import hashlib
 import io
+import logging
+import time
+import tomllib
+from pathlib import Path
 from typing import Any, Protocol, runtime_checkable
 
 import httpx
@@ -36,6 +41,8 @@ from PIL import Image, ImageDraw, ImageFont
 
 from ..bake.phases.base import GpuUnavailable, PipelineBug, UnitFailed
 from ..config import Config
+
+_log = logging.getLogger(__name__)
 
 # DESIGN §10 render sizes (plate/cover); portraits are 1024×1024. The stub renders every plate at
 # the plate size — the real P7 (S10) sizes per asset. Kept here so the fake has a sensible default.
@@ -348,6 +355,270 @@ class RealImagegenClient:
             return {"models": models, "reachable": bool(data.get("comfyuiReachable", False))}
         except Exception:
             return empty
+
+
+class RunpodImagegenClient:
+    """Render a plate on a Runpod serverless endpoint instead of the local GPU (ADR-0038).
+
+    Implements the same :class:`ImagegenClient` surface, so ``render_to_spec`` and both
+    render phases are unchanged — only which object they are handed differs.
+
+    Three things about the wire shape are worth knowing:
+
+    - **``/run`` then poll ``/status``, never ``/runsync``.** ``/runsync`` gives up at
+      60 s, and a cold start behind a 17.66 GB image pull does not fit in that. A warm
+      render is ~4.4 s; a cold one measured 431 s wall, almost all of it image pull.
+    - **The PNG travels base64 in the response body**, and the IP-Adapter reference
+      portrait travels base64 in the request. Deliberate: it means no character artwork
+      is ever baked into the container or the registry.
+    - **``style`` and ``checkpoint`` are not sent.** The worker image bakes exactly one
+      checkpoint (``sd_xl_base_1.0``) and applies the oil-painting LoRA whenever
+      ``lora`` is true. A request for a different checkpoint cannot be honoured, so it
+      raises rather than quietly rendering the wrong model.
+
+    Transient failures retry here, inside the client, on top of — not instead of — the
+    runner's per-unit ladder: a serverless pool sheds load with 429s and 5xxs that are
+    not plate failures, and burning a 10/60/300 s ladder step on one is wasteful.
+    """
+
+    _BASE = "https://api.runpod.ai/v2"
+    # 3 attempts, 2/5/10 s apart. Short because these are queue-level hiccups; the
+    # runner's ladder is what handles anything structural.
+    _RETRY_DELAYS: tuple[float, ...] = (2.0, 5.0, 10.0)
+    _POLL_S = 0.5
+    _SUBMIT_TIMEOUT_S = 60.0
+    # Generous: this covers a cold worker pulling the image before it can render.
+    _JOB_TIMEOUT_S = 900.0
+
+    def __init__(self, cfg: Config) -> None:
+        self._endpoint = getattr(cfg, "runpod_endpoint_id", None)
+        self._expect_card = getattr(cfg, "render_card", None)
+        self._last_echo: dict[str, Any] = {}
+
+    @property
+    def last_echo(self) -> dict[str, Any]:
+        """The worker's own report of the most recent render, minus the image.
+
+        Carries ``render_s``/``model_load_s``/``total_s``, the card name, and the
+        sampler settings the graph was actually built with. P7 folds this into the
+        plate's ``render.params_echo``, which is what gives per-plate timing under a
+        fan-out — log-order pairing cannot attribute concurrent renders.
+        """
+        return dict(self._last_echo)
+
+    def _url(self, path: str) -> str:
+        if not self._endpoint:
+            raise GpuUnavailable("RUNPOD_ENDPOINT_ID is not configured")
+        return f"{self._BASE}/{self._endpoint}{path}"
+
+    async def txt2img(
+        self,
+        prompt: str,
+        negative: str = "",
+        width: int = PLATE_SIZE[0],
+        height: int = PLATE_SIZE[1],
+        seed: int | None = None,
+        style: str | None = None,
+        checkpoint: str | None = None,
+        references: list[bytes] | None = None,
+        reference_strength: float | None = None,
+        reference_start: float | None = None,
+        init_image: bytes | None = None,
+        denoise: float | None = None,
+        quality: str | None = None,
+    ) -> bytes:
+        if seed is None:
+            # The worker refuses a seedless request for the same reason: a plate must
+            # re-render identically, and an invented seed destroys that silently.
+            raise PipelineBug("runpod render requires an explicit seed")
+        if checkpoint is not None:
+            raise PipelineBug(
+                f"runpod worker bakes one checkpoint; cannot honour {checkpoint!r}"
+            )
+        if init_image is not None:
+            raise PipelineBug("runpod worker does not implement img2img")
+
+        payload: dict[str, Any] = {
+            "prompt": prompt,
+            "negative": negative,
+            "seed": seed,
+            "width": width,
+            "height": height,
+        }
+        if references:
+            payload["reference_png_b64"] = base64.b64encode(references[0]).decode("ascii")
+            # ADR-0028's per-plate conditioning. The worker defaults to 0.5/0.3 when
+            # these are absent, which is NOT what a multi-figure plate wants — sending
+            # them is the whole reason the worker grew the inputs.
+            if reference_strength is not None:
+                payload["reference_strength"] = reference_strength
+            if reference_start is not None:
+                payload["reference_start"] = reference_start
+
+        output = await self._run_job({"input": payload})
+
+        if not isinstance(output, dict):
+            raise UnitFailed(f"runpod worker returned {type(output).__name__}, expected object")
+        if "error" in output:
+            # The worker reports its own failures inside a COMPLETED job, so a
+            # successful HTTP status is not a successful render.
+            raise UnitFailed(f"runpod worker: {output['error']}")
+        if "image_png_b64" not in output:
+            raise UnitFailed("runpod worker returned no image")
+
+        echo = {k: v for k, v in output.items() if k != "image_png_b64"}
+        self._last_echo = echo
+        card = str(echo.get("gpu") or "")
+        if self._expect_card and self._expect_card not in card:
+            # A warning, never a failure: the pixels are real and the timing is real,
+            # they just came from a card the operator did not ask for. Cycle 3 measured
+            # this happening silently, which is why it is checked at all.
+            _log.warning(
+                "render landed on %r, expected %r — timings are not comparable "
+                "across cards", card or "unknown", self._expect_card,
+            )
+        try:
+            return base64.b64decode(output["image_png_b64"])
+        except (ValueError, TypeError) as exc:
+            raise UnitFailed(f"runpod worker returned undecodable image: {exc}") from exc
+
+    async def _run_job(self, body: dict[str, Any]) -> Any:
+        """Submit, poll to a terminal state, return the job's ``output``."""
+        job_id = await self._submit(body)
+        deadline = time.monotonic() + self._JOB_TIMEOUT_S
+        async with httpx.AsyncClient(timeout=self._SUBMIT_TIMEOUT_S) as client:
+            while time.monotonic() < deadline:
+                await asyncio.sleep(self._POLL_S)
+                try:
+                    resp = await client.get(
+                        self._url(f"/status/{job_id}"), headers=_runpod_auth()
+                    )
+                except httpx.HTTPError:
+                    continue  # a dropped poll is not a failed job; keep asking
+                if not resp.is_success:
+                    continue
+                data = resp.json()
+                status = data.get("status")
+                if status == "COMPLETED":
+                    return data.get("output")
+                if status in ("FAILED", "CANCELLED", "TIMED_OUT"):
+                    raise UnitFailed(f"runpod job {status}: {data.get('error') or ''}".strip())
+        raise GpuUnavailable(f"runpod job {job_id} did not finish in {self._JOB_TIMEOUT_S:.0f}s")
+
+    async def _submit(self, body: dict[str, Any]) -> str:
+        """POST /run with a bounded retry on transient failures."""
+        last: Exception | None = None
+        for attempt in range(len(self._RETRY_DELAYS) + 1):
+            try:
+                async with httpx.AsyncClient(timeout=self._SUBMIT_TIMEOUT_S) as client:
+                    resp = await client.post(
+                        self._url("/run"), json=body, headers=_runpod_auth()
+                    )
+                if resp.is_success:
+                    job_id = resp.json().get("id")
+                    if job_id:
+                        return str(job_id)
+                    last = UnitFailed("runpod /run returned no job id")
+                elif resp.status_code == 429 or resp.status_code >= 500:
+                    last = GpuUnavailable(f"runpod /run {resp.status_code}")
+                elif resp.status_code in (401, 403):
+                    # Never retried: a bad credential will still be bad in 10 seconds,
+                    # and retrying an auth failure just delays a clear error.
+                    raise PipelineBug(f"runpod /run {resp.status_code}: check the API key")
+                else:
+                    raise PipelineBug(f"runpod /run {resp.status_code}")
+            except httpx.HTTPError as exc:
+                last = GpuUnavailable(f"runpod unreachable: {exc}")
+            if attempt < len(self._RETRY_DELAYS):
+                await asyncio.sleep(self._RETRY_DELAYS[attempt])
+        raise last or GpuUnavailable("runpod /run failed")
+
+    async def health(self) -> bool:
+        """GET /health. True iff the endpoint answers; never raises."""
+        if not self._endpoint:
+            return False
+        try:
+            async with httpx.AsyncClient(timeout=_HEALTH_TIMEOUT_S) as client:
+                resp = await client.get(self._url("/health"), headers=_runpod_auth())
+            return resp.is_success
+        except Exception:
+            return False
+
+    async def models(self) -> dict[str, Any]:
+        """The worker bakes exactly one checkpoint, so there is nothing to pick from."""
+        return {"models": [], "default": None, "reachable": bool(self._endpoint)}
+
+    async def styles(self) -> dict[str, Any]:
+        """Style presets live in the image, not in a service catalog."""
+        return {"styles": [], "reachable": bool(self._endpoint)}
+
+    async def animate(
+        self,
+        image: bytes,
+        prompt: str,
+        *,
+        model: str | None = None,
+        negative: str = "",
+        seed: int | None = None,
+        frames: int | None = None,
+        fps: int | None = None,
+        width: int | None = None,
+        height: int | None = None,
+    ) -> bytes:
+        """Not implemented on the render worker — ADR-0037 video stays on the local service."""
+        raise GpuUnavailable("runpod render backend does not implement /animate")
+
+    async def video_health(self) -> dict[str, Any]:
+        """No animate models, so the editor hides the video section rather than 503ing."""
+        return {"models": [], "reachable": False}
+
+
+def _runpod_auth() -> dict[str, str]:
+    """Build the Bearer header, reading the key in-process and never returning it.
+
+    The key is read from ``~/.runpod/config.toml`` here rather than taken from an
+    environment variable on purpose. An env var for a long-lived credential means it
+    is exported by some shell, visible in that process's environment, and typically
+    typed into a history file first. Reading the file in-process keeps it out of all
+    three. Both key names are accepted: ``runpodctl`` writes a top-level ``apikey``
+    and ``flash`` writes ``[default].api_key`` (runpod/flash#363).
+
+    The value is never logged, never echoed, and never stored on the client.
+    """
+    path = Path.home() / ".runpod" / "config.toml"
+    if not path.is_file():
+        raise GpuUnavailable(f"no Runpod credential file at {path}")
+    try:
+        with path.open("rb") as fh:
+            conf = tomllib.load(fh)
+    except (OSError, tomllib.TOMLDecodeError) as exc:
+        raise GpuUnavailable(f"cannot read {path}: {exc}") from exc
+    for value in (conf.get("default", {}).get("api_key"), conf.get("apikey")):
+        if isinstance(value, str) and value.strip():
+            return {"Authorization": f"Bearer {value.strip()}"}
+    raise GpuUnavailable(f"{path} has neither `[default].api_key` nor `apikey`")
+
+
+def build_imagegen_client(cfg: Config) -> Any:
+    """The configured render backend (ADR-0038). ``local`` unless asked otherwise.
+
+    **Only the bake's render phases use this.** The remote worker implements
+    ``txt2img`` and nothing else — no img2img, no ``/animate``, no checkpoint or
+    style catalog — so the paths that need those keep constructing
+    :class:`RealImagegenClient` directly and keep working exactly as before:
+
+    - ``artsets/api.py`` — the post-publish picture editor (img2img, ADR-0037 video)
+    - ``bake/api.py`` — the admin model picker's catalog read
+    - ``bake/review_api.py`` — the review-gate regeneration
+    - ``artsets/phase.py`` — per-user style-set re-illustration
+
+    Routing those through a backend that raises on half their surface would be a
+    wider change than this one is meant to be. Moving any of them is a later
+    decision with its own reason, not a consequence of this switch.
+    """
+    if getattr(cfg, "render_backend", "local") == "runpod":
+        return RunpodImagegenClient(cfg)
+    return RealImagegenClient(cfg)
 
 
 def _map_error(resp: httpx.Response) -> Exception:

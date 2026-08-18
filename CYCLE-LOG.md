@@ -4,6 +4,63 @@ One entry per executed cycle: what shipped, decisions made, and any inferences.
 
 ---
 
+## R6 — Selectable render backend + parallel plate fan-out (ADR-0038) (2026-08-18)
+
+**Shipped**
+- **Config.** `RENDER_BACKEND` (`local` | `runpod`), `RUNPOD_ENDPOINT_ID`, `RENDER_CONCURRENCY`
+  (default 4), `RENDER_CARD`. Follows the `GUTENDEX_URL` precedent: dataclass field + one
+  `load_config` line + a row in `docs/guide/self-hosting.md`. `Config.effective_render_concurrency`
+  clamps to **1** on the local backend.
+- **`RunpodImagegenClient`** (`render/imagegen.py`) implementing the existing `ImagegenClient`
+  protocol, so `render_to_spec` and both render phases are untouched. `POST /run` + poll
+  `/status` (never `/runsync` — 60 s is not enough for a cold start behind a 17.66 GB image
+  pull); PNG returns base64; the IP-Adapter reference travels base64 in the request, keeping
+  character artwork out of the container and the registry. Forwards ADR-0028's per-plate
+  `reference_strength`/`reference_start`. Refuses a non-default `checkpoint`, img2img, and a
+  missing seed rather than rendering something other than what was asked for. Bounded retry
+  (3 attempts, 2/5/10 s) on 429/5xx/connection errors, on top of — not instead of — the runner
+  ladder; 401/403 is never retried. API key read from `~/.runpod/config.toml` in-process, never
+  from an env var.
+- **`build_imagegen_client(cfg)`** used by the bake render phases **only**. The picture editor,
+  admin model picker, review-gate regen and style-set re-render keep `RealImagegenClient`: the
+  remote worker implements `txt2img` and nothing else.
+- **Fan-out.** `Unit.parallel` (default `False`); `_ImagegenPhase.units()` marks plate units
+  parallel and leaves `__unload__` sequential; `runner.advance_job` batches consecutive parallel
+  units `effective_render_concurrency` wide and gathers them, calling the **existing**
+  `_run_with_ladder` per unit. `gather(return_exceptions=True)` so a parking sibling is not
+  cancelled mid-render.
+- **Provenance.** P7 folds a client's `last_echo` into `render.params_echo` — the worker's own
+  `render_s`/`model_load_s`/`total_s`, the card, and the sampler settings from the built graph.
+  `params_echo` is schema-declared opaque, so **no schema change, no type regeneration**.
+- Tests: 33 new across `test_runpod_imagegen_client.py` (wire body, the ADR-0028 pair, refusals,
+  failure taxonomy, retry/no-retry, the card-substitution warning, the factory) and
+  `test_render_fanout.py` (batching rule; unload alone and first; every plate exactly once;
+  overlap observed via an in-flight counter, not timing; concurrency 1 call-for-call identical;
+  `unit_done` resume skip; per-plate ladder; `failed_units`; parking; siblings not cancelled).
+  Never asserts image content.
+
+**Decisions (with user)**
+- **Fan out at the runner, via a per-unit flag** rather than gathering inside `run_unit`. The
+  alternative is a smaller diff that never touches `runner.py`, but `_run_with_ladder` is per
+  unit: a batch-level retry would re-render plates that had already succeeded, one plate's 422
+  would poison its batch, `failed_units` would name a batch rather than a plate, and Pause could
+  not land until the batch drained.
+- **Default 4, clamped to 1 locally.** One ComfyUI on one card serialises regardless, so local
+  fan-out buys no speed, risks the 300 s generate budget on late plates, and breaks render-timing
+  attribution.
+- **`IMAGEGEN_URL` keeps its role** — it is still the §7.4 VRAM release, which is not a rendering
+  concern and must keep happening when plates render remotely.
+
+**Inferences**
+- **Determinism is now conditional on hardware.** SDXL at a fixed seed is deterministic on the
+  same silicon and kernels, not across architectures. Re-baking on a different card yields a
+  different, equally valid book. Documented in the ADR and the self-hosting guide.
+- Pause lands per batch rather than per unit during a fan-out. At concurrency 1 a batch is a
+  unit, so no local deployment sees a change.
+
+**Gates.** ruff clean · 612 server tests green with **no GPU services running** (579 pre-existing,
+all unchanged) · schemas untouched, so types trivially in sync.
+
 ## S1 — Monorepo scaffold, schemas, ADRs (2026-07-13)
 
 **Shipped**

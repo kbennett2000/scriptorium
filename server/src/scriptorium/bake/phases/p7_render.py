@@ -30,8 +30,9 @@ derivatives, and records ``wrapped_prompt``/``negative_prompt``/``render`` prove
 ``rendered``; publish (``rendered → published``) is S10b.
 
 The imagegen client is injected (``Render(client=...)``) so tests pass :class:`FakeImagegen`;
-production builds a :class:`RealImagegenClient` from config. The single-worker runner (§7.4) plus
-the unload-first unit are what keep LLM and render GPU work from ever interleaving.
+production builds the configured backend from config (ADR-0038). The unload-first unit is what
+keeps LLM and render GPU work from ever interleaving — and it stays sequential even when the plate
+units after it fan out, because only they are marked ``parallel``.
 """
 
 from __future__ import annotations
@@ -46,7 +47,7 @@ from typing import Any
 
 from ... import names, schemas
 from ...render.derivatives import make_derivatives
-from ...render.imagegen import ImagegenClient, RealImagegenClient
+from ...render.imagegen import ImagegenClient, build_imagegen_client
 from ...styles import resolve_style
 from ..job import Job, JobState
 from ..tts_client import TtsClient
@@ -456,9 +457,23 @@ async def render_plate(
     prev_attempts = int((doc.get("render") or {}).get("attempts", 0))
     doc["wrapped_prompt"] = wrapped
     doc["negative_prompt"] = negative
+    # A backend that reports what it actually did folds that in beside the seed and
+    # size. The Runpod worker returns its own render_s/model_load_s/total_s, the card
+    # it ran on, and the sampler settings the graph was built with.
+    #
+    # This is how per-plate timing survives a fan-out. The external timing tool
+    # attributes ComfyUI log lines to plates by "last render finishing before this
+    # plate's render.at", which is only sound while renders are serial; concurrent
+    # plates would be mis-attributed and the counts would still add up, so nothing
+    # would flag it. A number the renderer reports about itself needs no attribution.
+    #
+    # ``params_echo`` is schema-declared opaque ("shape owned by the imagegen
+    # service"), so this needs no schema change and no type regeneration.
+    echo = {"seed": seed, "width": spec.width, "height": spec.height}
+    echo.update(getattr(client, "last_echo", None) or {})
     doc["render"] = {
         "at": _now_iso(),
-        "params_echo": {"seed": seed, "width": spec.width, "height": spec.height},
+        "params_echo": echo,
         "attempts": prev_attempts + 1,
         # Which face conditioned this plate (ADR-0026) — previously invisible, so a plate anchored
         # on the wrong character could only be found by eye.
@@ -513,13 +528,19 @@ class _ImagegenPhase:
         self._injected = client
 
     def _client(self, cfg: Any) -> ImagegenClient:
-        return self._injected if self._injected is not None else RealImagegenClient(cfg)
+        return self._injected if self._injected is not None else build_imagegen_client(cfg)
 
     def _plate_ids_for(self, job: Job, cfg: Any) -> list[str]:  # pragma: no cover - overridden
         raise NotImplementedError
 
     def units(self, job: Job, cfg: Any) -> list[Unit]:
-        return [Unit(id=UNLOAD_UNIT_ID)] + [Unit(id=pid) for pid in self._plate_ids_for(job, cfg)]
+        # ``__unload__`` is NOT parallel: it frees the LLM from the card and gates on
+        # imagegen being up, and both must be settled before any plate draws (§7.4).
+        # The plates are, so the runner may overlap them when the backend is a worker
+        # pool. At concurrency 1 the flag has no effect at all.
+        return [Unit(id=UNLOAD_UNIT_ID)] + [
+            Unit(id=pid, parallel=True) for pid in self._plate_ids_for(job, cfg)
+        ]
 
     def unit_done(self, job: Job, cfg: Any, unit: Unit) -> bool:
         # The unload unit has no artifact — it must run on every phase entry (unload before render).
