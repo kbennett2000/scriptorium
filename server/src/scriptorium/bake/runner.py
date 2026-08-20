@@ -67,33 +67,6 @@ async def default_gpu_gate(cfg: Config) -> bool:
         return False
 
 
-async def free_imagegen_gpu(cfg: Config) -> None:
-    """Best-effort: ask the image service to release the GPU (ComfyUI VRAM) before a text phase.
-
-    The mirror of P7's "unload TTS before render" (§7.4 / ADR-0009). On a single-GPU box the LLM
-    and SDXL cannot both stay resident, so before a text/LLM GPU phase runs we free the card of the
-    image model — otherwise the LLM spills onto the CPU (pegged CPU, idle GPU). ComfyUI's URL is
-    discovered from imagegen-service ``/health`` (it advertises ``comfyuiUrl``), then we POST its
-    ``/free``. Never raises: freeing is an optimization; on failure the phase still runs (as before,
-    possibly on CPU if the card is full).
-    """
-    if not cfg.imagegen_url:
-        return
-    base = cfg.imagegen_url.rstrip("/")
-    try:
-        async with httpx.AsyncClient(timeout=_GPU_PROBE_TIMEOUT_S) as client:
-            health = await client.get(base + "/health")
-            comfy = health.json().get("comfyuiUrl") if health.is_success else None
-            if not comfy:
-                return
-            await client.post(
-                comfy.rstrip("/") + "/free",
-                json={"unload_models": True, "free_memory": True},
-            )
-    except Exception:
-        return
-
-
 def _batches(units: list[Any], width: int) -> list[list[Any]]:
     """Group units into runnable batches, preserving order.
 
@@ -134,14 +107,12 @@ class Runner:
         sleep: Callable[[float], Awaitable[None]] = asyncio.sleep,
         wake: Callable[[Config], None] = wake_gpu,
         gpu_gate: Callable[[Config], Awaitable[bool]] = default_gpu_gate,
-        free_image_gpu: Callable[[Config], Awaitable[None]] = free_imagegen_gpu,
     ) -> None:
         self.cfg = cfg
         self._by_from: dict[str, Phase] = {p.from_state: p for p in pipeline}
         self._sleep = sleep
         self._wake = wake
         self._gpu_gate = gpu_gate
-        self._free_image_gpu = free_image_gpu
         self._stop = False
 
     def phase_for(self, state: str) -> Phase | None:
@@ -182,10 +153,11 @@ class Runner:
                 job.transition(JobState.WAITING_GPU)
                 job.save(self.cfg)
                 return
-            # §7.4 mirror: a text/LLM GPU phase needs the card clear of SDXL, so release the image
-            # GPU first. Render phases (``gpu_kind == "image"``) must NOT — they need it loaded.
-            if getattr(phase, "gpu_kind", "text") == "text":
-                await self._free_image_gpu(self.cfg)
+            # GPU exclusivity (LLM vs SDXL sharing one card) is no longer coordinated here: the
+            # text-transform-service and imagegen-service share a server-side advisory GPU-tenancy
+            # lock, and each tenant frees its own VRAM before releasing it (ADR-0039, supersedes
+            # ADR-0009). The runner only wakes the box and gates on reachability; it never reaches
+            # around the lock to free another tenant's card.
 
         try:
             pending = [

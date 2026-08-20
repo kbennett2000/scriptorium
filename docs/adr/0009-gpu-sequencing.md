@@ -1,7 +1,13 @@
 # ADR 0009: GPU sequencing — one worker, unload before render, wake on wait
 
-- **Status:** Accepted
+- **Status:** Superseded by [ADR-0039](0039-server-side-gpu-tenancy-lock.md)
 - **Date:** 2026-07-13
+
+> **Superseded (2026-08-20).** GPU exclusivity moved server-side: the text-transform-service and
+> imagegen-service now share an advisory `flock` GPU-tenancy lock, and each frees its own VRAM
+> before releasing it. Scriptorium no longer performs the client-side handoffs described below —
+> the pre-render TTS `unload` and the direct-ComfyUI `/free` are both removed. The single-worker
+> queue and the Wake-on-LAN / health gate remain. See ADR-0039.
 
 ## Context
 

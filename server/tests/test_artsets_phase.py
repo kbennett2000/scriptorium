@@ -1,7 +1,8 @@
 """Picture-set render phase (DESIGN §8, ADR-0014) — Phase 2 acceptance.
 
-Drives the real Runner over ``[SetRender(FakeImagegen())]`` from ``set_rendering`` (TTS unload
-mocked by respx) against a seeded **published** book, and asserts: the set dir gets a web image per
+Drives the real Runner over ``[SetRender(FakeImagegen())]`` from ``set_rendering`` (the leading unit
+gates on imagegen health(); no client-side TTS unload — ADR-0039) against a seeded **published**
+book, and asserts: the set dir gets a web image per
 page plate + cover + portrait, a schema-valid manifest, ``set.json`` flips to ``ready``; the set's
 style is applied (prefix in provenance); a re-roll's seed differs (set_id folded); and — the
 invariant — ``library/{book}`` and the book's own job/work tree are byte-untouched. Image *content*
@@ -15,7 +16,6 @@ import hashlib
 import json
 from pathlib import Path
 
-import httpx
 import respx
 
 from scriptorium import schemas
@@ -130,7 +130,6 @@ def _set_dir(cfg: Config, user: str, book: str, set_id: str) -> Path:
 def test_set_render_produces_web_images_manifest_and_ready(tmp_path) -> None:
     cfg = _cfg(tmp_path)
     _seed_library(cfg)
-    respx.post(f"{TTS}/v1/models/unload").mock(return_value=httpx.Response(200, json={}))
 
     set_doc = service.create_set(cfg, "kris", BOOK, "style", "engraving", None)
     set_id = set_doc["set_id"]
@@ -163,7 +162,6 @@ def test_set_render_produces_web_images_manifest_and_ready(tmp_path) -> None:
 def test_reroll_seed_differs_from_another_set(tmp_path) -> None:
     cfg = _cfg(tmp_path)
     _seed_library(cfg)
-    respx.post(f"{TTS}/v1/models/unload").mock(return_value=httpx.Response(200, json={}))
 
     a = service.create_set(cfg, "kris", BOOK, "style", "engraving", None)["set_id"]
     b = service.create_set(cfg, "kris", BOOK, "reroll", None, None)["set_id"]  # → book style
@@ -181,7 +179,6 @@ def test_reroll_seed_differs_from_another_set(tmp_path) -> None:
 def test_set_render_never_touches_the_published_book(tmp_path) -> None:
     cfg = _cfg(tmp_path)
     _seed_library(cfg)
-    respx.post(f"{TTS}/v1/models/unload").mock(return_value=httpx.Response(200, json={}))
     lib = cfg.library_dir / BOOK
     before = _dir_digest(lib)
 
@@ -207,27 +204,32 @@ def test_set_state_machine_edges() -> None:
 
 
 @respx.mock
-def test_unload_failure_parks_then_resumes(tmp_path) -> None:
+def test_imagegen_down_parks_then_resumes(tmp_path) -> None:
+    # ADR-0039: the leading unit gates on imagegen health() (no client-side TTS unload). An imagegen
+    # that reports unreachable parks the set render on waiting_gpu; once it recovers the job resumes
+    # and completes.
     cfg = _cfg(tmp_path)
     _seed_library(cfg)
-    calls = {"n": 0}
 
-    def _unload(_request: httpx.Request) -> httpx.Response:
-        calls["n"] += 1
-        return httpx.Response(503, json={}) if calls["n"] == 1 else httpx.Response(200, json={})
+    class _FlakyImagegen(FakeImagegen):
+        def __init__(self) -> None:
+            self.health_calls = 0
 
-    respx.post(f"{TTS}/v1/models/unload").mock(side_effect=_unload)
+        async def health(self) -> bool:
+            self.health_calls += 1
+            return self.health_calls > 1  # down on the first probe, up thereafter
 
     set_id = service.create_set(cfg, "kris", BOOK, "style", "engraving", None)["set_id"]
     job_id = service.set_job_id(BOOK, set_id)
 
-    # First tick: unload 503 → GpuUnavailable → parked; nothing rendered yet.
-    asyncio.run(_runner(cfg, FakeImagegen()).tick())
+    flaky = _FlakyImagegen()
+    # First tick: health() False → GpuUnavailable → parked; nothing rendered yet.
+    asyncio.run(_runner(cfg, flaky).tick())
     assert jobmod.load(cfg, job_id).state == JobState.WAITING_GPU
     assert not (_set_dir(cfg, "kris", BOOK, set_id) / "images").exists()
 
-    # Subsequent ticks resume to set_rendering and complete.
-    job = _drive(cfg, FakeImagegen(), job_id)
+    # Subsequent ticks resume to set_rendering and complete (same client, now healthy).
+    job = _drive(cfg, flaky, job_id)
     assert job.state == JobState.SET_DONE
 
 
@@ -271,7 +273,6 @@ def test_render_progress_counts_rendered_pictures(tmp_path) -> None:
 def test_ready_and_failed_sets_carry_no_progress(tmp_path) -> None:
     cfg = _cfg(tmp_path)
     _seed_library(cfg)
-    respx.post(f"{TTS}/v1/models/unload").mock(return_value=httpx.Response(200, json={}))
 
     ready_id = service.create_set(cfg, "kris", BOOK, "style", "engraving", None)["set_id"]
     _drive(cfg, FakeImagegen(), service.set_job_id(BOOK, ready_id))
@@ -306,7 +307,6 @@ def test_set_conditions_page_plates_on_its_own_portraits_and_anchors_the_era(tmp
     doc["derived"]["depicted"] = ["the Clockmaker"]
     doc["derived"]["shot"] = "medium"
     (lib / "prompts" / "0001.json").write_text(json.dumps(doc), encoding="utf-8")
-    respx.post(f"{TTS}/v1/models/unload").mock(return_value=httpx.Response(200, json={}))
 
     calls: list[tuple[str, object]] = []
 
@@ -343,7 +343,6 @@ def test_set_render_inherits_the_books_negative(tmp_path) -> None:
     meta = json.loads((lib / "meta.json").read_text())
     meta["negative"] = "text, watermark"
     (lib / "meta.json").write_text(json.dumps(meta), encoding="utf-8")
-    respx.post(f"{TTS}/v1/models/unload").mock(return_value=httpx.Response(200, json={}))
 
     set_id = service.create_set(cfg, "kris", BOOK, "style", "engraving", None)["set_id"]
     job = _drive(cfg, FakeImagegen(), service.set_job_id(BOOK, set_id))

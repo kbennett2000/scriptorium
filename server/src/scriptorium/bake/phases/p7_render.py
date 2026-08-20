@@ -1,4 +1,4 @@
-"""P7 — the real render phase (DESIGN §10, §7.4; ADR-0009, ADR-0011).
+"""P7 — the real render phase (DESIGN §10, §7.4; ADR-0011, ADR-0039).
 
 Turns every approved plate into pixels. Render is split so **portraits draw first, in their own
 phase**, with an optional human gate between them and the page plates (ADR-0025) — every page plate
@@ -12,14 +12,15 @@ approved) before the pages draw. The phases (mirroring the P5 enter/GPU split �
   auto-advances when the per-book ``portrait_review`` flag is off).
 - :class:`Render` — GPU phase ``rendering → rendered``; renders the ``cover`` + page plates.
 
-Both GPU phases share :class:`_ImagegenPhase`: a **leading ``__unload__`` pseudo-unit** followed by
-one unit per plate id in that phase's set.
+Both GPU phases share :class:`_ImagegenPhase`: a **leading ``__unload__`` pseudo-unit** (name kept
+for continuity) followed by one unit per plate id in that phase's set.
 
-The leading unload unit is the §7.4 / ADR-0009 GPU handoff: it calls TTS ``POST /v1/models/unload``
-(**require success** — a failure means the GPU box is not usable → ``GpuUnavailable`` → the job
-parks on ``waiting_gpu`` and retries), then probes imagegen ``health()``; if imagegen is down it
-likewise parks. Because it runs before any plate unit and re-runs on every phase entry, TTS is
-always unloaded before SDXL touches the GPU — the invariant is structural, not incidental.
+The leading unit is the imagegen-reachability gate: it probes imagegen ``health()`` and, if imagegen
+is down, parks the job on ``waiting_gpu`` (``GpuUnavailable``) and retries. The old pre-render TTS
+``POST /v1/models/unload`` handoff is gone — GPU exclusivity (LLM vs SDXL on one card) is now owned
+server-side by a shared advisory GPU-tenancy lock, and each tenant frees its own VRAM before
+releasing it (ADR-0039, supersedes ADR-0009). ``/health`` is never lock-covered, so this gate still
+distinguishes a down service from a merely-busy one that a render call will block behind.
 
 Each plate unit style-wraps its prompt per §10 (page plates: ``style.prefix + final_subject_prompt
 + style.suffix``, ``negative = style.negative`` + ``derived.avoid``; the ``cover``/``portrait-*``
@@ -30,9 +31,8 @@ derivatives, and records ``wrapped_prompt``/``negative_prompt``/``render`` prove
 ``rendered``; publish (``rendered → published``) is S10b.
 
 The imagegen client is injected (``Render(client=...)``) so tests pass :class:`FakeImagegen`;
-production builds the configured backend from config (ADR-0038). The unload-first unit is what
-keeps LLM and render GPU work from ever interleaving — and it stays sequential even when the plate
-units after it fan out, because only they are marked ``parallel``.
+production builds the configured backend from config (ADR-0038). The gate unit stays sequential
+even when the plate units after it fan out, because only they are marked ``parallel``.
 """
 
 from __future__ import annotations
@@ -50,10 +50,9 @@ from ...render.derivatives import make_derivatives
 from ...render.imagegen import ImagegenClient, build_imagegen_client
 from ...styles import resolve_style
 from ..job import Job, JobState
-from ..tts_client import TtsClient
 from .base import GpuUnavailable, Unit
 
-# The leading pseudo-unit that unloads TTS + gates imagegen before any plate renders (§7.4). A
+# The leading pseudo-unit that gates on imagegen reachability before any plate renders. A
 # non-numeric id that can never collide with a 4-digit page id or a cover/portrait pseudo-plate.
 UNLOAD_UNIT_ID = "__unload__"
 
@@ -515,13 +514,13 @@ class PortraitRenderEnter:
 class _ImagegenPhase:
     """Shared machinery for the two GPU render phases: client injection + the ``__unload__`` unit.
 
-    Both portrait and page render must (§7.4 / ADR-0009) free the GPU of the LLM before SDXL and
-    require imagegen is up; both render a plate id via :func:`render_plate`. Only the *set* of
+    Both portrait and page render require imagegen is up (ADR-0039: the server-side GPU lock owns
+    LLM/SDXL exclusivity); both render a plate id via :func:`render_plate`. Only the *set* of
     plate ids differs, so subclasses override :meth:`_plate_ids_for`.
     """
 
     is_gpu = True
-    gpu_kind = "image"  # needs SDXL/ComfyUI resident — the runner must NOT free the image GPU here
+    gpu_kind = "image"  # a render phase; the server-side GPU lock coordinates LLM/SDXL sharing
 
     def __init__(self, client: ImagegenClient | None = None) -> None:
         # Injected for tests (FakeImagegen); production builds the real client from config.
@@ -534,16 +533,15 @@ class _ImagegenPhase:
         raise NotImplementedError
 
     def units(self, job: Job, cfg: Any) -> list[Unit]:
-        # ``__unload__`` is NOT parallel: it frees the LLM from the card and gates on
-        # imagegen being up, and both must be settled before any plate draws (§7.4).
-        # The plates are, so the runner may overlap them when the backend is a worker
-        # pool. At concurrency 1 the flag has no effect at all.
+        # ``__unload__`` is NOT parallel: it gates on imagegen being up, which must be
+        # settled before any plate draws. The plates are, so the runner may overlap them
+        # when the backend is a worker pool. At concurrency 1 the flag has no effect at all.
         return [Unit(id=UNLOAD_UNIT_ID)] + [
             Unit(id=pid, parallel=True) for pid in self._plate_ids_for(job, cfg)
         ]
 
     def unit_done(self, job: Job, cfg: Any, unit: Unit) -> bool:
-        # The unload unit has no artifact — it must run on every phase entry (unload before render).
+        # The gate unit has no artifact — it must run on every phase entry (imagegen-up check).
         if unit.id == UNLOAD_UNIT_ID:
             return False
         spec = _asset_spec(_book_dir(cfg, job), unit.id)
@@ -551,8 +549,10 @@ class _ImagegenPhase:
 
     async def run_unit(self, job: Job, cfg: Any, unit: Unit) -> None:
         if unit.id == UNLOAD_UNIT_ID:
-            # §7.4 / ADR-0009: free the GPU of the LLM before SDXL, and require imagegen is up.
-            await TtsClient(cfg).unload_models()  # raises GpuUnavailable on failure
+            # Require imagegen is up before drawing. The pre-render LLM unload is gone: the two GPU
+            # services share a server-side tenancy lock and each frees its own VRAM before releasing
+            # it, so /animate/generate just blocks on the lock rather than colliding with a resident
+            # LLM (ADR-0039, supersedes ADR-0009). This gate stays — /health is never lock-covered.
             if not await self._client(cfg).health():
                 raise GpuUnavailable("imagegen not reachable for render")
             return
@@ -574,7 +574,7 @@ class PortraitRender(_ImagegenPhase):
     def _plate_ids_for(self, job: Job, cfg: Any) -> list[str]:
         # When the owner asked to curate portraits (ADR-0025/0029), draw none up front — the review
         # screen generates/uploads them on demand so the gate starts blank. The leading __unload__
-        # unit still runs (TTS-unload + imagegen health), so GPU sequencing is unchanged. Any left
+        # unit still runs (imagegen health gate), so render sequencing is unchanged. Any left
         # blank at approval are filled from their default prompt by :class:`Render` below.
         if job.bake_config.get("portrait_review"):
             return []

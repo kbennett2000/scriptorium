@@ -137,13 +137,12 @@ class ImagegenClient(Protocol):
         ...
 
 
-# imagegen-service is a ComfyUI proxy: /generate can load an SDXL model on the first call, so the
-# generate timeout is generous (the service's own tier budget tops out at 300s); health is quick.
-# /animate renders a multi-second clip and, on the first job after an image job, pauses to swap the
-# GPU model set — minutes — so its budget mirrors the service's own 20-minute animate poll budget.
-_GENERATE_TIMEOUT_S = 300.0
+# imagegen-service is a ComfyUI proxy. The /generate and /animate read timeouts are per-instance
+# from Config (env-tunable): a call can now BLOCK on the server-side GPU-tenancy lock behind another
+# tenant's long render before it even starts, so the ceilings default high enough (1200s) to clear a
+# max render / video ahead of it rather than timing out and churning ``waiting_gpu`` (ADR-0039).
+# ``/health`` is never lock-gated, so it keeps the short quick timeout.
 _HEALTH_TIMEOUT_S = 15.0
-_ANIMATE_TIMEOUT_S = 1200.0
 
 
 class RealImagegenClient:
@@ -156,6 +155,9 @@ class RealImagegenClient:
 
     def __init__(self, cfg: Config) -> None:
         self._base = cfg.imagegen_url.rstrip("/") if cfg.imagegen_url else None
+        # getattr so a minimal stand-in cfg (tests) works; the Config default matches (ADR-0039).
+        self._generate_timeout = getattr(cfg, "generate_timeout_s", 1200.0)
+        self._animate_timeout = getattr(cfg, "animate_timeout_s", 1200.0)
 
     async def txt2img(
         self,
@@ -215,7 +217,7 @@ class RealImagegenClient:
                 body["denoise"] = denoise
         url = f"{self._base}/generate"
         try:
-            async with httpx.AsyncClient(timeout=_GENERATE_TIMEOUT_S) as client:
+            async with httpx.AsyncClient(timeout=self._generate_timeout) as client:
                 resp = await client.post(url, json=body)
         except httpx.HTTPError as exc:  # connect error, timeout, read error, …
             raise GpuUnavailable(f"imagegen unreachable: {exc}") from exc
@@ -328,7 +330,7 @@ class RealImagegenClient:
             body["height"] = height
         url = f"{self._base}/animate"
         try:
-            async with httpx.AsyncClient(timeout=_ANIMATE_TIMEOUT_S) as client:
+            async with httpx.AsyncClient(timeout=self._animate_timeout) as client:
                 resp = await client.post(url, json=body)
         except httpx.HTTPError as exc:  # connect error, timeout, read error, …
             raise GpuUnavailable(f"imagegen unreachable: {exc}") from exc

@@ -12,7 +12,7 @@ guard. To avoid the ``job.book_id``-rooted output dir of ``render_plate``, it re
 **pure functions** (``wrap_prompt``, ``_asset_spec``, ``render_to_spec``, ``assemble_cover`` /
 ``assemble_portrait``) with the set dir as the explicit root.
 
-Units, in order: a leading ``__unload__`` (identical to P7 — unload TTS, gate imagegen, else
+Units, in order: a leading ``__unload__`` (identical to P7 — gate on imagegen reachability, else
 ``GpuUnavailable`` → ``waiting_gpu``), one per non-retired page plate, ``cover``, one
 ``portrait-{slug}`` per major character, and a trailing ``__finalize__`` that writes the manifest
 and flips ``set.json`` to ``ready``.
@@ -46,7 +46,6 @@ from ..bake.phases.p7_render import (
     wrap_prompt,
 )
 from ..bake.phases.p8_publish import build_manifest
-from ..bake.tts_client import TtsClient
 from ..render.imagegen import ImagegenClient, RealImagegenClient
 from ..styles import resolve_style
 
@@ -168,7 +167,7 @@ class SetRender:
     from_state = JobState.SET_RENDERING
     to_state = JobState.SET_DONE
     is_gpu = True
-    gpu_kind = "image"  # needs SDXL/ComfyUI resident — the runner must NOT free the image GPU here
+    gpu_kind = "image"  # a render phase; the server-side GPU lock coordinates LLM/SDXL sharing
 
     def __init__(self, client: ImagegenClient | None = None) -> None:
         # Injected for tests (FakeImagegen); production builds the real client from config.
@@ -187,7 +186,7 @@ class SetRender:
 
     def unit_done(self, job: Job, cfg: Any, unit: Unit) -> bool:
         if unit.id == UNLOAD_UNIT_ID:
-            return False  # no artifact — must re-run on every phase entry (unload before render)
+            return False  # no artifact — must re-run on every phase entry (imagegen-up gate)
         if unit.id == FINALIZE_UNIT_ID:
             return (_set_dir(cfg, job) / "manifest.json").is_file()
         spec = _asset_spec(_set_dir(cfg, job), unit.id)
@@ -195,8 +194,9 @@ class SetRender:
 
     async def run_unit(self, job: Job, cfg: Any, unit: Unit) -> None:
         if unit.id == UNLOAD_UNIT_ID:
-            # §7.4 / ADR-0009: free the GPU of the LLM before SDXL, and require imagegen is up.
-            await TtsClient(cfg).unload_models()  # raises GpuUnavailable on failure
+            # Require imagegen is up before drawing. The pre-render LLM unload is gone — GPU
+            # exclusivity is now owned by a server-side tenancy lock and each tenant frees its own
+            # VRAM before releasing it (ADR-0039, supersedes ADR-0009). /health isn't lock-covered.
             if not await self._client(cfg).health():
                 raise GpuUnavailable("imagegen not reachable for set render")
             return

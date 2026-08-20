@@ -131,11 +131,12 @@ $env:IMAGEGEN_URL = "http://192.168.1.20:8189"
 
 **Drawing on rented GPUs instead of your own.** Set `RENDER_BACKEND=runpod` and point
 `RUNPOD_ENDPOINT_ID` at a Runpod serverless endpoint running the render worker. Pictures are
-then drawn there, several at a time, while the text steps stay on your machine. Keep
-`IMAGEGEN_URL` set as well — it is still used to free your GPU's memory before each text step.
+then drawn there, several at a time, while the text steps stay on your machine. You can leave
+`IMAGEGEN_URL` set — it is no longer used during a Runpod render (your two local GPU services now
+coordinate the card between themselves), so on a pure-Runpod box it is optional.
 
 ```bash
-export IMAGEGEN_URL=http://192.168.1.20:8189   # still needed
+export IMAGEGEN_URL=http://192.168.1.20:8189   # optional on a pure-Runpod box
 export RENDER_BACKEND=runpod
 export RUNPOD_ENDPOINT_ID=xxxxxxxxxxxxxx
 export RENDER_CONCURRENCY=4

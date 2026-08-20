@@ -30,6 +30,13 @@ def _env_int(name: str, default: int) -> int:
     return int(raw)
 
 
+def _env_float(name: str, default: float) -> float:
+    raw = os.environ.get(name)
+    if raw is None or raw.strip() == "":
+        return default
+    return float(raw)
+
+
 @dataclass(frozen=True)
 class Config:
     """Resolved server configuration."""
@@ -78,6 +85,17 @@ class Config:
     # whose reported card does not contain this string logs a warning. ``None``
     # disables the check.
     render_card: str | None = None
+    # Read timeouts (seconds) for the lock-gated GPU-service calls. A call can now BLOCK on the
+    # server-side GPU-tenancy lock — queued behind another tenant's long render — rather than
+    # 503-ing immediately (ADR-0039), so these defaults are generous enough to clear a max render
+    # (~20 min) ahead in the queue instead of timing out and churning ``waiting_gpu`` each tick.
+    # The quick /health / unload / probe timeouts are separate and stay short (never lock-gated).
+    #  - ``transform_timeout_s`` → TtsClient /v1/transform (env ``TTS_TRANSFORM_TIMEOUT_S``)
+    #  - ``generate_timeout_s``  → imagegen /generate (env ``IMAGEGEN_GENERATE_TIMEOUT_S``)
+    #  - ``animate_timeout_s``   → imagegen /animate (env ``IMAGEGEN_ANIMATE_TIMEOUT_S``)
+    transform_timeout_s: float = 1200.0
+    generate_timeout_s: float = 1200.0
+    animate_timeout_s: float = 1200.0
     # Built SPA dirs for the two static mounts (S11). Defaulted so tests that
     # construct Config directly need not supply them; load_config sets them from env.
     reader_dist: Path = field(default_factory=lambda: _REPO_ROOT / "reader" / "dist")
@@ -169,6 +187,9 @@ def load_config() -> Config:
         runpod_endpoint_id=os.environ.get("RUNPOD_ENDPOINT_ID") or None,
         render_concurrency=_env_int("RENDER_CONCURRENCY", 4),
         render_card=os.environ.get("RENDER_CARD") or None,
+        transform_timeout_s=_env_float("TTS_TRANSFORM_TIMEOUT_S", 1200.0),
+        generate_timeout_s=_env_float("IMAGEGEN_GENERATE_TIMEOUT_S", 1200.0),
+        animate_timeout_s=_env_float("IMAGEGEN_ANIMATE_TIMEOUT_S", 1200.0),
         shared_dir=shared_dir,
         reader_dist=reader_dist,
         admin_dist=admin_dist,

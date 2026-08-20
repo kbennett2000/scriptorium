@@ -1,11 +1,12 @@
-"""P7 real render phase (DESIGN §10, §7.4; ADR-0009) — the S10a acceptance boxes.
+"""P7 real render phase (DESIGN §10; ADR-0011, ADR-0039) — the S10a acceptance boxes.
 
-Drives the real Runner over ``[RenderEnter(), Render(FakeImagegen())]`` from ``approved`` with TTS
-``/v1/models/unload`` mocked by respx, and asserts the render contract: PNGs land at the §10 sizes,
-WebP derivatives are produced, prompts gain ``wrapped_prompt``/``negative_prompt``/``render``
-provenance, page plates flip to ``rendered``, the job rests at ``rendered``. Also covers the §7.4
-ordering invariant (TTS unloaded before any imagegen call) and unload-failure parking on
-``waiting_gpu``. Image *content* is never asserted — only sizes/validity (CLAUDE.md).
+Drives the real Runner over ``[RenderEnter(), Render(FakeImagegen())]`` from ``approved`` and
+asserts the render contract: PNGs land at the §10 sizes, WebP derivatives are produced, prompts gain
+``wrapped_prompt``/``negative_prompt``/``render`` provenance, page plates flip to ``rendered``, the
+job rests at ``rendered``. Also covers the ADR-0039 gate: the leading unit probes imagegen
+``health()`` (no client-side TTS unload — the server-side GPU lock owns exclusivity) and an
+unreachable imagegen parks the job on ``waiting_gpu``. Image *content* is never asserted — only
+sizes/validity (CLAUDE.md).
 """
 
 from __future__ import annotations
@@ -36,7 +37,7 @@ TTS = "http://tts.test:8712"
 
 def _cfg(tmp_path) -> Config:
     # shared_dir points at the real repo shared/ so schema validation works; styles come from the
-    # repo's data/styles.json (default). tts_url is set so TtsClient can issue the unload call.
+    # repo's data/styles.json (default). tts_url is set only so Config is well-formed (no unload).
     repo_shared = Path(__file__).resolve().parents[2] / "shared"
     return Config(
         data_dir=tmp_path, port=8720, tts_url=TTS, imagegen_url=None, gpu_mac=None,
@@ -120,7 +121,6 @@ def _webp_width(path: Path) -> int:
 def test_render_produces_pixels_derivatives_and_provenance(tmp_path) -> None:
     cfg = _cfg(tmp_path)
     _seed(cfg)
-    respx.post(f"{TTS}/v1/models/unload").mock(return_value=httpx.Response(200, json={}))
 
     job = _drive(cfg, FakeImagegen())
     assert job.state == JobState.RENDERED, f"stuck at {job.state}"
@@ -183,7 +183,6 @@ def test_compound_plate_is_style_wrapped_and_marked_rendered(tmp_path) -> None:
     }), encoding="utf-8")
     Job(id="b", book_id="b", state=JobState.APPROVED, started=True,
         bake_config={"style_id": "engraving"}).save(cfg)
-    respx.post(f"{TTS}/v1/models/unload").mock(return_value=httpx.Response(200, json={}))
 
     job = _drive(cfg, FakeImagegen())
     assert job.state == JobState.RENDERED, f"stuck at {job.state}"
@@ -200,38 +199,46 @@ def test_compound_plate_is_style_wrapped_and_marked_rendered(tmp_path) -> None:
     assert statuses == {"0001": "rendered", "0001-2": "rendered"}
 
 
-@respx.mock
-def test_unload_happens_before_any_render(tmp_path) -> None:
+@respx.mock(assert_all_called=False)  # the unload route below must stay UN-called
+def test_render_gates_on_imagegen_health_and_makes_no_tts_unload_call(tmp_path) -> None:
+    # ADR-0039: the pre-render TTS unload is gone (the server-side GPU lock owns exclusivity). The
+    # leading unit now only probes imagegen health() before any plate draws, and the render must
+    # never call /v1/models/unload again.
     cfg = _cfg(tmp_path)
     _seed(cfg)
     events: list[str] = []
-
-    def _unload(_request: httpx.Request) -> httpx.Response:
-        events.append("unload")
-        return httpx.Response(200, json={})
-
-    respx.post(f"{TTS}/v1/models/unload").mock(side_effect=_unload)
+    unload_route = respx.post(f"{TTS}/v1/models/unload").mock(
+        return_value=httpx.Response(200, json={}))
 
     class _RecordingImagegen(FakeImagegen):
+        async def health(self) -> bool:
+            events.append("health")
+            return await super().health()
+
         async def txt2img(self, *args, **kwargs) -> bytes:
             events.append("txt2img")
             return await super().txt2img(*args, **kwargs)
 
     job = _drive(cfg, _RecordingImagegen())
     assert job.state == JobState.RENDERED
-    assert "unload" in events and "txt2img" in events
-    assert events.index("unload") < events.index("txt2img")  # §7.4: TTS freed before SDXL
+    assert "health" in events and "txt2img" in events
+    assert events.index("health") < events.index("txt2img")  # imagegen gate before SDXL
+    assert not unload_route.called  # no client-side TTS unload on the render path
 
 
 @respx.mock
-def test_unload_failure_parks_waiting_gpu(tmp_path) -> None:
+def test_imagegen_down_parks_waiting_gpu(tmp_path) -> None:
+    # ADR-0039: an imagegen that reports unreachable makes the leading gate raise GpuUnavailable, so
+    # the job parks on waiting_gpu and never renders — replacing the old unload-503 park.
     cfg = _cfg(tmp_path)
     _seed(cfg)
-    respx.post(f"{TTS}/v1/models/unload").mock(return_value=httpx.Response(503, json={
-        "error": {"code": "busy"}}))
 
-    job = _drive(cfg, FakeImagegen(), max_ticks=6)
-    assert job.state == JobState.WAITING_GPU  # unload failed → never rendered
+    class _DownImagegen(FakeImagegen):
+        async def health(self) -> bool:
+            return False
+
+    job = _drive(cfg, _DownImagegen(), max_ticks=6)
+    assert job.state == JobState.WAITING_GPU  # imagegen down → never rendered
     assert not (cfg.work_dir / "b" / "images" / "plates" / "0001.png").is_file()
 
 
@@ -276,7 +283,6 @@ def test_page_plate_uses_depicted_characters_portrait_as_reference(tmp_path) -> 
     book, prompts = _seed_for_reference(cfg, depicted=["the Clockmaker"])
     Job(id="b", book_id="b", state=JobState.APPROVED, started=True,
         bake_config={"style_id": "engraving"}).save(cfg)
-    respx.post(f"{TTS}/v1/models/unload").mock(return_value=httpx.Response(200, json={}))
 
     captured: list[tuple[str, object]] = []
 
@@ -312,7 +318,6 @@ def test_multi_figure_plate_sends_a_weaker_later_anchor_to_imagegen(tmp_path) ->
     book, prompts = _seed_for_reference(cfg, depicted=["the clockmaker", "the stranger"])
     Job(id="b", book_id="b", state=JobState.APPROVED, started=True,
         bake_config={"style_id": "engraving"}).save(cfg)
-    respx.post(f"{TTS}/v1/models/unload").mock(return_value=httpx.Response(200, json={}))
 
     calls: list[dict] = []
 
@@ -339,7 +344,6 @@ def test_multi_figure_plate_sends_a_weaker_later_anchor_to_imagegen(tmp_path) ->
 def test_render_is_idempotent(tmp_path) -> None:
     cfg = _cfg(tmp_path)
     _seed(cfg)
-    respx.post(f"{TTS}/v1/models/unload").mock(return_value=httpx.Response(200, json={}))
 
     _drive(cfg, FakeImagegen())
     png = cfg.work_dir / "b" / "images" / "plates" / "0001.png"
@@ -364,7 +368,6 @@ def test_portrait_review_off_auto_advances_through_the_gate(tmp_path) -> None:
     # split is invisible — the book renders straight to `rendered`, byte-for-byte as before.
     cfg = _cfg(tmp_path)
     _seed(cfg)
-    respx.post(f"{TTS}/v1/models/unload").mock(return_value=httpx.Response(200, json={}))
 
     job = _drive(cfg, FakeImagegen())
     assert job.state == JobState.RENDERED
@@ -382,7 +385,6 @@ def test_portrait_review_on_parks_blank_no_portraits_or_pages(tmp_path) -> None:
     job = jobmod.load(cfg, "b")
     job.bake_config["portrait_review"] = True
     job.save(cfg)
-    respx.post(f"{TTS}/v1/models/unload").mock(return_value=httpx.Response(200, json={}))
 
     job = _drive(cfg, FakeImagegen(),
                  until=(JobState.PORTRAITS_REVIEW, JobState.RENDERED, JobState.FAILED))
@@ -401,7 +403,6 @@ def test_curated_blanks_fill_from_default_at_render(tmp_path) -> None:
     job = jobmod.load(cfg, "b")
     job.bake_config["portrait_review"] = True
     job.save(cfg)
-    respx.post(f"{TTS}/v1/models/unload").mock(return_value=httpx.Response(200, json={}))
 
     job = _drive(cfg, FakeImagegen(),
                  until=(JobState.PORTRAITS_REVIEW, JobState.RENDERED, JobState.FAILED))
@@ -429,7 +430,6 @@ def test_curated_render_does_not_override_owner_portrait(tmp_path) -> None:
     job = jobmod.load(cfg, "b")
     job.bake_config["portrait_review"] = True
     job.save(cfg)
-    respx.post(f"{TTS}/v1/models/unload").mock(return_value=httpx.Response(200, json={}))
 
     _drive(cfg, FakeImagegen(),
            until=(JobState.PORTRAITS_REVIEW, JobState.RENDERED, JobState.FAILED))
@@ -458,7 +458,6 @@ def test_bake_model_reaches_the_imagegen_client(tmp_path) -> None:
     job = jobmod.load(cfg, "b")
     job.bake_config["model"] = "dreamshaper.safetensors"
     job.save(cfg)
-    respx.post(f"{TTS}/v1/models/unload").mock(return_value=httpx.Response(200, json={}))
 
     seen: list[str | None] = []
 
@@ -482,7 +481,6 @@ def test_book_negative_is_appended_to_every_plate_negative(tmp_path) -> None:
     job = jobmod.load(cfg, "b")
     job.bake_config["negative"] = "text, watermark"
     job.save(cfg)
-    respx.post(f"{TTS}/v1/models/unload").mock(return_value=httpx.Response(200, json={}))
 
     job = _drive(cfg, FakeImagegen())
     assert job.state == JobState.RENDERED
@@ -503,7 +501,6 @@ def test_custom_style_leads_the_wrapped_prompt(tmp_path) -> None:
     job.bake_config["style_id"] = "custom"
     job.bake_config["custom_style"] = "photorealistic, 35mm film"
     job.save(cfg)
-    respx.post(f"{TTS}/v1/models/unload").mock(return_value=httpx.Response(200, json={}))
 
     styles_seen: list[str | None] = []
 
@@ -525,7 +522,6 @@ def test_off_flag_portrait_rendered_once_not_double(tmp_path) -> None:
     # portraits-first list skips it (existence-based), so it is rendered exactly once as before.
     cfg = _cfg(tmp_path)
     _seed(cfg)
-    respx.post(f"{TTS}/v1/models/unload").mock(return_value=httpx.Response(200, json={}))
 
     job = _drive(cfg, FakeImagegen())
     assert job.state == JobState.RENDERED

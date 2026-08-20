@@ -16,8 +16,10 @@ HTTP status  TTS ``error.code``         raised → runner outcome
 (conn error) —                          :class:`GpuUnavailable` (service unreachable)
 ===========  =========================  ==============================================
 
-There is no TTS-timeout config field yet; ``_TRANSFORM_TIMEOUT_S`` is a module constant
-(LLM calls are slow). Promote it to :class:`~scriptorium.config.Config` if it needs tuning.
+The transform read timeout is ``cfg.transform_timeout_s`` (env ``TTS_TRANSFORM_TIMEOUT_S``,
+default 1200s): a transform can now BLOCK on the server-side GPU-tenancy lock behind another
+tenant's long render (ADR-0039), so the ceiling must clear a max render ahead of it. Health and
+unload use the short ``_QUICK_TIMEOUT_S`` — ``/health`` is never lock-gated.
 """
 
 from __future__ import annotations
@@ -29,8 +31,7 @@ import httpx
 from ..config import Config
 from .phases.base import GpuUnavailable, PipelineBug, UnitFailed
 
-# Transforms are LLM calls behind a queue; allow a generous ceiling. Health/unload are fast.
-_TRANSFORM_TIMEOUT_S = 120.0
+# Health/unload are fast; the transform ceiling is per-instance from Config (may block on the lock).
 _QUICK_TIMEOUT_S = 15.0
 
 # Status codes that mean "GPU busy / unreachable" → park on waiting_gpu (§8).
@@ -46,6 +47,7 @@ class TtsClient:
         if not cfg.tts_url:
             raise PipelineBug("TTS_URL is not configured")
         self._base = cfg.tts_url.rstrip("/")
+        self._transform_timeout = cfg.transform_timeout_s
 
     async def _post(
         self, name: str, text: str, options: dict[str, Any] | None = None
@@ -58,7 +60,7 @@ class TtsClient:
         url = f"{self._base}/v1/transform/{name}"
         body = {"text": text, "options": options or {}}
         try:
-            async with httpx.AsyncClient(timeout=_TRANSFORM_TIMEOUT_S) as client:
+            async with httpx.AsyncClient(timeout=self._transform_timeout) as client:
                 resp = await client.post(url, json=body)
         except httpx.HTTPError as exc:  # connect error, timeout, read error, …
             raise GpuUnavailable(f"TTS unreachable for {name!r}: {exc}") from exc
